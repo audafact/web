@@ -283,39 +283,8 @@ const WaveformDisplay = ({
   // Improved function to add thumb element to a region
   // Alternative approach: Use WaveSurfer's internal region management
   const addThumbToRegion = useCallback((region: any, index: number) => {
-    // Try to access the region element directly from the region object
-    let regionElement = null;
-    
-    // Method 1: Try region.element (most direct)
-    if (region.element) {
-      regionElement = region.element;
-      console.log(`Found region element via region.element for index ${index}`);
-    }
-    
-    // Method 2: Try to find by region ID in the wavesurfer container
-    if (!regionElement && containerRef.current && region.id) {
-      regionElement = containerRef.current.querySelector(`[data-id="${region.id}"]`);
-      if (regionElement) {
-        console.log(`Found region element via data-id for index ${index}`);
-      }
-    }
-    
-    // Method 3: Try to find by position in the regions array
-    if (!regionElement && containerRef.current) {
-      // Get all region elements and use the index
-      const allRegionElements = Array.from(containerRef.current.querySelectorAll('[class*="region"]'));
-      if (allRegionElements.length > index) {
-        regionElement = allRegionElements[index];
-        console.log(`Found region element via index ${index} in regions array`);
-      }
-    }
-    
-    // Method 4: Try to find by looking for elements with the region's start time
-    if (!regionElement && containerRef.current) {
-      // This is a more complex approach - we'd need to calculate the position
-      // and find elements at that position
-      console.log(`Region ${index} start time: ${region.start}`);
-    }
+    // Use region.element directly
+    const regionElement = region.element;
 
     if (!regionElement) {
       console.warn(`Could not find region element for index ${index}. Region object:`, region);
@@ -361,22 +330,15 @@ const WaveformDisplay = ({
       color: white;
       font-size: 12px;
       font-weight: bold;
-      pointer-events: none; // So only the hitbox gets mouse events
+      pointer-events: none;
     `;
 
-    // Add label, etc.
     thumb.textContent = index === 9 ? '0' : (index + 1).toString();
 
-    // Nest the thumb inside the hitbox
     hitbox.appendChild(thumb);
-
-    // Add the hitbox to the region element
     regionElement.appendChild(hitbox);
-    
-    // Store reference to thumb for cleanup
+
     region.thumbElement = thumb;
-    
-    console.log(`Successfully added thumb ${index + 1} to region ${index}`);
   }, [trackId]);
 
   // Function to remove thumbs from regions
@@ -395,44 +357,12 @@ const WaveformDisplay = ({
     }
   }, []);
 
-  // Add this debugging function to inspect the DOM structure
-  const debugRegionElements = useCallback(() => {
-    if (!containerRef.current) return;
-    
-    console.log('=== DOM Structure Debug ===');
-    console.log('Container element:', containerRef.current);
-    
-    // Log all elements in the container
-    const allElements = containerRef.current.querySelectorAll('*');
-    console.log('All elements in container:', allElements.length);
-    
-    // Look for region-related elements
-    const regionElements = containerRef.current.querySelectorAll('[class*="region"]');
-    console.log('Elements with "region" in class:', regionElements.length);
-    
-    // Look for elements with data attributes
-    const dataElements = containerRef.current.querySelectorAll('[data-id]');
-    console.log('Elements with data-id:', dataElements.length);
-    
-    // Log the actual region objects
-    console.log('Current regions:', currentRegionsRef.current);
-    
-    // Try to access region.element property
-    currentRegionsRef.current.forEach((region, index) => {
-      console.log(`Region ${index}:`, region);
-      console.log(`Region ${index} element:`, region.element);
-      console.log(`Region ${index} id:`, region.id);
-    });
-  }, []);
-
   // Call this in the thumb visibility effect
   useEffect(() => {
     if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
 
     if (mode === 'cue') {
       if (showCueThumbs) {
-        console.log('Adding thumbs to existing regions...');
-        debugRegionElements(); // Add this debug call
         
         setTimeout(() => {
           currentRegionsRef.current.forEach((region, index) => {
@@ -442,11 +372,10 @@ const WaveformDisplay = ({
           });
         }, 200);
       } else {
-        console.log('Removing thumbs from regions...');
         removeThumbsFromRegions();
       }
     }
-  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions, debugRegionElements]);
+  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions]);
 
   useEffect(() => {
     if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
