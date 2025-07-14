@@ -41,9 +41,51 @@ const Studio = () => {
   const [playbackTimes, setPlaybackTimes] = useState<{ [key: string]: number }>({});
   const [zoomLevels, setZoomLevels] = useState<{ [key: string]: number }>({});
   const [playbackSpeeds, setPlaybackSpeeds] = useState<{ [key: string]: number }>({});
+  const [volume, setVolume] = useState<{ [key: string]: number }>({});
   const [showMeasures, setShowMeasures] = useState<{ [key: string]: boolean }>({});
   // Add state for showing cue thumbs
   const [showCueThumbs, setShowCueThumbs] = useState<{ [key: string]: boolean }>({});
+
+  // --- Utility functions for localStorage ---
+  const saveCuePointsToLocal = (trackId: string, cuePoints: number[]) => {
+    localStorage.setItem(`cuePoints-${trackId}`, JSON.stringify(cuePoints));
+  };
+  const loadCuePointsFromLocal = (trackId: string): number[] | null => {
+    const saved = localStorage.getItem(`cuePoints-${trackId}`);
+    return saved ? JSON.parse(saved) : null;
+  };
+  const removeCuePointsFromLocal = (trackId: string) => {
+    localStorage.removeItem(`cuePoints-${trackId}`);
+  };
+
+  // --- PATCH: Settings persistence ---
+  const saveTrackSettingsToLocal = (trackId: string, settings: any) => {
+    localStorage.setItem(`trackSettings-${trackId}`, JSON.stringify(settings));
+  };
+  const loadTrackSettingsFromLocal = (trackId: string): any | null => {
+    const saved = localStorage.getItem(`trackSettings-${trackId}`);
+    return saved ? JSON.parse(saved) : null;
+  };
+  const removeTrackSettingsFromLocal = (trackId: string) => {
+    localStorage.removeItem(`trackSettings-${trackId}`);
+  };
+  const saveSelectedCueTrackIdToLocal = (trackId: string | null) => {
+    if (trackId) {
+      localStorage.setItem('selectedCueTrackId', trackId);
+    } else {
+      localStorage.removeItem('selectedCueTrackId');
+    }
+  };
+  const loadSelectedCueTrackIdFromLocal = (): string | null => {
+    return localStorage.getItem('selectedCueTrackId');
+  };
+
+  // --- PATCH: Load settings on mount ---
+  useEffect(() => {
+    // Load selected cue track id
+    const selected = loadSelectedCueTrackIdFromLocal();
+    if (selected) setSelectedCueTrackId(selected);
+  }, []);
 
   // Preload audio files on component mount
   useEffect(() => {
@@ -68,22 +110,28 @@ const Studio = () => {
         const ronFile = new File([ronBlob], 'RON-drums.wav', { type: 'audio/wav' });
         
         const ronBuffer = await loadAudioBuffer(ronFile, context);
-        const ronCuePoints = Array.from({ length: 10 }, (_, i) => 
-          ronBuffer.duration * (i / 10)
-        );
+        // --- PATCH: Try to load cue points from localStorage ---
+        const ronCuePointsRaw = loadCuePointsFromLocal('ron-drums') ||
+          Array.from({ length: 10 }, (_, i) => 
+            ronBuffer.duration * (i / 10)
+          );
+        // Clamp all cue points to just before the end
+        const ronCuePoints = ronCuePointsRaw.map(point => Math.max(0, Math.min(point, ronBuffer.duration - 0.01)));
         
+        // --- PATCH: Try to load settings ---
+        const ronSettings = loadTrackSettingsFromLocal('ron-drums') || {};
         const ronTrack: Track = {
           id: 'ron-drums',
           file: ronFile,
           buffer: ronBuffer,
-          mode: 'loop',
-          loopStart: 0,
-          loopEnd: ronBuffer.duration,
+          mode: ronSettings.mode || 'loop',
+          loopStart: ronSettings.loopStart || 0,
+          loopEnd: ronSettings.loopEnd || ronBuffer.duration,
           cuePoints: ronCuePoints,
-          tempo: 120,
-          timeSignature: { numerator: 4, denominator: 4 },
-          firstMeasureTime: 0,
-          showMeasures: false
+          tempo: ronSettings.tempo || 120,
+          timeSignature: ronSettings.timeSignature || { numerator: 4, denominator: 4 },
+          firstMeasureTime: ronSettings.firstMeasureTime || 0,
+          showMeasures: ronSettings.showMeasures || false
         };
 
         // Preload Secrets of the Heart as a cue track
@@ -92,25 +140,52 @@ const Studio = () => {
         const secretsFile = new File([secretsBlob], 'Secrets of the Heart.mp3', { type: 'audio/mpeg' });
         
         const secretsBuffer = await loadAudioBuffer(secretsFile, context);
-        const secretsCuePoints = Array.from({ length: 10 }, (_, i) => 
-          secretsBuffer.duration * (i / 10)
-        );
+        // --- PATCH: Try to load cue points from localStorage ---
+        const secretsCuePointsRaw = loadCuePointsFromLocal('secrets-of-the-heart') ||
+          Array.from({ length: 10 }, (_, i) => 
+            secretsBuffer.duration * (i / 10)
+          );
+        // Clamp all cue points to just before the end
+        const secretsCuePoints = secretsCuePointsRaw.map(point => Math.max(0, Math.min(point, secretsBuffer.duration - 0.01)));
         
+        // --- PATCH: Try to load settings ---
+        const secretsSettings = loadTrackSettingsFromLocal('secrets-of-the-heart') || {};
         const secretsTrack: Track = {
           id: 'secrets-of-the-heart',
           file: secretsFile,
           buffer: secretsBuffer,
-          mode: 'cue',
-          loopStart: 0,
-          loopEnd: secretsBuffer.duration,
+          mode: secretsSettings.mode || 'cue',
+          loopStart: secretsSettings.loopStart || 0,
+          loopEnd: secretsSettings.loopEnd || secretsBuffer.duration,
           cuePoints: secretsCuePoints,
-          tempo: 120,
-          timeSignature: { numerator: 4, denominator: 4 },
-          firstMeasureTime: 0,
-          showMeasures: false
+          tempo: secretsSettings.tempo || 120,
+          timeSignature: secretsSettings.timeSignature || { numerator: 4, denominator: 4 },
+          firstMeasureTime: secretsSettings.firstMeasureTime || 0,
+          showMeasures: secretsSettings.showMeasures || false
         };
 
         setTracks([ronTrack, secretsTrack]);
+        // PATCH: Load per-track UI settings
+        setShowMeasures({
+          'ron-drums': !!ronSettings.showMeasures,
+          'secrets-of-the-heart': !!secretsSettings.showMeasures
+        });
+        setShowCueThumbs({
+          'ron-drums': !!ronSettings.showCueThumbs,
+          'secrets-of-the-heart': !!secretsSettings.showCueThumbs
+        });
+        setZoomLevels({
+          'ron-drums': ronSettings.zoomLevel || 0.25,
+          'secrets-of-the-heart': secretsSettings.zoomLevel || 0.25
+        });
+        setPlaybackSpeeds({
+          'ron-drums': ronSettings.playbackSpeed || 1,
+          'secrets-of-the-heart': secretsSettings.playbackSpeed || 1
+        });
+        setVolume({
+          'ron-drums': ronSettings.volume || 1,
+          'secrets-of-the-heart': secretsSettings.volume || 1
+        });
         
       } catch (error) {
         console.error('Error preloading audio files:', error);
@@ -122,6 +197,32 @@ const Studio = () => {
 
     preloadAudioFiles();
   }, [audioContext, initializeAudio]);
+
+  // Persist all track settings to localStorage when they change
+  useEffect(() => {
+    tracks.forEach(track => {
+      if (!track) return;
+      const settings = {
+        mode: track.mode,
+        loopStart: track.loopStart,
+        loopEnd: track.loopEnd,
+        tempo: track.tempo,
+        timeSignature: track.timeSignature,
+        firstMeasureTime: track.firstMeasureTime,
+        showMeasures: showMeasures[track.id] || false,
+        showCueThumbs: showCueThumbs[track.id] || false,
+        zoomLevel: zoomLevels[track.id] || 0.25,
+        playbackSpeed: playbackSpeeds[track.id] || 1,
+        volume: volume[track.id] || 1
+      };
+      saveTrackSettingsToLocal(track.id, settings);
+    });
+  }, [tracks, showMeasures, showCueThumbs, zoomLevels, playbackSpeeds, volume]);
+
+  // Persist selected cue track id
+  useEffect(() => {
+    saveSelectedCueTrackIdToLocal(selectedCueTrackId);
+  }, [selectedCueTrackId]);
 
   // Do NOT initialize audio context on component mount
   // Remove the useEffect that was trying to initialize the audio context automatically
@@ -145,6 +246,7 @@ const Studio = () => {
     }
   };
 
+  // --- PATCH: When uploading a new file, try to load cue points and settings from localStorage ---
   const handleFileUpload = async (file: File, trackType: 'loop' | 'cue') => {
     try {
       setIsLoading(true);
@@ -189,27 +291,42 @@ const Studio = () => {
       // Load the audio file into buffer
       const buffer = await loadAudioBuffer(file, context);
       
-      // Generate default cue points (10 points at 10% intervals)
-      const cuePoints = Array.from({ length: 10 }, (_, i) => 
-        buffer.duration * (i / 10)
-      );
+      // Generate track ID first
+      const trackId = Date.now().toString();
       
-      // Create a new track
+      // --- PATCH: Try to load cue points from localStorage using trackId ---
+      const cuePointsRaw =
+        loadCuePointsFromLocal(trackId) ||
+        Array.from({ length: 10 }, (_, i) => 
+          buffer.duration * (i / 10)
+        );
+      // Clamp all cue points to just before the end
+      const cuePoints = cuePointsRaw.map(point => Math.max(0, Math.min(point, buffer.duration - 0.01)));
+      
+      // --- PATCH: Try to load settings from localStorage using trackId ---
+      const settings = loadTrackSettingsFromLocal(trackId) || {};
+      // --- PATCH: Ensure default values if settings are not found ---
       const newTrack: Track = {
-        id: Date.now().toString(),
+        id: trackId,
         file,
         buffer,
-        mode: trackType,
-        loopStart: 0,
-        loopEnd: buffer.duration,
+        mode: settings.mode || trackType,
+        loopStart: settings.loopStart || 0,
+        loopEnd: settings.loopEnd || buffer.duration,
         cuePoints,
-        tempo: 120, // Default tempo
-        timeSignature: { numerator: 4, denominator: 4 },
-        firstMeasureTime: 0,
-        showMeasures: false
+        tempo: settings.tempo || 120, // Default tempo
+        timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
+        firstMeasureTime: settings.firstMeasureTime || 0,
+        showMeasures: settings.showMeasures || false
       };
       
       setTracks(prev => [...prev, newTrack]);
+      // --- PATCH: Use trackId consistently for all state ---
+      setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
+      setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 0.25 }));
+      setPlaybackSpeeds(prev => ({ ...prev, [trackId]: settings.playbackSpeed || 1 }));
+      setVolume(prev => ({ ...prev, [trackId]: settings.volume || 1 }));
     
     } catch (error) {
       console.error('Error loading audio file:', error);
@@ -273,14 +390,24 @@ const Studio = () => {
     );
   };
   
+  // --- PATCH: Save cue points and settings to localStorage on change ---
   const handleCuePointChange = (trackId: string, index: number, time: number) => {
     if (!tracks) return;
     
     setTracks(prev => 
       prev.map(track => {
         if (!track || track.id !== trackId) return track;
+        const duration = track.buffer?.duration || 0;
+        // Clamp cue point to just before the end
+        const epsilon = 0.01;
+        const clampedTime = Math.max(0, Math.min(time, duration - epsilon));
         const newCuePoints = [...track.cuePoints];
-        newCuePoints[index] = time;
+        newCuePoints[index] = clampedTime;
+        // --- PATCH: Save to localStorage ---
+        saveCuePointsToLocal(trackId, newCuePoints);
+        // --- PATCH: Save settings ---
+        const settings = loadTrackSettingsFromLocal(trackId) || {};
+        saveTrackSettingsToLocal(trackId, { ...settings, cuePoints: newCuePoints });
         return { ...track, cuePoints: newCuePoints };
       })
     );
@@ -429,6 +556,12 @@ const Studio = () => {
       return newPlaybackSpeeds;
     });
     
+    setVolume(prev => {
+      const newVolume = { ...prev };
+      delete newVolume[trackId];
+      return newVolume;
+    });
+    
     setShowMeasures(prev => {
       const newShowMeasures = { ...prev };
       delete newShowMeasures[trackId];
@@ -439,6 +572,9 @@ const Studio = () => {
     if (selectedCueTrackId === trackId) {
       setSelectedCueTrackId(null);
     }
+    // --- PATCH: Remove from localStorage ---
+    removeCuePointsFromLocal(trackId);
+    removeTrackSettingsFromLocal(trackId);
   };
 
   // Add handler for toggling cue thumbs
@@ -447,6 +583,11 @@ const Studio = () => {
       ...prev,
       [trackId]: !prev[trackId]
     }));
+  };
+
+  // Add handler for volume changes
+  const handleVolumeChange = (trackId: string, newVolume: number) => {
+    setVolume(prev => ({ ...prev, [trackId]: newVolume }));
   };
 
   // Welcome state when no tracks are loaded and not loading
@@ -722,6 +863,8 @@ const Studio = () => {
                 onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
                 onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
                 showCueThumbs={showCueThumbs[track.id]}
+                volume={volume[track.id] || 1}
+                onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
               />
             )}
           </div>
@@ -746,6 +889,9 @@ const Studio = () => {
               onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}
               onSpeedChange={(speed) => handleSpeedChange(track.id, speed)}
               trackTempo={track.tempo}
+              volume={volume[track.id] || 1}
+              onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
+              playbackSpeed={playbackSpeeds[track.id] || 1}
             />
           )}
 

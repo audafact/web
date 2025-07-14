@@ -30,6 +30,9 @@ interface WaveformDisplayProps {
   onTimeSignatureChange?: (timeSignature: TimeSignature) => void;
   // Cue thumb props
   showCueThumbs?: boolean;
+  // Volume
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
 }
 
 const WaveformDisplay = ({
@@ -56,7 +59,10 @@ const WaveformDisplay = ({
   onFirstMeasureChange,
   onTimeSignatureChange,
   // Cue thumb props
-  showCueThumbs = false,  
+  showCueThumbs = false,
+  // Volume
+  volume = 1,
+  onVolumeChange,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
@@ -225,15 +231,16 @@ const WaveformDisplay = ({
 
       currentRegionsRef.current = [region];
     } else if (mode === 'cue') {
+      const duration = wavesurfer.getDuration();
+      const epsilon = 0.05; // slightly larger to avoid float issues
       const newRegions = cuePoints.map((point, index) => {
-        // Create wider regions for better dragging (0.5 seconds wide)
-        // const regionWidth = 0.1;
-        // const regionStart = Math.max(0, point - regionWidth / 2);
-        // const regionEnd = Math.min(wavesurfer.getDuration(), point + regionWidth / 2);
-        
+        // Clamp start to [0, duration - epsilon]
+        const clampedStart = Math.max(0, Math.min(point, duration - epsilon));
+        // Ensure region end does not exceed duration
+        const regionEnd = Math.min(clampedStart + 0.01, duration);
         const region = regionsPluginRef.current.addRegion({
-          start: point,
-          end: point + 0.01,
+          start: clampedStart,
+          end: regionEnd,
           color: 'rgba(239, 68, 68, 0.3)',
           drag: true,
           resize: false,
@@ -253,10 +260,10 @@ const WaveformDisplay = ({
           }
         });
 
+        // Only update the cue point and region position, do not recreate all regions
         region.on('update-end', () => {
           const cuePoint = region.start + (region.end - region.start) / 2;
           const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
-          
           debouncedUpdate(() => {
             onCuePointChangeRef.current(index, clampedCuePoint);
             const newCuePoints = [...prevCuePointsRef.current];
@@ -278,7 +285,7 @@ const WaveformDisplay = ({
 
       currentRegionsRef.current = newRegions;
     }
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, onLoopPointsChange, onCuePointChange, trackId, showCueThumbs]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, onLoopPointsChange, onCuePointChange, trackId, showCueThumbs]);
 
   // Improved function to add thumb element to a region
   // Alternative approach: Use WaveSurfer's internal region management
@@ -301,7 +308,7 @@ const WaveformDisplay = ({
     const hitbox = document.createElement('div');
     hitbox.style.cssText = `
       position: absolute;
-      bottom: -7px;
+      bottom: -6px;
       left: 50%;
       transform: translateX(-50%);
       width: 40px;
@@ -377,18 +384,22 @@ const WaveformDisplay = ({
     }
   }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions]);
 
+  // Only recreate regions if the number of cue points changes, not their values
   useEffect(() => {
     if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
-
-    if (shouldUpdateRegions) {
+    if (mode === 'cue') {
+      if (prevCuePointsRef.current.length !== cuePoints.length) {
+        createRegions();
+        prevCuePointsRef.current = [...cuePoints];
+      }
+    } else if (shouldUpdateRegions) {
       createRegions();
-
       prevLoopStartRef.current = loopStart;
       prevLoopEndRef.current = loopEnd;
       prevCuePointsRef.current = [...cuePoints];
       prevModeRef.current = mode;
     }
-  }, [wavesurfer, isReady, shouldUpdateRegions]);
+  }, [wavesurfer, isReady, shouldUpdateRegions, cuePoints.length]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {

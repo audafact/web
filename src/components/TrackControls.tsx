@@ -18,6 +18,11 @@ interface TrackControlsProps {
   onPlaybackTimeChange?: (time: number) => void;
   onSpeedChange?: (speed: number) => void;
   trackTempo?: number;
+  // Add volume props
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
+  // Add playback speed prop
+  playbackSpeed?: number;
 }
 
 const TrackControls = ({ 
@@ -36,10 +41,12 @@ const TrackControls = ({
   onSelect,
   onPlaybackTimeChange,
   onSpeedChange,
-  trackTempo = 120
+  trackTempo = 120,
+  volume = 1,
+  onVolumeChange,
+  playbackSpeed = 1
 }: TrackControlsProps) => {
-  const [volume, setVolume] = useState(1);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState<number | null>(null);
@@ -51,7 +58,7 @@ const TrackControls = ({
   const gainNodeRef = useRef<GainNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
-  const currentVolumeRef = useRef<number>(1);
+  const currentVolumeRef = useRef<number>(volume);
   const currentSpeedRef = useRef<number>(1);
   const activeCueIndexRef = useRef<number | null>(null);
   const cueStartTimeRef = useRef<number>(0);
@@ -340,8 +347,9 @@ const TrackControls = ({
   
   // Update volume when it changes
   useEffect(() => {
+    currentVolumeRef.current = volume;
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = currentVolumeRef.current;
+      gainNodeRef.current.gain.value = volume;
     }
   }, [volume]);
   
@@ -418,8 +426,7 @@ const TrackControls = ({
             value={volume}
             onChange={(e) => {
               const newVolume = parseFloat(e.target.value);
-              setVolume(newVolume);
-              currentVolumeRef.current = newVolume;
+              if (onVolumeChange) onVolumeChange(newVolume);
             }}
             className="flex-1 h-1"
           />
