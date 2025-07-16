@@ -65,17 +65,23 @@ const MeasureDisplay = ({
   const timeToPixels = useCallback((time: number) => {
     if (!containerRef.current) return 0;
     const containerWidth = containerRef.current.offsetWidth;
-    const pixelsPerSecond = containerWidth / duration;
-    return time * pixelsPerSecond;
-  }, [duration]);
+    // Apply zoom level to pixels per second calculation
+    // Base pixels per second is container width / duration
+    // Zoom level affects this by multiplying the effective pixels per second
+    const basePixelsPerSecond = containerWidth / duration;
+    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
+    return time * zoomedPixelsPerSecond;
+  }, [duration, zoomLevel]);
 
   // Convert pixel position to time
   const pixelsToTime = useCallback((pixels: number) => {
     if (!containerRef.current) return 0;
     const containerWidth = containerRef.current.offsetWidth;
-    const pixelsPerSecond = containerWidth / duration;
-    return pixels / pixelsPerSecond;
-  }, [duration]);
+    // Apply zoom level to pixels per second calculation
+    const basePixelsPerSecond = containerWidth / duration;
+    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
+    return pixels / zoomedPixelsPerSecond;
+  }, [duration, zoomLevel]);
 
   // Handle first measure marker drag start
   const handleFirstMeasureMouseDown = useCallback((e: React.MouseEvent) => {

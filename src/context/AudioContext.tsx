@@ -27,14 +27,10 @@ export const AudioProvider: React.FC<AudioContextProviderProps> = ({ children })
           latencyHint: 'interactive'
         });
         
-        console.log('New audio context created:', newContext.state);
-        
         // If the state is suspended, we need to explicitly resume it
         if (newContext.state === 'suspended') {
           try {
-            console.log('Attempting to resume audio context...');
             await newContext.resume();
-            console.log('Audio context resumed successfully');
           } catch (resumeError) {
             console.error('Failed to resume audio context:', resumeError);
             // Continue anyway - we'll try to handle it later
@@ -47,9 +43,7 @@ export const AudioProvider: React.FC<AudioContextProviderProps> = ({ children })
       
       // If context exists but is suspended, resume it
       if (audioContext.state === 'suspended') {
-        console.log('Resuming existing audio context...');
         await audioContext.resume();
-        console.log('Existing audio context resumed');
       }
       
       return audioContext;

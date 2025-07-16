@@ -23,6 +23,10 @@ interface TrackControlsProps {
   onVolumeChange?: (volume: number) => void;
   // Add playback speed prop
   playbackSpeed?: number;
+  // Add playback state callback
+  onPlaybackStateChange?: (isPlaying: boolean) => void;
+  // Add external playback time prop
+  playbackTime?: number;
 }
 
 const TrackControls = ({ 
@@ -44,7 +48,9 @@ const TrackControls = ({
   trackTempo = 120,
   volume = 1,
   onVolumeChange,
-  playbackSpeed = 1
+  playbackSpeed = 1,
+  onPlaybackStateChange,
+  playbackTime
 }: TrackControlsProps) => {
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -62,6 +68,8 @@ const TrackControls = ({
   const currentSpeedRef = useRef<number>(1);
   const activeCueIndexRef = useRef<number | null>(null);
   const cueStartTimeRef = useRef<number>(0);
+  // Track the actual starting position when playback begins
+  const playbackStartTimeRef = useRef<number>(0);
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
@@ -143,9 +151,8 @@ const TrackControls = ({
           onPlaybackTimeChange(position);
         }
       } else {
-        // For cue mode, calculate position from current cue point using refs
-        const currentCueStartTime = cueStartTimeRef.current;
-        const currentPlaybackTime = currentCueStartTime + (elapsed * playbackRate);
+        // For non-loop mode, calculate position from the actual starting position
+        const currentPlaybackTime = playbackStartTimeRef.current + (elapsed * playbackRate);
         const finalTime = currentPlaybackTime >= audioBuffer.duration ? 0 : currentPlaybackTime;
         setCurrentTime(finalTime);
         if (onPlaybackTimeChange) {
@@ -165,6 +172,13 @@ const TrackControls = ({
       cueStartTimeRef.current = cuePoints[activeCueIndex];
     }
   }, [activeCueIndex, cuePoints]);
+
+  // Sync external playback time with internal state when not playing
+  useEffect(() => {
+    if (!isPlaying && typeof playbackTime === 'number') {
+      setCurrentTime(playbackTime);
+    }
+  }, [playbackTime, isPlaying]);
 
   // Start/stop time updates
   useEffect(() => {
@@ -230,6 +244,9 @@ const TrackControls = ({
           animationFrameRef.current = null;
         }
         setIsPlaying(false);
+        if (onPlaybackStateChange) {
+          onPlaybackStateChange(false);
+        }
       } else {
         // Start playback - create audio chain manually to ensure current volume and speed are applied
         const audioChain = createAudioChainWithCurrentSettings();
@@ -242,17 +259,23 @@ const TrackControls = ({
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;
           sourceNode.start(0, loopStart);
+          playbackStartTimeRef.current = loopStart;
         } else if (mode === 'cue' && activeCueIndex !== null) {
           const cueStartTime = cuePoints[activeCueIndex];
           cueStartTimeRef.current = cueStartTime;
           sourceNode.start(0, cueStartTime);
+          playbackStartTimeRef.current = cueStartTime;
         } else {
           sourceNode.start(0, currentTime);
+          playbackStartTimeRef.current = currentTime;
         }
 
         audioSourceRef.current = sourceNode;
         gainNodeRef.current = gainNode;
         setIsPlaying(true);
+        if (onPlaybackStateChange) {
+          onPlaybackStateChange(true);
+        }
         startTimeRef.current = audioContext.currentTime;
         
         // Start the animation frame loop for smooth updates
@@ -267,6 +290,9 @@ const TrackControls = ({
             if (animationFrameRef.current) {
               cancelAnimationFrame(animationFrameRef.current);
               animationFrameRef.current = null;
+            }
+            if (onPlaybackStateChange) {
+              onPlaybackStateChange(false);
             }
           }
         };
@@ -321,7 +347,11 @@ const TrackControls = ({
       startTimeRef.current = audioContext.currentTime;
       
       sourceNode.start(0, cueTime);
+      playbackStartTimeRef.current = cueTime;
       setIsPlaying(true);
+      if (onPlaybackStateChange) {
+        onPlaybackStateChange(true);
+      }
       
       // Start the animation frame loop for smooth updates
       lastUpdateTimeRef.current = performance.now();
@@ -336,6 +366,9 @@ const TrackControls = ({
           if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
             animationFrameRef.current = null;
+          }
+          if (onPlaybackStateChange) {
+            onPlaybackStateChange(false);
           }
         }
       };

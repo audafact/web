@@ -33,6 +33,10 @@ interface WaveformDisplayProps {
   // Volume
   volume?: number;
   onVolumeChange?: (volume: number) => void;
+  // Playback control
+  isPlaying?: boolean;
+  // Playhead position change callback
+  onPlayheadChange?: (time: number) => void;
 }
 
 const WaveformDisplay = ({
@@ -63,11 +67,16 @@ const WaveformDisplay = ({
   // Volume
   volume = 1,
   onVolumeChange,
+  // Playback control
+  isPlaying = false,
+  // Playhead position change callback
+  onPlayheadChange,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const timelineContainerRef = useRef<HTMLDivElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | undefined>(undefined);
   const [plugins, setPlugins] = useState<any[]>([]);
+  const [internalShowMeasures, setInternalShowMeasures] = useState(false);
+  const [internalIsPlaying, setInternalIsPlaying] = useState(false);
   
   // Refs to track regions and prevent recreation
   const regionsPluginRef = useRef<any>(null);
@@ -136,12 +145,7 @@ const WaveformDisplay = ({
 
   // Effect to instantiate plugins only once per file
   useEffect(() => {
-    if (!timelineContainerRef.current) return;
-
-    const timelinePlugin = TimelinePlugin.create({
-      container: timelineContainerRef.current,
-    });
-
+    const timelinePlugin = TimelinePlugin.create();
     const regionsPlugin = RegionsPlugin.create();
     regionsPluginRef.current = regionsPlugin;
 
@@ -155,7 +159,7 @@ const WaveformDisplay = ({
       currentRegionsRef.current = [];
       setPlugins([]);
     };
-  }, [audioFile]);
+  }, [audioUrl]);
 
   // useWavesurfer hook
   const { wavesurfer, isReady, currentTime } = useWavesurfer({
@@ -170,11 +174,133 @@ const WaveformDisplay = ({
     plugins: plugins,
   });
 
+  // Track playback state internally
+  useEffect(() => {
+    if (!wavesurfer) return;
+
+    const handlePlay = () => {
+      setInternalIsPlaying(true);
+    };
+    const handlePause = () => {
+      setInternalIsPlaying(false);
+    };
+    const handleFinish = () => {
+      setInternalIsPlaying(false);
+    };
+
+    wavesurfer.on('play', handlePlay);
+    wavesurfer.on('pause', handlePause);
+    wavesurfer.on('finish', handleFinish);
+
+    return () => {
+      wavesurfer.un('play', handlePlay);
+      wavesurfer.un('pause', handlePause);
+      wavesurfer.un('finish', handleFinish);
+    };
+  }, [wavesurfer]);
+
+  // Track manual playhead position changes
+  useEffect(() => {
+    if (!wavesurfer || !onPlayheadChange) return;
+
+    const handleSeek = () => {
+      // Only notify of position changes when not playing
+      // During playback, position changes are handled by the audio system
+      if (!isPlaying && !internalIsPlaying) {
+        const newTime = wavesurfer.getCurrentTime();
+        onPlayheadChange(newTime);
+      }
+    };
+
+    wavesurfer.on('interaction', handleSeek);
+
+    return () => {
+      wavesurfer.un('interaction', handleSeek);
+    };
+  }, [wavesurfer, onPlayheadChange, isPlaying, internalIsPlaying]);
+
+  // Set initial width for both containers when ready
+  useEffect(() => {
+    if (wavesurfer && isReady) {
+      const duration = wavesurfer.getDuration();
+      const initialWidth = duration * 20 * zoomLevel; // 20 is the base minPxPerSec
+      
+      if (containerRef.current) {
+        containerRef.current.style.width = `${initialWidth}px`;
+      }
+    }
+  }, [wavesurfer, isReady, zoomLevel]);
+
+  // Auto-scroll to follow playhead during playback with center-lock behavior
+  useEffect(() => {
+    if (!wavesurfer || !isReady || !containerRef.current) return;
+
+    const parentContainer = containerRef.current.parentElement;
+    if (!parentContainer) return;
+
+    const pxPerSec = 20 * zoomLevel;
+    const playheadPosition = (currentTime ?? 0) * pxPerSec;
+    const containerWidth = parentContainer.clientWidth;
+    const containerCenter = containerWidth / 2;
+    
+    // Only auto-scroll if playing
+    if (isPlaying) {
+      // Calculate where the playhead should be relative to the scroll position
+      // We want the playhead to be at the center of the container once it reaches there
+      const targetScrollLeft = playheadPosition - containerCenter;
+      
+      // Only start scrolling once the playhead would reach the center
+      if (playheadPosition >= containerCenter) {
+        const totalWidth = wavesurfer.getDuration() * pxPerSec;
+        const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
+        const clampedScrollTarget = Math.max(0, Math.min(targetScrollLeft, maxScrollLeft));
+        
+        // Smoothly scroll to keep playhead at center
+        parentContainer.scrollTo({
+          left: clampedScrollTarget,
+          behavior: 'auto' // Use 'auto' for immediate scrolling during playback
+        });
+      }
+    }
+  }, [currentTime, wavesurfer, isReady, zoomLevel, isPlaying]);
+
+  // Improved playhead centering function
+  const centerPlayheadAfterZoom = useCallback((targetZoomLevel = zoomLevel) => {
+    if (!wavesurfer || !isReady || !containerRef.current) return;
+    
+    // Get current time directly from wavesurfer instance for accuracy
+    const centerTime = wavesurfer.getCurrentTime();
+    const pxPerSec = 20 * targetZoomLevel;
+    const playheadPosition = centerTime * pxPerSec;
+    const parentContainer = containerRef.current.parentElement;
+    
+    if (!parentContainer) return;
+    
+    const containerWidth = parentContainer.clientWidth;
+    const totalWidth = wavesurfer.getDuration() * pxPerSec;
+    const scrollTarget = playheadPosition - containerWidth / 2;
+    
+    // Ensure scroll target is within bounds
+    const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
+    const clampedScrollTarget = Math.max(0, Math.min(scrollTarget, maxScrollLeft));
+    
+    // Use smooth scrolling for better UX
+    parentContainer.scrollTo({
+      left: clampedScrollTarget,
+      behavior: 'smooth'
+    });
+  }, [wavesurfer, isReady, zoomLevel]);
+
   // Function to clear all regions
   const clearRegions = () => {
     if (regionsPluginRef.current && currentRegionsRef.current.length > 0) {
       currentRegionsRef.current.forEach(region => {
         try {
+          // Remove thumb element if it exists
+          if (region.thumbElement) {
+            region.thumbElement.remove();
+            region.thumbElement = null;
+          }
           // Remove all event listeners before removing the region
           region.unAll();
           region.remove();
@@ -184,6 +310,12 @@ const WaveformDisplay = ({
         }
       });
       currentRegionsRef.current = [];
+    }
+    
+    // Also clean up any orphaned thumbs
+    if (containerRef.current) {
+      const orphanedThumbs = containerRef.current.querySelectorAll('.cue-thumb');
+      orphanedThumbs.forEach((thumb: Element) => thumb.remove());
     }
   };
 
@@ -298,11 +430,15 @@ const WaveformDisplay = ({
       return;
     }
 
-    // Remove existing thumb if it exists
-    const existingThumb = regionElement.querySelector('.cue-thumb');
-    if (existingThumb) {
-      existingThumb.remove();
+    // Remove existing thumb if it exists (both from the region and cleanup reference)
+    if (region.thumbElement) {
+      region.thumbElement.remove();
+      region.thumbElement = null;
     }
+    
+    // Also remove any existing thumb elements in the region
+    const existingThumbs = regionElement.querySelectorAll('.cue-thumb');
+    existingThumbs.forEach((thumb: Element) => thumb.remove());
 
     // Create the hitbox
     const hitbox = document.createElement('div');
@@ -345,7 +481,8 @@ const WaveformDisplay = ({
     hitbox.appendChild(thumb);
     regionElement.appendChild(hitbox);
 
-    region.thumbElement = thumb;
+    // Store reference to the hitbox (which contains the thumb) for cleanup
+    region.thumbElement = hitbox;
   }, [trackId]);
 
   // Function to remove thumbs from regions
@@ -360,46 +497,52 @@ const WaveformDisplay = ({
     // Also remove any orphaned thumbs from the container
     if (containerRef.current) {
       const orphanedThumbs = containerRef.current.querySelectorAll('.cue-thumb');
-      orphanedThumbs.forEach(thumb => thumb.remove());
+      orphanedThumbs.forEach((thumb: Element) => thumb.remove());
     }
   }, []);
 
-  // Call this in the thumb visibility effect
+  // Handle thumb visibility and ensure proper cleanup/recreation
   useEffect(() => {
     if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
 
     if (mode === 'cue') {
       if (showCueThumbs) {
+        // Remove any existing thumbs first
+        removeThumbsFromRegions();
         
+        // Add thumbs with a delay to ensure regions are fully rendered
         setTimeout(() => {
           currentRegionsRef.current.forEach((region, index) => {
-            if (!region.thumbElement) {
-              addThumbToRegion(region, index);
-            }
+            addThumbToRegion(region, index);
           });
         }, 200);
       } else {
         removeThumbsFromRegions();
       }
+    } else {
+      // When not in cue mode, make sure to clean up any thumbs
+      removeThumbsFromRegions();
     }
-  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions]);
+  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions, currentRegionsRef.current.length]);
 
-  // Only recreate regions if the number of cue points changes, not their values
+  // Recreate regions when mode changes or when relevant parameters change
   useEffect(() => {
     if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
-    if (mode === 'cue') {
-      if (prevCuePointsRef.current.length !== cuePoints.length) {
-        createRegions();
-        prevCuePointsRef.current = [...cuePoints];
-      }
-    } else if (shouldUpdateRegions) {
+    
+    // Check if we need to update regions
+    const modeChanged = prevModeRef.current !== mode;
+    const needsUpdate = modeChanged || shouldUpdateRegions || 
+      (mode === 'cue' && prevCuePointsRef.current.length !== cuePoints.length);
+    
+    if (needsUpdate) {
       createRegions();
+      // Update all refs to prevent unnecessary recreations
       prevLoopStartRef.current = loopStart;
       prevLoopEndRef.current = loopEnd;
       prevCuePointsRef.current = [...cuePoints];
       prevModeRef.current = mode;
     }
-  }, [wavesurfer, isReady, shouldUpdateRegions, cuePoints.length]);
+  }, [wavesurfer, isReady, shouldUpdateRegions, cuePoints.length, mode, createRegions, loopStart, loopEnd, cuePoints]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
@@ -435,14 +578,17 @@ const WaveformDisplay = ({
       const newMinPxPerSec = 20 * zoomLevel;
       wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       
-      const centerTime = currentTime || playbackTime || 0;
-      setTimeout(() => {
-        if (wavesurfer && isReady) {
-          wavesurfer.setTime(centerTime);
-        }
-      }, 100);
+      // Update container width to match new zoom level
+      if (containerRef.current) {
+        const duration = wavesurfer.getDuration();
+        const newWidth = duration * newMinPxPerSec;
+        containerRef.current.style.width = `${newWidth}px`;
+      }
+      
+      // Use improved centering with small delay for layout updates
+      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 10);
     }
-  }, [zoomLevel, wavesurfer, isReady]);
+  }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom]);
 
   // Optimized playhead update with throttling
   useEffect(() => {
@@ -463,6 +609,12 @@ const WaveformDisplay = ({
     }
   }, [playhead, wavesurfer, isReady]);
 
+  useEffect(() => {
+    if (wavesurfer && isReady && initialSetupDoneRef.current) {
+      setInternalShowMeasures(showMeasures || false);
+    }
+  }, [showMeasures, wavesurfer, isReady]);
+
   return (
     <div className="w-full box-border overflow-hidden relative">
       {!isReady && (
@@ -472,16 +624,23 @@ const WaveformDisplay = ({
       )}
 
       <div className={`transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
-        <div
-          key={audioUrl || 'no-url'}
-          ref={containerRef}
-          className="w-full box-border"
-          style={{ height: '120px' }}
-        />
-        <div
-          ref={timelineContainerRef}
-          className="w-full box-border h-5"
-        />
+        <div 
+          style={{ 
+            overflowX: 'auto', 
+            overflowY: 'hidden'
+          }}
+        >
+          <div
+            key={audioUrl || 'no-url'}
+            ref={containerRef}
+            className="w-full box-border"
+            style={{ 
+              height: '170px', 
+              minWidth: '100%',
+              position: 'relative'
+            }}
+          />
+        </div>
         
         {/* Measure Display Overlay */}
         {isReady && wavesurfer && (
@@ -494,7 +653,7 @@ const WaveformDisplay = ({
             timeSignature={timeSignature}
             onTimeSignatureChange={onTimeSignatureChange || (() => {})}
             firstMeasureTime={firstMeasureTime}
-            visible={showMeasures}
+            visible={internalShowMeasures}
           />
         )}
       </div>
@@ -504,7 +663,7 @@ const WaveformDisplay = ({
 
 const WaveformDisplayContainer = (props: WaveformDisplayProps) => {
   return (
-     <div className="w-full relative box-border overflow-hidden bg-gray-50" style={{ height: '140px' }}>
+     <div className="w-full relative box-border overflow-hidden bg-gray-50" style={{ height: '190px' }}>
        <WaveformDisplay {...props} />
      </div>
   );

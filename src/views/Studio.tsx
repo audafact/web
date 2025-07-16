@@ -45,6 +45,10 @@ const Studio = () => {
   const [showMeasures, setShowMeasures] = useState<{ [key: string]: boolean }>({});
   // Add state for showing cue thumbs
   const [showCueThumbs, setShowCueThumbs] = useState<{ [key: string]: boolean }>({});
+  // Add playback state tracking
+  const [playbackStates, setPlaybackStates] = useState<{ [key: string]: boolean }>({});
+  // Add accordion state for collapsible controls
+  const [expandedControls, setExpandedControls] = useState<{ [key: string]: boolean }>({});
 
   // --- Utility functions for localStorage ---
   const saveCuePointsToLocal = (trackId: string, cuePoints: number[]) => {
@@ -175,8 +179,8 @@ const Studio = () => {
           'secrets-of-the-heart': !!secretsSettings.showCueThumbs
         });
         setZoomLevels({
-          'ron-drums': ronSettings.zoomLevel || 0.25,
-          'secrets-of-the-heart': secretsSettings.zoomLevel || 0.25
+          'ron-drums': ronSettings.zoomLevel || 1,
+          'secrets-of-the-heart': secretsSettings.zoomLevel || 1
         });
         setPlaybackSpeeds({
           'ron-drums': ronSettings.playbackSpeed || 1,
@@ -185,6 +189,11 @@ const Studio = () => {
         setVolume({
           'ron-drums': ronSettings.volume || 1,
           'secrets-of-the-heart': secretsSettings.volume || 1
+        });
+        // Initialize accordion state (collapsed by default)
+        setExpandedControls({
+          'ron-drums': false,
+          'secrets-of-the-heart': false
         });
         
       } catch (error) {
@@ -211,7 +220,7 @@ const Studio = () => {
         firstMeasureTime: track.firstMeasureTime,
         showMeasures: showMeasures[track.id] || false,
         showCueThumbs: showCueThumbs[track.id] || false,
-        zoomLevel: zoomLevels[track.id] || 0.25,
+        zoomLevel: zoomLevels[track.id] || 1,
         playbackSpeed: playbackSpeeds[track.id] || 1,
         volume: volume[track.id] || 1
       };
@@ -324,9 +333,11 @@ const Studio = () => {
       // --- PATCH: Use trackId consistently for all state ---
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
       setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
-      setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 0.25 }));
+      setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: settings.playbackSpeed || 1 }));
       setVolume(prev => ({ ...prev, [trackId]: settings.volume || 1 }));
+      // Initialize accordion state (collapsed by default)
+      setExpandedControls(prev => ({ ...prev, [trackId]: false }));
     
     } catch (error) {
       console.error('Error loading audio file:', error);
@@ -413,14 +424,32 @@ const Studio = () => {
     );
   };
   
-  const handleModeChange = (mode: 'loop' | 'cue') => {
+  const handleModeChange = (trackId: string, mode: 'loop' | 'cue') => {
     if (!tracks) return;
     
     setTracks(prev => 
       prev.map(track => 
-        track ? { ...track, mode } : track
+        track && track.id === trackId ? { ...track, mode } : track
       )
     );
+    
+    // Handle state transitions when switching modes
+    if (mode === 'loop') {
+      // If switching to loop mode, clear cue track selection and hide cue thumbs
+      if (selectedCueTrackId === trackId) {
+        setSelectedCueTrackId(null);
+      }
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
+    } else if (mode === 'cue') {
+      // If switching to cue mode, show cue thumbs by default
+      // Only auto-select as active cue track if no other cue track is currently selected
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
+      
+      // Auto-select this track if no cue track is currently selected
+      if (!selectedCueTrackId) {
+        setSelectedCueTrackId(trackId);
+      }
+    }
   };
 
   // Add a function to handle play requests and ensure audio context is running
@@ -472,7 +501,7 @@ const Studio = () => {
   // Zoom functions
   const handleZoomIn = (trackId: string) => {
     setZoomLevels(prev => {
-      const currentZoom = prev[trackId] || 0.25;
+      const currentZoom = prev[trackId] || 1;
       const newZoom = Math.min(currentZoom * 2, 8);
       return { ...prev, [trackId]: newZoom };
     });
@@ -480,14 +509,14 @@ const Studio = () => {
 
   const handleZoomOut = (trackId: string) => {
     setZoomLevels(prev => {
-      const currentZoom = prev[trackId] || 0.25;
-      const newZoom = Math.max(currentZoom / 2, 0.25);
+      const currentZoom = prev[trackId] || 1;
+      const newZoom = Math.max(currentZoom / 2, 1);
       return { ...prev, [trackId]: newZoom };
     });
   };
 
   const handleResetZoom = (trackId: string) => {
-    setZoomLevels(prev => ({ ...prev, [trackId]: 0.25 }));
+    setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
   };
 
   // Handle tempo changes
@@ -505,6 +534,31 @@ const Studio = () => {
       ...prev,
       [trackId]: speed
     }));
+  };
+
+  // Handle playback state changes
+  const handlePlaybackStateChange = (trackId: string, isPlaying: boolean) => {
+    setPlaybackStates(prev => ({
+      ...prev,
+      [trackId]: isPlaying
+    }));
+  };
+
+  // Handle manual playhead position changes from waveform
+  const handlePlayheadChange = (trackId: string, time: number) => {
+    // Update the playback time for the track so TrackControls knows the new position
+    setPlaybackTimes(prev => ({
+      ...prev,
+      [trackId]: time
+    }));
+    
+    // Also update the appropriate playhead state
+    const track = tracks.find(t => t.id === trackId);
+    if (track?.mode === 'loop') {
+      setLoopPlayhead(time);
+    } else {
+      setSamplePlayhead(time);
+    }
   };
 
   // Handle time signature changes
@@ -568,6 +622,12 @@ const Studio = () => {
       return newShowMeasures;
     });
     
+    setExpandedControls(prev => {
+      const newExpandedControls = { ...prev };
+      delete newExpandedControls[trackId];
+      return newExpandedControls;
+    });
+    
     // Clear selection if this track was selected
     if (selectedCueTrackId === trackId) {
       setSelectedCueTrackId(null);
@@ -588,6 +648,14 @@ const Studio = () => {
   // Add handler for volume changes
   const handleVolumeChange = (trackId: string, newVolume: number) => {
     setVolume(prev => ({ ...prev, [trackId]: newVolume }));
+  };
+
+  // Add handler for toggling accordion controls
+  const handleToggleControls = (trackId: string) => {
+    setExpandedControls(prev => ({
+      ...prev,
+      [trackId]: !prev[trackId]
+    }));
   };
 
   // Welcome state when no tracks are loaded and not loading
@@ -673,26 +741,26 @@ const Studio = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
+    <div className="max-w-6xl mx-auto p-4 lg:p-6 space-y-6">
       {/* Add Track Button */}
       <div className="flex justify-end">
         <div className="relative inline-block">
           <button
             onClick={() => setShowModeSelector(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-md"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-md text-sm font-medium"
           >
             Add Track
           </button>
           
           {showModeSelector && (
-            <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-10">
+            <div className="absolute top-full right-0 mt-2 w-40 bg-white rounded-md shadow-lg border z-10">
               <button
                 onClick={() => {
                   setShowModeSelector(false);
                   setSelectedMode('loop');
                   document.getElementById('new-track-input')?.click();
                 }}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100 text-gray-700"
+                className="w-full text-left px-3 py-2 hover:bg-gray-100 text-gray-700 text-sm"
               >
                 Add Loop Track
               </button>
@@ -702,7 +770,7 @@ const Studio = () => {
                   setSelectedMode('cue');
                   document.getElementById('new-track-input')?.click();
                 }}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100 text-gray-700"
+                className="w-full text-left px-3 py-2 hover:bg-gray-100 text-gray-700 text-sm"
               >
                 Add Chop Track
               </button>
@@ -727,150 +795,237 @@ const Studio = () => {
 
       {/* Render all tracks */}
       {tracks.map((track) => (
-        <div key={track.id} className="p-6 rounded-lg border bg-white">
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex items-center space-x-4">
-              <h2 className={`text-xl font-medium ${track.mode === 'loop' ? 'text-indigo-600' : 'text-red-500'}`}>
-                {track.mode === 'loop' ? 'Loop Track' : 'Sample Track'}
-              </h2>
-              
-              {/* Zoom Controls */}
-              <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => handleZoomOut(track.id)}
-                  disabled={(zoomLevels[track.id] || 0.25) <= 0.25}
-                  className="p-1.5 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Zoom Out"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                  </svg>
-                </button>
+        <div key={track.id} className="rounded-lg border bg-white overflow-hidden">
+          {/* Consolidated Track Header */}
+          <div className="p-4 border-b bg-gray-50">
+            <div className="flex flex-col gap-3">
+              {/* Top Row: Title, Mode Switch, and File Info */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                              {/* Left side: Title and Mode Switch */}
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <h2 className={`text-lg font-medium truncate ${track.mode === 'loop' ? 'text-indigo-600' : 'text-red-500'}`}>
+                  {track.mode === 'loop' ? 'Loop Track' : 'Sample Track'}
+                </h2>
                 
-                <button
-                  onClick={() => handleResetZoom(track.id)}
-                  className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                    (zoomLevels[track.id] || 0.25) > 0.25
-                      ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' 
-                      : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                  }`}
-                  title="Reset Zoom"
-                >
-                  {(zoomLevels[track.id] || 0.25) === 0.25 ? 'Full' : `${(zoomLevels[track.id] || 0.25).toFixed(1)}x`}
-                </button>
+                {/* Compact Mode Switch */}
+                <div className="flex items-center bg-white rounded-md p-0.5 border">
+                  <button
+                    onClick={() => handleModeChange(track.id, 'loop')}
+                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      track.mode === 'loop'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Loop
+                  </button>
+                  <button
+                    onClick={() => handleModeChange(track.id, 'cue')}
+                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      track.mode === 'cue'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Chop
+                  </button>
+                </div>
+
+                {/* Cue Track Selection Indicator */}
+                {track.mode === 'cue' && (
+                  <button
+                    onClick={() => handleTrackSelect(track.id)}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      track.id === selectedCueTrackId
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 border border-gray-300'
+                    }`}
+                    title={track.id === selectedCueTrackId ? 'This track is selected for cue triggering' : 'Click to select this track for cue triggering'}
+                  >
+                    {track.id === selectedCueTrackId ? (
+                      <>
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Active for Cues
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                        </svg>
+                        Select for Cues
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
                 
+                {/* Right side: File name and controls */}
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <span className="truncate max-w-32 sm:max-w-48" title={track.file.name}>
+                    {track.file.name}
+                  </span>
+                  
+                  {/* Compact Zoom Controls */}
+                  <div className="flex items-center bg-white rounded border">
+                    <button
+                      onClick={() => handleZoomOut(track.id)}
+                      disabled={(zoomLevels[track.id] || 1) <= 1}
+                      className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Zoom Out"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                      </svg>
+                    </button>
+                    
+                    <button
+                      onClick={() => handleResetZoom(track.id)}
+                      className="px-1.5 py-1 text-xs border-x hover:bg-gray-100"
+                      title="Reset Zoom"
+                    >
+                      {(zoomLevels[track.id] || 1) === 1 ? '1x' : `${(zoomLevels[track.id] || 1).toFixed(1)}x`}
+                    </button>
+                    
+                    <button
+                      onClick={() => handleZoomIn(track.id)}
+                      disabled={(zoomLevels[track.id] || 1) >= 8}
+                      className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Zoom In"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleRemoveTrack(track.id)}
+                    className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                    title="Remove Track"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Row: Display Options and Controls Toggle */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {/* Display Options */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleToggleMeasures(track.id)}
+                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      showMeasures[track.id]
+                        ? 'bg-green-100 text-green-700 border border-green-300'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
+                  </button>
+                  
+                  {track.mode === 'cue' && (
+                    <button
+                      onClick={() => handleToggleCueThumbs(track.id)}
+                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                        showCueThumbs[track.id]
+                          ? 'bg-red-100 text-red-700 border border-red-300'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {showCueThumbs[track.id] ? 'Hide Cue Thumbs' : 'Show Cue Thumbs'}
+                    </button>
+                  )}
+
+                  {showMeasures[track.id] && (
+                    <div className="px-2 py-1 text-xs text-gray-600 bg-gray-100 rounded border">
+                      First measure: {track.firstMeasureTime.toFixed(2)}s
+                    </div>
+                  )}
+                </div>
+
+                {/* Controls Toggle */}
                 <button
-                  onClick={() => handleZoomIn(track.id)}
-                  disabled={(zoomLevels[track.id] || 0.25) >= 8}
-                  className="p-1.5 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Zoom In"
+                  onClick={() => handleToggleControls(track.id)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                  <span>Controls</span>
+                  <svg 
+                    className={`w-3 h-3 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
-              <span className="text-sm text-gray-500">{track.file.name}</span>
-              <button
-                onClick={() => handleRemoveTrack(track.id)}
-                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                title="Remove Track"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
           </div>
 
-          {/* Tempo Controls */}
-          <div className="mb-4">
-            <TempoControls
-              trackId={track.id}
-              initialTempo={track.tempo}
-              onTempoChange={handleTempoChange}
-              playbackSpeed={playbackSpeeds[track.id] || 1}
-              onSpeedChange={handleSpeedChange}
-            />
-          </div>
-
-          {/* Time Signature and Measure Controls */}
-          <div className="mb-4 space-y-3">
-            <TimeSignatureControls
-              timeSignature={track.timeSignature}
-              onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
-            />
-            
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => handleToggleMeasures(track.id)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  showMeasures[track.id]
-                    ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200'
-                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                {showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
-              </button>
-              
-              {showMeasures[track.id] && (
-                <div className="text-sm text-gray-600">
-                  First measure at: {track.firstMeasureTime.toFixed(2)}s
+          {/* Collapsible Controls Row */}
+          {expandedControls[track.id] && (
+            <div className="p-4 border-b bg-white">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Tempo Controls */}
+                <div className="space-y-2">
+                  <TempoControls
+                    trackId={track.id}
+                    initialTempo={track.tempo}
+                    onTempoChange={handleTempoChange}
+                    playbackSpeed={playbackSpeeds[track.id] || 1}
+                    onSpeedChange={handleSpeedChange}
+                  />
                 </div>
-              )}
-            {track.mode === 'cue' && (
-              <button
-                onClick={() => handleToggleCueThumbs(track.id)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  showCueThumbs[track.id]
-                    ? 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
-                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                {showCueThumbs[track.id] ? 'Hide Cue Thumbs' : 'Show Cue Thumbs'}
-              </button>
-            )}
-            </div>
-          </div>
 
-          <div 
-            className="bg-gray-50 rounded-lg overflow-hidden relative box-border" 
-            style={{ height: '140px' }}
-          >
-            {audioContext && (
-              <WaveformDisplay
-                audioFile={track.file}
-                mode={track.mode}
-                audioContext={audioContext}
-                loopStart={track.loopStart}
-                loopEnd={track.loopEnd}
-                cuePoints={track.cuePoints}
-                onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
-                onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
-                playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
-                playbackTime={playbackTimes[track.id] || 0}
-                zoomLevel={zoomLevels[track.id] || 0.25}
-                onZoomIn={() => handleZoomIn(track.id)}
-                onZoomOut={() => handleZoomOut(track.id)}
-                onResetZoom={() => handleResetZoom(track.id)}
-                trackId={track.id}
-                showMeasures={showMeasures[track.id]}
-                tempo={track.tempo}
-                timeSignature={track.timeSignature}
-                firstMeasureTime={track.firstMeasureTime}
-                onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
-                onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
-                showCueThumbs={showCueThumbs[track.id]}
-                volume={volume[track.id] || 1}
-                onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
-              />
-            )}
+                {/* Time Signature Controls */}
+                <div className="space-y-2">
+                  <TimeSignatureControls
+                    timeSignature={track.timeSignature}
+                    onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Waveform Display */}
+          <div className="bg-gray-50 relative" style={{ height: '140px' }}>
+            <WaveformDisplay
+              audioFile={track.file}
+              mode={track.mode}
+              audioContext={audioContext}
+              loopStart={track.loopStart}
+              loopEnd={track.loopEnd}
+              cuePoints={track.cuePoints}
+              onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+              onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
+              playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
+              playbackTime={playbackTimes[track.id] || 0}
+              zoomLevel={zoomLevels[track.id] || 1}
+              onZoomIn={() => handleZoomIn(track.id)}
+              onZoomOut={() => handleZoomOut(track.id)}
+              onResetZoom={() => handleResetZoom(track.id)}
+              trackId={track.id}
+              showMeasures={showMeasures[track.id]}
+              tempo={track.tempo}
+              timeSignature={track.timeSignature}
+              firstMeasureTime={track.firstMeasureTime}
+              onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
+              onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
+              showCueThumbs={showCueThumbs[track.id]}
+              volume={volume[track.id] || 1}
+              onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
+              isPlaying={playbackStates[track.id] || false}
+              onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
+            />
           </div>
 
           {/* Track Controls */}
-          {audioContext && (
+          <div className="p-4 relative z-10 bg-white">
             <TrackControls
               key={`controls-${track.id}`}
               mode={track.mode}
@@ -892,14 +1047,16 @@ const Studio = () => {
               volume={volume[track.id] || 1}
               onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
               playbackSpeed={playbackSpeeds[track.id] || 1}
+              onPlaybackStateChange={(isPlaying: boolean) => handlePlaybackStateChange(track.id, isPlaying)}
+              playbackTime={playbackTimes[track.id] || 0}
             />
-          )}
 
-          {track.mode === 'cue' && track.id === selectedCueTrackId && (
-            <div className="mt-4 bg-gray-100 p-3 rounded-md text-gray-700 text-sm">
-              Press keyboard number keys 1-0 to trigger the corresponding cue points.
-            </div>
-          )}
+            {track.mode === 'cue' && track.id === selectedCueTrackId && (
+              <div className="mt-3 bg-blue-50 p-2 rounded text-blue-700 text-xs">
+                Press keyboard keys 1-0 to trigger cue points
+              </div>
+            )}
+          </div>
         </div>
       ))}
     </div>
