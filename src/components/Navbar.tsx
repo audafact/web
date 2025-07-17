@@ -1,18 +1,24 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSidePanel } from '../context/SidePanelContext';
 import { supabase } from '../services/supabase';
 
 const Navbar = () => {
   const { user, loading } = useAuth();
+  const { toggleSidePanel } = useSidePanel();
+  const location = useLocation();
+  const isStudioPage = location.pathname === '/studio';
 
   return (
     <nav className="bg-white shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
-          {/* Logo/Brand */}
-          <Link to="/" className="flex items-center">
-            <span className="text-xl font-bold text-indigo-600">TrackStitch</span>
-          </Link>
+          {/* Left side: Logo/Brand only, no hamburger menu */}
+          <div className="flex items-center gap-4">
+            <Link to="/" className="flex items-center">
+              <span className="text-xl font-bold text-indigo-600">TrackStitch</span>
+            </Link>
+          </div>
 
           {/* Navigation Links */}
           <div className="hidden md:flex space-x-8">

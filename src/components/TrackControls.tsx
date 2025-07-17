@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 
 interface TrackControlsProps {
-  mode: 'loop' | 'cue';
+  mode: 'preview' | 'loop' | 'cue';
   audioContext: AudioContext | null;
   audioBuffer: AudioBuffer;
   loopStart: number;
@@ -12,7 +12,7 @@ interface TrackControlsProps {
   onCuePointChange: (index: number, time: number) => void;
   ensureAudio: (callback: () => void) => Promise<void>;
   setPlayhead: (time: number) => void;
-  trackColor?: 'indigo' | 'red';
+  trackColor?: 'indigo' | 'red' | 'blue';
   isSelected?: boolean;
   onSelect?: () => void;
   onPlaybackTimeChange?: (time: number) => void;
@@ -27,6 +27,8 @@ interface TrackControlsProps {
   onPlaybackStateChange?: (isPlaying: boolean) => void;
   // Add external playback time prop
   playbackTime?: number;
+  // Add disabled prop
+  disabled?: boolean;
 }
 
 const TrackControls = ({ 
@@ -50,7 +52,8 @@ const TrackControls = ({
   onVolumeChange,
   playbackSpeed = 1,
   onPlaybackStateChange,
-  playbackTime
+  playbackTime,
+  disabled = false
 }: TrackControlsProps) => {
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -408,13 +411,18 @@ const TrackControls = ({
   }, []);
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-sm space-y-3">
+    <div className={`bg-white p-4 rounded-lg shadow-sm space-y-3 ${disabled ? 'opacity-50' : ''}`}>
       {/* Top Row: Play Button and Track Selection (cue mode only) */}
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <button
             onClick={togglePlayback}
-            className="bg-indigo-600 text-white p-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            disabled={disabled}
+            className={`p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+              disabled 
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
           >
             {isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </button>
@@ -435,10 +443,13 @@ const TrackControls = ({
             )}
             <button
               onClick={onSelect}
+              disabled={disabled}
               className={`px-3 py-1 rounded text-sm ${
-                isSelected 
-                  ? 'bg-red-600 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                disabled
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                  : isSelected 
+                    ? 'bg-red-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               {isSelected ? 'Selected to Cue' : 'Select to Cue'}
@@ -457,11 +468,13 @@ const TrackControls = ({
             max="1"
             step="0.01"
             value={volume}
+            disabled={disabled}
             onChange={(e) => {
+              if (disabled) return;
               const newVolume = parseFloat(e.target.value);
               if (onVolumeChange) onVolumeChange(newVolume);
             }}
-            className="flex-1 h-1"
+            className={`flex-1 h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
           />
           <span className="text-xs text-gray-500 w-8">{Math.round(volume * 100)}</span>
         </div>
@@ -475,7 +488,9 @@ const TrackControls = ({
               max="2"
               step={getTempoSpeedRange().stepSize}
               value={speed}
+              disabled={disabled}
               onChange={(e) => {
+                if (disabled) return;
                 const newSpeed = parseFloat(e.target.value);
                 setSpeed(newSpeed);
                 currentSpeedRef.current = newSpeed;
@@ -483,17 +498,17 @@ const TrackControls = ({
                   onSpeedChange(newSpeed);
                 }
               }}
-              onMouseEnter={() => setIsSpeedSliderHovered(true)}
-              onMouseLeave={() => setIsSpeedSliderHovered(false)}
-              onMouseDown={() => setIsSpeedSliderDragging(true)}
-              onMouseUp={() => setIsSpeedSliderDragging(false)}
-              className="w-full h-1"
+              onMouseEnter={() => !disabled && setIsSpeedSliderHovered(true)}
+              onMouseLeave={() => !disabled && setIsSpeedSliderHovered(false)}
+              onMouseDown={() => !disabled && setIsSpeedSliderDragging(true)}
+              onMouseUp={() => !disabled && setIsSpeedSliderDragging(false)}
+              className={`w-full h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
               aria-label="Playback speed"
               aria-describedby={isSpeedSliderHovered || isSpeedSliderDragging ? "speed-tooltip" : undefined}
               aria-valuetext={`${speed.toFixed(2)}x speed`}
             />
             {/* Speed Tooltip */}
-            {(isSpeedSliderHovered || isSpeedSliderDragging) && (
+            {(isSpeedSliderHovered || isSpeedSliderDragging) && !disabled && (
               <div 
                 id="speed-tooltip"
                 role="tooltip"
@@ -524,11 +539,14 @@ const TrackControls = ({
             {cuePoints.map((point, index) => (
               <button
                 key={index}
-                onClick={() => playCuePoint(index)}
+                onClick={() => !disabled && playCuePoint(index)}
+                disabled={disabled}
                 className={`text-xs py-1 px-1 rounded ${
-                  activeCueIndex === index 
-                    ? 'bg-red-600 text-white' 
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  disabled
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : activeCueIndex === index 
+                      ? 'bg-red-600 text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                 }`}
               >
                 {index + 1}

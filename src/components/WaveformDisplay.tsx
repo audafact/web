@@ -7,7 +7,7 @@ import { TimeSignature } from '../types/music';
 
 interface WaveformDisplayProps {
   audioFile: File;
-  mode: 'loop' | 'cue';
+  mode: 'preview' | 'loop' | 'cue';
   audioContext: AudioContext | null;
   loopStart: number;
   loopEnd: number;
@@ -129,6 +129,11 @@ const WaveformDisplay = ({
       prevCuePointsRef.current.length !== cuePoints.length ||
       prevCuePointsRef.current.some((point, index) => point !== cuePoints[index])
     );
+    
+    // In preview mode, we don't need to update regions
+    if (mode === 'preview') {
+      return modeChanged;
+    }
     
     return modeChanged || loopChanged || cuePointsChanged;
   }, [mode, loopStart, loopEnd, cuePoints]);
@@ -619,7 +624,7 @@ const WaveformDisplay = ({
     <div className="w-full box-border overflow-hidden relative">
       {!isReady && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-500 bg-gray-50 z-10">
-          Loading waveform... {mode}
+          Loading waveform...
         </div>
       )}
 
