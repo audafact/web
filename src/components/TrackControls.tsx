@@ -426,6 +426,10 @@ const TrackControls = ({
           >
             {isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </button>
+          {/* Display current playback time and duration */}
+          <div className="text-center text-xs text-gray-500">
+            {currentTime.toFixed(2)}s / {audioBuffer.duration.toFixed(2)}s
+          </div>
           
           {mode === 'loop' && (
             <div className="text-sm text-gray-600">
@@ -555,11 +559,6 @@ const TrackControls = ({
           </div>
         </div>
       )}
-
-      {/* Display current playback time and duration */}
-      <div className="text-center text-xs text-gray-500">
-        {currentTime.toFixed(2)}s / {audioBuffer.duration.toFixed(2)}s
-      </div>
     </div>
   );
 };

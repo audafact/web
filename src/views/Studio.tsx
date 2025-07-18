@@ -410,11 +410,11 @@ const Studio = () => {
     // Relaxed thresholds: lower minimum movement, allow more horizontal drift
     const isVerticalGesture = absDeltaY > absDeltaX && absDeltaY > 10 && absDeltaX < 25;
     
-    if (isHorizontalGesture) {
-      // Prevent default only for horizontal gestures
-      e.preventDefault();
-      
-      if (e.deltaX > 0) {
+          if (isHorizontalGesture) {
+        // Prevent default only for horizontal gestures
+        e.preventDefault();
+        
+        if (e.deltaX > 0) {
         // Scrolling right - next track
         handleNextTrack();
       } else if (e.deltaX < 0) {
@@ -1060,7 +1060,7 @@ const Studio = () => {
           </div>
         </div>
       )}
-              {/* Render all tracks */}
+      {/* Render all tracks */}
         {tracks.map((track, index) => (
           <div 
             key={track.id} 
@@ -1083,23 +1083,23 @@ const Studio = () => {
           >
           {/* Add Track and Navigation Controls - Only show on first track */}
           {index === 0 && (
-            <div 
-              className="flex items-center justify-between bg-gray-50 border-b border-gray-200 py-1 px-2"
+          <div 
+            className="flex items-center justify-between bg-gray-50 border-b border-gray-200 py-1 px-2"
+          >
+            <button
+              onClick={handlePreviousTrack}
+              disabled={isTrackLoading || isWaveformLoading}
+              className={`p-2 rounded-full transition-all duration-200 ${
+                isTrackLoading || isWaveformLoading
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
+              }`}
+              title="Previous Track (Left Arrow)"
             >
-              <button
-                onClick={handlePreviousTrack}
-                disabled={isTrackLoading || isWaveformLoading}
-                className={`p-2 rounded-full transition-all duration-200 ${
-                  isTrackLoading || isWaveformLoading
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
-                }`}
-                title="Previous Track (Left Arrow)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
               
               {/* Add Track Button */}
               <button
@@ -1123,21 +1123,21 @@ const Studio = () => {
                 )}
               </button>
               
-              <button
-                onClick={handleNextTrack}
-                disabled={isTrackLoading || isWaveformLoading}
-                className={`p-2 rounded-full transition-all duration-200 ${
-                  isTrackLoading || isWaveformLoading
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
-                }`}
-                title="Next Track (Right Arrow)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
+            <button
+              onClick={handleNextTrack}
+              disabled={isTrackLoading || isWaveformLoading}
+              className={`p-2 rounded-full transition-all duration-200 ${
+                isTrackLoading || isWaveformLoading
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
+              }`}
+              title="Next Track (Right Arrow)"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
           )}
           {/* Consolidated Track Header */}
           <div className="p-4 border-b bg-gray-50">
@@ -1158,14 +1158,14 @@ const Studio = () => {
                       </span>
                     )}
                     
-                                        <h2 className={`text-lg font-medium truncate ${
-                      track.mode === 'loop' ? 'text-indigo-600' : 
-                      track.mode === 'cue' ? 'text-red-500' : 'text-blue-600'
-                    }`}>
-                      {track.mode === 'loop' ? 'Loop Track' : 
-                       track.mode === 'cue' ? 'Sample Track' : 'Preview Track'
-                      }
-                      </h2>
+                  <h2 className={`text-lg font-medium truncate ${
+                    track.mode === 'loop' ? 'text-indigo-600' : 
+                    track.mode === 'cue' ? 'text-red-500' : 'text-blue-600'
+                  }`}>
+                    {track.mode === 'loop' ? 'Loop Track' : 
+                     track.mode === 'cue' ? 'Sample Track' : 'Preview Track'
+                  }
+                  </h2>
                     
                     {/* Remove Track Button - only show if multiple tracks */}
                     {tracks.length > 1 && (
@@ -1185,16 +1185,16 @@ const Studio = () => {
                 <div className="flex items-center bg-white rounded-md p-0.5 border">
                   {/* Only show Preview button for the top track */}
                   {tracks.findIndex(t => t.id === track.id) === 0 ? (
-                    <button
-                      onClick={() => handleModeChange(track.id, 'preview')}
-                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'preview'
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'text-gray-600 hover:text-gray-800'
-                      }`}
-                    >
-                      Preview
-                    </button>
+                  <button
+                    onClick={() => handleModeChange(track.id, 'preview')}
+                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      track.mode === 'preview'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Preview
+                  </button>
                   ) : (
                     <span 
                       className="px-2 py-1 text-xs font-medium text-gray-400 cursor-not-allowed"
