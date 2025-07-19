@@ -140,10 +140,13 @@ const WaveformDisplay = ({
 
   // Effect to create/revoke Blob URL
   useEffect(() => {
+    console.log('WaveformDisplay - Creating blob URL for file:', audioFile.name, audioFile.size);
     const newUrl = URL.createObjectURL(audioFile);
     setAudioUrl(newUrl);
+    console.log('WaveformDisplay - Created blob URL:', newUrl);
 
     return () => {
+      console.log('WaveformDisplay - Revoking blob URL:', newUrl);
       URL.revokeObjectURL(newUrl);
     };
   }, [audioFile]);
@@ -178,6 +181,20 @@ const WaveformDisplay = ({
     autoplay: false,
     plugins: plugins,
   });
+
+  // Debug logging for wavesurfer state
+  useEffect(() => {
+    console.log('WaveformDisplay - audioUrl:', audioUrl);
+    console.log('WaveformDisplay - isReady:', isReady);
+    console.log('WaveformDisplay - wavesurfer:', !!wavesurfer);
+  }, [audioUrl, isReady, wavesurfer]);
+
+  // Debug logging for waveform loading
+  useEffect(() => {
+    console.log('WaveformDisplay - audioUrl:', audioUrl);
+    console.log('WaveformDisplay - isReady:', isReady);
+    console.log('WaveformDisplay - wavesurfer:', !!wavesurfer);
+  }, [audioUrl, isReady, wavesurfer]);
 
   // Track playback state internally
   useEffect(() => {

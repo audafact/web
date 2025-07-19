@@ -13,8 +13,19 @@ const Navbar = () => {
     <nav className="bg-white shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
-          {/* Left side: Logo/Brand only, no hamburger menu */}
+          {/* Left side: Hamburger menu and Logo/Brand */}
           <div className="flex items-center gap-4">
+            {/* Hamburger Menu Button */}
+            <button
+              onClick={toggleSidePanel}
+              className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-gray-100 rounded-md transition-colors"
+              aria-label="Toggle sidebar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            
             <Link to="/" className="flex items-center">
               <span className="text-xl font-bold text-indigo-600">TrackStitch</span>
             </Link>

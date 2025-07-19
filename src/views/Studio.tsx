@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAudioContext } from '../context/AudioContext';
+import { useSidePanel } from '../context/SidePanelContext';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
 import ModeSelector from '../components/ModeSelector';
 import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
+import SidePanel from '../components/SidePanel';
 import { TimeSignature } from '../types/music';
 
 // Import preloaded audio files
@@ -70,8 +72,20 @@ interface AudioAsset {
   duration?: number;
 }
 
+// Define UserTrack interface for uploaded tracks
+interface UserTrack {
+  id: string;
+  name: string;
+  file: File;
+  type: string;
+  size: string;
+  url: string;
+  uploadedAt: number;
+}
+
 const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
+  const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +129,6 @@ const Studio = () => {
   
   // Separate loading states
   const [isTrackLoading, setIsTrackLoading] = useState<boolean>(false);
-  const [isWaveformLoading, setIsWaveformLoading] = useState<boolean>(false);
 
   // --- Utility functions for localStorage ---
   const saveCuePointsToLocal = (trackId: string, cuePoints: number[]) => {
@@ -158,6 +171,14 @@ const Studio = () => {
     if (selected) setSelectedCueTrackId(selected);
   }, []);
 
+  // Note: We're not implementing localStorage persistence for studio tracks
+  // because:
+  // 1. Library tracks are already available in assets/audio directory
+  // 2. User-uploaded tracks are persisted in the sidebar's "My Tracks" section
+  // 3. Audio files are too large for localStorage (causes QuotaExceededError)
+  // 
+  // Instead, users can re-add tracks from the sidebar when needed
+
   // Monitor tracks to determine if we can add a new track
   useEffect(() => {
     if (tracks.length === 0) {
@@ -178,7 +199,7 @@ const Studio = () => {
     const loadRandomTrack = async () => {
       try {
         setIsTrackLoading(true);
-        setIsWaveformLoading(true);
+
         setError(null);
         
         // Select a random asset
@@ -255,18 +276,11 @@ const Studio = () => {
         
         // Track loading is complete
         setIsTrackLoading(false);
-        
-        // Waveform loading will be handled by the WaveformDisplay component
-        // We'll set a small delay to simulate waveform loading
-        setTimeout(() => {
-          setIsWaveformLoading(false);
-        }, 500);
       } catch (error) {
         console.error('Error loading random track:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
         setError(`Error loading track: ${errorMessage}`);
         setIsTrackLoading(false);
-        setIsWaveformLoading(false);
       }
     };
 
@@ -291,7 +305,7 @@ const Studio = () => {
 
   // Touch/swipe handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isTrackLoading || isWaveformLoading) return; // Disable during loading
+    if (isTrackLoading) return; // Disable during loading
     
     // Prevent browser navigation gestures from the start
     e.preventDefault();
@@ -303,7 +317,7 @@ const Studio = () => {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isTrackLoading || isWaveformLoading) return; // Disable during loading
+    if (isTrackLoading) return; // Disable during loading
     if (touchStartX === null || touchStartY === null) return;
     
     const currentX = e.targetTouches[0].clientX;
@@ -345,7 +359,7 @@ const Studio = () => {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (isTrackLoading || isWaveformLoading) return; // Disable during loading
+    if (isTrackLoading) return; // Disable during loading
     if (touchStartX === null || touchEndX === null || touchStartY === null || touchEndY === null) return;
     
     // Prevent any browser navigation
@@ -396,7 +410,7 @@ const Studio = () => {
 
   // Mouse wheel handler for track navigation and adding tracks
   const handleWheel = (e: React.WheelEvent) => {
-    if (isTrackLoading || isWaveformLoading) return; // Disable during loading
+    if (isTrackLoading) return; // Disable during loading
     
     const absDeltaX = Math.abs(e.deltaX);
     const absDeltaY = Math.abs(e.deltaY);
@@ -431,25 +445,25 @@ const Studio = () => {
 
   // Track navigation functions
   const handleNextTrack = useCallback(async () => {
-    if (isTrackLoading || isWaveformLoading) return; // Disable during loading
+    if (isTrackLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
     const nextIndex = (currentTrackIndex + 1) % audioAssets.length;
     await loadTrackByIndex(nextIndex);
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isWaveformLoading]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading]);
 
   const handlePreviousTrack = useCallback(async () => {
-    if (isTrackLoading || isWaveformLoading) return; // Disable during loading
+    if (isTrackLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
     const prevIndex = currentTrackIndex === 0 ? audioAssets.length - 1 : currentTrackIndex -1;
     await loadTrackByIndex(prevIndex);
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isWaveformLoading]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading]);
 
   const loadTrackByIndex = async (index: number) => {
     try {
       setIsTrackLoading(true);
-      setIsWaveformLoading(true);
+
       setError(null);
       
       const asset = audioAssets[index];
@@ -526,17 +540,13 @@ const Studio = () => {
       setIsTrackLoading(false);
       
       // Waveform loading will be handled by the WaveformDisplay component
-      // We'll set a small delay to simulate waveform loading
-      setTimeout(() => {
-        setIsWaveformLoading(false);
-      }, 500);
+      
     
     } catch (error) {
       console.error('Error loading track by index:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       setError(`Error loading track: ${errorMessage}`);
-      setIsTrackLoading(false);
-      setIsWaveformLoading(false);
+              setIsTrackLoading(false);
     }
   };
 
@@ -981,6 +991,232 @@ const Studio = () => {
     }));
   };
 
+  // SidePanel handlers
+  const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue') => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Use existing audio context if available
+      let context = audioContext;
+      if (!context) {
+        context = await initializeAudio();
+        setIsAudioInitialized(true);
+      } else if (context.state === 'suspended') {
+        await resumeAudioContext();
+      }
+
+      // Load the audio buffer
+      const buffer = await loadAudioBuffer(file, context);
+      
+      // Create a new track
+      const newTrack: Track = {
+        id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        file: file,
+        buffer: buffer,
+        mode: trackType,
+        loopStart: 0,
+        loopEnd: buffer.duration,
+        cuePoints: [],
+        tempo: 120,
+        timeSignature: { numerator: 4, denominator: 4 },
+        firstMeasureTime: 0,
+        showMeasures: false
+      };
+
+      // Add the track to the beginning of the tracks array
+      setTracks(prev => {
+        const updatedTracks = [newTrack, ...prev];
+        
+        // If the new track is in preview mode and there's an existing preview track, change it to cue mode
+        if (trackType === 'preview' && prev.length > 0 && prev[0].mode === 'preview') {
+          updatedTracks[1] = { ...prev[0], mode: 'cue' };
+        }
+        
+        return updatedTracks;
+      });
+      
+      // Initialize default values for the new track
+      setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
+      setZoomLevels(prev => ({ ...prev, [newTrack.id]: 1 }));
+      setPlaybackSpeeds(prev => ({ ...prev, [newTrack.id]: 1 }));
+      setVolume(prev => ({ ...prev, [newTrack.id]: lastUsedVolumeRef.current }));
+      setShowMeasures(prev => ({ ...prev, [newTrack.id]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
+      setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
+      setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      
+      // Set a small delay to simulate waveform loading
+      setTimeout(() => {
+        // setIsWaveformLoading(false); // This line was removed
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error uploading track:', error);
+      setError(error instanceof Error ? error.message : 'Failed to upload track');
+    } finally {
+      setIsLoading(false);
+      // setIsWaveformLoading(false); // This line was removed
+    }
+  };
+
+  const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue') => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Use existing audio context if available
+      let context = audioContext;
+      if (!context) {
+        context = await initializeAudio();
+        setIsAudioInitialized(true);
+      } else if (context.state === 'suspended') {
+        await resumeAudioContext();
+      }
+
+      // Fetch the audio file
+      const response = await fetch(asset.file);
+      const blob = await response.blob();
+      const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+      
+      // Create a File object from the blob
+      const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
+      
+      // Create a new track
+      const newTrack: Track = {
+        id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        file: file,
+        buffer: buffer,
+        mode: trackType,
+        loopStart: 0,
+        loopEnd: buffer.duration,
+        cuePoints: [],
+        tempo: 120,
+        timeSignature: { numerator: 4, denominator: 4 },
+        firstMeasureTime: 0,
+        showMeasures: false
+      };
+
+      console.log('Studio - Created new track from library:', {
+        id: newTrack.id,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        bufferDuration: buffer.duration
+      });
+
+      // Add the track to the beginning of the tracks array
+      setTracks(prev => {
+        const updatedTracks = [newTrack, ...prev];
+        
+        // If the new track is in preview mode and there's an existing preview track, change it to cue mode
+        if (trackType === 'preview' && prev.length > 0 && prev[0].mode === 'preview') {
+          updatedTracks[1] = { ...prev[0], mode: 'cue' };
+        }
+        
+        return updatedTracks;
+      });
+      
+      // Initialize default values for the new track
+      setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
+      setZoomLevels(prev => ({ ...prev, [newTrack.id]: 1 }));
+      setPlaybackSpeeds(prev => ({ ...prev, [newTrack.id]: 1 }));
+      setVolume(prev => ({ ...prev, [newTrack.id]: lastUsedVolumeRef.current }));
+      setShowMeasures(prev => ({ ...prev, [newTrack.id]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
+      setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
+      setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      
+      // Set a small delay to simulate waveform loading
+      setTimeout(() => {
+        // setIsWaveformLoading(false); // This line was removed
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error adding from library:', error);
+      setError(error instanceof Error ? error.message : 'Failed to add track from library');
+    } finally {
+      setIsLoading(false);
+      // setIsWaveformLoading(false); // This line was removed
+    }
+  };
+
+  const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue') => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Use existing audio context if available
+      let context = audioContext;
+      if (!context) {
+        context = await initializeAudio();
+        setIsAudioInitialized(true);
+      } else if (context.state === 'suspended') {
+        await resumeAudioContext();
+      }
+
+      // Load the audio buffer from the user track's file
+      const buffer = await loadAudioBuffer(userTrack.file, context);
+      
+      // Create a new track
+      const newTrack: Track = {
+        id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        file: userTrack.file,
+        buffer: buffer,
+        mode: trackType,
+        loopStart: 0,
+        loopEnd: buffer.duration,
+        cuePoints: [],
+        tempo: 120,
+        timeSignature: { numerator: 4, denominator: 4 },
+        firstMeasureTime: 0,
+        showMeasures: false
+      };
+
+      console.log('Studio - Created new track from user upload:', {
+        id: newTrack.id,
+        fileName: userTrack.file.name,
+        fileSize: userTrack.file.size,
+        fileType: userTrack.file.type,
+        bufferDuration: buffer.duration
+      });
+
+      // Add the track to the beginning of the tracks array
+      setTracks(prev => {
+        const updatedTracks = [newTrack, ...prev];
+        
+        // If the new track is in preview mode and there's an existing preview track, change it to cue mode
+        if (trackType === 'preview' && prev.length > 0 && prev[0].mode === 'preview') {
+          updatedTracks[1] = { ...prev[0], mode: 'cue' };
+        }
+        
+        return updatedTracks;
+      });
+      
+      // Initialize default values for the new track
+      setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
+      setZoomLevels(prev => ({ ...prev, [newTrack.id]: 1 }));
+      setPlaybackSpeeds(prev => ({ ...prev, [newTrack.id]: 1 }));
+      setVolume(prev => ({ ...prev, [newTrack.id]: lastUsedVolumeRef.current }));
+      setShowMeasures(prev => ({ ...prev, [newTrack.id]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
+      setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
+      setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      
+      // Set a small delay to simulate waveform loading
+      setTimeout(() => {
+        // setIsWaveformLoading(false); // This line was removed
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error adding user track:', error);
+      setError(error instanceof Error ? error.message : 'Failed to add user track');
+    } finally {
+      setIsLoading(false);
+      // setIsWaveformLoading(false); // This line was removed
+    }
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -1088,9 +1324,9 @@ const Studio = () => {
           >
             <button
               onClick={handlePreviousTrack}
-              disabled={isTrackLoading || isWaveformLoading}
+              disabled={isTrackLoading}
               className={`p-2 rounded-full transition-all duration-200 ${
-                isTrackLoading || isWaveformLoading
+                isTrackLoading
                   ? 'text-gray-400 cursor-not-allowed'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
               }`}
@@ -1104,9 +1340,9 @@ const Studio = () => {
               {/* Add Track Button */}
               <button
                 onClick={addNewTrack}
-                disabled={!canAddTrack || isAddingTrack || isTrackLoading || isWaveformLoading}
+                disabled={!canAddTrack || isAddingTrack || isTrackLoading}
                 className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
-                  !canAddTrack || isAddingTrack || isTrackLoading || isWaveformLoading
+                  !canAddTrack || isAddingTrack || isTrackLoading
                     ? 'text-gray-400 cursor-not-allowed'
                     : 'text-green-600 hover:text-green-700 hover:bg-white shadow-sm'
                 } ${addTrackAnimation ? 'animate-pulse' : ''}`}
@@ -1125,9 +1361,9 @@ const Studio = () => {
               
             <button
               onClick={handleNextTrack}
-              disabled={isTrackLoading || isWaveformLoading}
+              disabled={isTrackLoading}
               className={`p-2 rounded-full transition-all duration-200 ${
-                isTrackLoading || isWaveformLoading
+                isTrackLoading
                   ? 'text-gray-400 cursor-not-allowed'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
               }`}
@@ -1378,43 +1614,34 @@ const Studio = () => {
 
           {/* Waveform Display */}
           <div className="bg-gray-50 relative" style={{ height: '140px' }}>
-            {isWaveformLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-2"></div>
-                  <p className="text-sm text-gray-600">Loading waveform...</p>
-                </div>
-              </div>
-            ) : (
-              <WaveformDisplay
-                audioFile={track.file}
-                mode={track.mode}
-                audioContext={audioContext}
-                loopStart={track.loopStart}
-                loopEnd={track.loopEnd}
-                cuePoints={track.cuePoints}
-                onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
-                onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
-                playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
-                playbackTime={playbackTimes[track.id] || 0}
-                zoomLevel={zoomLevels[track.id] || 1}
-                onZoomIn={() => handleZoomIn(track.id)}
-                onZoomOut={() => handleZoomOut(track.id)}
-                onResetZoom={() => handleResetZoom(track.id)}
-                trackId={track.id}
-                showMeasures={showMeasures[track.id]}
-                tempo={track.tempo}
-                timeSignature={track.timeSignature}
-                firstMeasureTime={track.firstMeasureTime}
-                onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
-                onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
-                showCueThumbs={showCueThumbs[track.id]}
-                volume={volume[track.id] || 1}
-                onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
-                isPlaying={playbackStates[track.id] || false}
-                onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
-              />
-            )}
+            <WaveformDisplay
+              audioFile={track.file}
+              mode={track.mode}
+              audioContext={audioContext}
+              loopStart={track.loopStart}
+              loopEnd={track.loopEnd}
+              cuePoints={track.cuePoints}
+              onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+              onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
+              playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
+              playbackTime={playbackTimes[track.id] || 0}
+              zoomLevel={zoomLevels[track.id] || 1}
+              onZoomIn={() => handleZoomIn(track.id)}
+              onZoomOut={() => handleZoomOut(track.id)}
+              onResetZoom={() => handleResetZoom(track.id)}
+              trackId={track.id}
+              showMeasures={showMeasures[track.id]}
+              tempo={track.tempo}
+              timeSignature={track.timeSignature}
+              firstMeasureTime={track.firstMeasureTime}
+              onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
+              onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
+              showCueThumbs={showCueThumbs[track.id]}
+              volume={volume[track.id] || 1}
+              onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
+              isPlaying={playbackStates[track.id] || false}
+              onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
+            />
           </div>
 
           {/* Track Controls */}
@@ -1442,7 +1669,7 @@ const Studio = () => {
               playbackSpeed={playbackSpeeds[track.id] || 1}
               onPlaybackStateChange={(isPlaying: boolean) => handlePlaybackStateChange(track.id, isPlaying)}
               playbackTime={playbackTimes[track.id] || 0}
-              disabled={isWaveformLoading}
+              disabled={false}
             />
 
             {track.mode === 'cue' && track.id === selectedCueTrackId && (
@@ -1453,6 +1680,16 @@ const Studio = () => {
           </div>
         </div>
       ))}
+
+      {/* SidePanel */}
+      <SidePanel
+        isOpen={isSidePanelOpen}
+        onToggle={toggleSidePanel}
+        onUploadTrack={handleUploadTrack}
+        onAddFromLibrary={handleAddFromLibrary}
+        onAddUserTrack={handleAddUserTrack}
+        isLoading={isLoading}
+      />
     </div>
   );
 };
