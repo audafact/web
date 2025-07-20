@@ -140,13 +140,10 @@ const WaveformDisplay = ({
 
   // Effect to create/revoke Blob URL
   useEffect(() => {
-    console.log('WaveformDisplay - Creating blob URL for file:', audioFile.name, audioFile.size);
     const newUrl = URL.createObjectURL(audioFile);
     setAudioUrl(newUrl);
-    console.log('WaveformDisplay - Created blob URL:', newUrl);
 
     return () => {
-      console.log('WaveformDisplay - Revoking blob URL:', newUrl);
       URL.revokeObjectURL(newUrl);
     };
   }, [audioFile]);
@@ -182,19 +179,7 @@ const WaveformDisplay = ({
     plugins: plugins,
   });
 
-  // Debug logging for wavesurfer state
-  useEffect(() => {
-    console.log('WaveformDisplay - audioUrl:', audioUrl);
-    console.log('WaveformDisplay - isReady:', isReady);
-    console.log('WaveformDisplay - wavesurfer:', !!wavesurfer);
-  }, [audioUrl, isReady, wavesurfer]);
 
-  // Debug logging for waveform loading
-  useEffect(() => {
-    console.log('WaveformDisplay - audioUrl:', audioUrl);
-    console.log('WaveformDisplay - isReady:', isReady);
-    console.log('WaveformDisplay - wavesurfer:', !!wavesurfer);
-  }, [audioUrl, isReady, wavesurfer]);
 
   // Track playback state internally
   useEffect(() => {
@@ -439,7 +424,7 @@ const WaveformDisplay = ({
 
       currentRegionsRef.current = newRegions;
     }
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, onLoopPointsChange, onCuePointChange, trackId, showCueThumbs]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs]);
 
   // Improved function to add thumb element to a region
   // Alternative approach: Use WaveSurfer's internal region management
@@ -545,7 +530,7 @@ const WaveformDisplay = ({
       // When not in cue mode, make sure to clean up any thumbs
       removeThumbsFromRegions();
     }
-  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions, currentRegionsRef.current.length]);
+  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions]);
 
   // Recreate regions when mode changes or when relevant parameters change
   useEffect(() => {
@@ -564,7 +549,7 @@ const WaveformDisplay = ({
       prevCuePointsRef.current = [...cuePoints];
       prevModeRef.current = mode;
     }
-  }, [wavesurfer, isReady, shouldUpdateRegions, cuePoints.length, mode, createRegions, loopStart, loopEnd, cuePoints]);
+  }, [wavesurfer, isReady, shouldUpdateRegions, cuePoints.length, mode, loopStart, loopEnd, cuePoints]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
@@ -592,7 +577,7 @@ const WaveformDisplay = ({
       prevCuePointsRef.current = [...cuePoints];
       prevModeRef.current = mode;
     }
-  }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime]);
+  }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode]);
 
   // Effect to handle zoom changes
   useEffect(() => {
