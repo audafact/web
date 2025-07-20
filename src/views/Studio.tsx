@@ -992,7 +992,7 @@ const Studio = () => {
   };
 
   // SidePanel handlers
-  const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue') => {
+  const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
     try {
       setIsLoading(true);
       setError(null);
@@ -1060,7 +1060,7 @@ const Studio = () => {
     }
   };
 
-  const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue') => {
+  const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
     try {
       setIsLoading(true);
       setError(null);
@@ -1141,7 +1141,7 @@ const Studio = () => {
     }
   };
 
-  const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue') => {
+  const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
     try {
       setIsLoading(true);
       setError(null);
