@@ -570,8 +570,8 @@ const TrackControls = ({
   }, []);
 
   return (
-    <div className={`bg-white p-4 rounded-lg shadow-sm space-y-3 ${disabled ? 'opacity-50' : ''}`}>
-      {/* Top Row: Play Button and Track Selection (cue mode only) */}
+    <div className={`bg-white p-4 rounded-lg shadow-sm space-y-4 ${disabled ? 'opacity-50' : ''}`}>
+      {/* Playback Controls */}
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <button
@@ -621,34 +621,42 @@ const TrackControls = ({
         )}
       </div>
 
-      {/* Volume and Speed Controls Row */}
-      <div className="flex items-center space-x-6">
-        <div className="flex items-center space-x-2 flex-1">
-          <label className="text-xs text-gray-600 w-12">Vol:</label>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            disabled={disabled}
-            onChange={(e) => {
-              if (disabled) return;
-              const newVolume = parseFloat(e.target.value);
-              if (onVolumeChange) onVolumeChange(newVolume);
-            }}
-            className={`flex-1 h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-          />
-          <span className="text-xs text-gray-500 w-8">{Math.round(volume * 100)}</span>
-        </div>
-
-        <div className="flex items-center space-x-2 flex-1">
-          <label className="text-xs text-gray-600 w-12">Speed:</label>
-          <div className="flex-1 relative">
+      {/* Volume and Speed Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Volume Control */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">Volume</label>
+          <div className="flex items-center space-x-3">
             <input
               type="range"
-              min="0.5"
-              max="2"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              disabled={disabled}
+              onChange={(e) => {
+                if (disabled) return;
+                const newVolume = parseFloat(e.target.value);
+                if (onVolumeChange) onVolumeChange(newVolume);
+              }}
+              className={`flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+                disabled ? 'cursor-not-allowed opacity-50' : ''
+              }`}
+            />
+            <span className="text-sm text-gray-600 w-12">{Math.round(volume * 100)}%</span>
+          </div>
+        </div>
+
+        {/* Speed Control */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-700">
+            Playback Speed: {speed.toFixed(2)}x
+          </label>
+          <div className="flex items-center space-x-3">
+            <input
+              type="range"
+              min={getTempoSpeedRange().minTempo / trackTempo}
+              max={getTempoSpeedRange().maxTempo / trackTempo}
               step={getTempoSpeedRange().stepSize}
               value={speed}
               disabled={disabled}
@@ -657,114 +665,106 @@ const TrackControls = ({
                 const newSpeed = parseFloat(e.target.value);
                 setSpeed(newSpeed);
                 currentSpeedRef.current = newSpeed;
-                if (onSpeedChange) {
-                  onSpeedChange(newSpeed);
-                }
+                if (onSpeedChange) onSpeedChange(newSpeed);
               }}
-              onMouseEnter={() => !disabled && setIsSpeedSliderHovered(true)}
-              onMouseLeave={() => !disabled && setIsSpeedSliderHovered(false)}
-              onMouseDown={() => !disabled && setIsSpeedSliderDragging(true)}
-              onMouseUp={() => !disabled && setIsSpeedSliderDragging(false)}
-              className={`w-full h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-              aria-label="Playback speed"
-              aria-describedby={isSpeedSliderHovered || isSpeedSliderDragging ? "speed-tooltip" : undefined}
-              aria-valuetext={`${speed.toFixed(2)}x speed`}
+              className={`flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+                disabled ? 'cursor-not-allowed opacity-50' : ''
+              }`}
             />
-            {/* Speed Tooltip */}
-            {(isSpeedSliderHovered || isSpeedSliderDragging) && !disabled && (
-              <div 
-                id="speed-tooltip"
-                role="tooltip"
-                aria-hidden="false"
-                className="absolute bottom-6 bg-gray-800 text-white text-xs px-2 py-1 rounded pointer-events-none z-10 transform -translate-x-1/2"
-                style={{
-                  left: `${((speed - 0.5) / 1.5) * 100}%`
-                }}
-              >
-                {speed.toFixed(2)}x
-              </div>
-            )}
-          </div>
-          <span className="text-xs text-gray-500 w-20">
-            {getCurrentEffectiveTempo()} BPM
-            <span className="block text-xs text-gray-400">
-              {getTempoSpeedRange().minTempo}-{getTempoSpeedRange().maxTempo}
+            <span className="text-sm text-gray-600 w-16">
+              {getCurrentEffectiveTempo()} BPM
             </span>
-          </span>
+          </div>
         </div>
       </div>
 
-      {/* Filter Controls Row */}
-      <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="filter-enabled"
-            checked={filterEnabled || false}
-            disabled={disabled}
-            onChange={(e) => {
-              if (disabled) return;
-              handleFilterEnabledChange(e.target.checked);
-            }}
-            className={`w-4 h-4 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-          />
-          <label htmlFor="filter-enabled" className={`text-xs ${disabled ? 'text-gray-400' : 'text-gray-600'}`}>
-            Filters
-          </label>
+      {/* Filter Controls */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => handleFilterEnabledChange(!filterEnabled)}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+          >
+            <span>Audio Filters</span>
+            <svg 
+              className={`w-3 h-3 transition-transform ${filterEnabled ? 'rotate-180' : ''}`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
         </div>
 
-        {(filterEnabled || false) && (
-          <>
-            <div className="flex items-center space-x-2 flex-1">
-              <label className="text-xs text-gray-600 w-12">LP:</label>
-              <input
-                type="range"
-                min="20"
-                max="20000"
-                step="1"
-                value={lowpassFreq || 20000}
-                disabled={disabled}
-                onChange={(e) => {
-                  if (disabled) return;
-                  const freq = parseInt(e.target.value);
-                  handleLowpassFreqChange(freq);
-                }}
-                className={`flex-1 h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-              />
-              <span className="text-xs text-gray-500 w-12">
-                {(lowpassFreq || 20000) >= 1000 
-                  ? `${((lowpassFreq || 20000) / 1000).toFixed(1)}k` 
-                  : (lowpassFreq || 20000)}Hz
-              </span>
-            </div>
+        {filterEnabled && (
+          <div className="p-4 border-b bg-white">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">
+                    Low Pass Filter: {(lowpassFreq || 20000) >= 1000 
+                      ? `${((lowpassFreq || 20000) / 1000).toFixed(1)}kHz` 
+                      : `${(lowpassFreq || 20000)}Hz`}
+                  </label>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="20000"
+                  step="1"
+                  value={lowpassFreq || 20000}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    if (disabled) return;
+                    const freq = parseInt(e.target.value);
+                    handleLowpassFreqChange(freq);
+                  }}
+                  className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+                    disabled ? 'cursor-not-allowed opacity-50' : ''
+                  }`}
+                />
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>20Hz</span>
+                  <span>20kHz</span>
+                </div>
+              </div>
 
-            <div className="flex items-center space-x-2 flex-1">
-              <label className="text-xs text-gray-600 w-12">HP:</label>
-              <input
-                type="range"
-                min="20"
-                max="20000"
-                step="1"
-                value={highpassFreq || 20}
-                disabled={disabled}
-                onChange={(e) => {
-                  if (disabled) return;
-                  const freq = parseInt(e.target.value);
-                  handleHighpassFreqChange(freq);
-                }}
-                className={`flex-1 h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-              />
-              <span className="text-xs text-gray-500 w-12">
-                {(highpassFreq || 20) >= 1000 
-                  ? `${((highpassFreq || 20) / 1000).toFixed(1)}k` 
-                  : (highpassFreq || 20)}Hz
-              </span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">
+                    High Pass Filter: {(highpassFreq || 20) >= 1000 
+                      ? `${((highpassFreq || 20) / 1000).toFixed(1)}kHz` 
+                      : `${(highpassFreq || 20)}Hz`}
+                  </label>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="20000"
+                  step="1"
+                  value={highpassFreq || 20}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    if (disabled) return;
+                    const freq = parseInt(e.target.value);
+                    handleHighpassFreqChange(freq);
+                  }}
+                  className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+                    disabled ? 'cursor-not-allowed opacity-50' : ''
+                  }`}
+                />
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>20Hz</span>
+                  <span>20kHz</span>
+                </div>
+              </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {/* Cue Point Controls - only show in cue mode */}
+      {/* Cue Point Controls */}
       {mode === 'cue' && (
         <div>
           <h4 className="text-xs font-medium mb-2 text-gray-600">Cue Points</h4>
