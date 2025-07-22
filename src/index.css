@@ -8,12 +8,15 @@
 @layer base {
   html {
     font-family: "Inter", sans-serif;
+    overscroll-behavior: none;
   }
 
   body {
     background-color: #0a0d14;
     color: #ffffff;
     font-family: "Inter", sans-serif;
+    overscroll-behavior: none;
+    overflow-x: hidden;
   }
 }
 

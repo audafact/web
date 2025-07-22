@@ -10,8 +10,8 @@ const Navbar = () => {
   const isStudioPage = location.pathname === '/studio';
 
   return (
-    <nav className="bg-audafact-surface-1 border-b border-audafact-divider shadow-card">
-      <div className="container mx-auto px-4">
+    <nav className="sticky top-0 bg-audafact-surface-1 border-b border-audafact-divider shadow-card z-50">
+      <div className="w-full px-8">
         <div className="flex justify-between items-center h-16">
           {/* Left side: Hamburger menu and Logo/Brand */}
           <div className="flex items-center gap-4">

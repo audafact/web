@@ -274,13 +274,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Mobile overlay */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+          className="fixed top-9 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 md:hidden"
           onClick={onToggle}
         />
       )}
       
       {/* Sidebar */}
-      <div className={`fixed top-0 left-0 h-full bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
+      <div className={`fixed top-9 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`} style={{ width: '100vw', maxWidth: '400px' }}>
         {/* Header */}
