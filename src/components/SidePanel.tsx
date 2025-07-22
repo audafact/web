@@ -280,17 +280,17 @@ const SidePanel: React.FC<SidePanelProps> = ({
       )}
       
       {/* Sidebar */}
-      <div className={`fixed top-0 left-0 h-full bg-white border-r border-gray-200 shadow-lg transition-transform duration-300 ease-in-out z-50 ${
+      <div className={`fixed top-0 left-0 h-full bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`} style={{ width: '100vw', maxWidth: '400px' }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between p-4 border-b border-audafact-divider">
+          <h2 className="text-lg font-semibold audafact-heading">
             Audio Library
           </h2>
           <button
             onClick={onToggle}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+            className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -299,26 +299,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200">
+        <div className="flex border-b border-audafact-divider">
           <button
             onClick={() => setActiveTab('my-tracks')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
               activeTab === 'my-tracks'
-                ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                ? 'text-audafact-accent-cyan border-b-2 border-audafact-accent-cyan bg-audafact-surface-2'
+                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
             }`}
           >
             My Tracks
           </button>
           <button
             onClick={() => setActiveTab('library')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
               activeTab === 'library'
-                ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                ? 'text-audafact-accent-cyan border-b-2 border-audafact-accent-cyan bg-audafact-surface-2'
+                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
             }`}
           >
-            TrackStitch Library
+            Audafact Library
           </button>
         </div>
 
@@ -327,10 +327,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
           {activeTab === 'my-tracks' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-md font-medium text-gray-900">My Uploaded Tracks</h3>
+                <h3 className="text-md font-medium audafact-heading">My Uploaded Tracks</h3>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  className="px-3 py-1 text-sm audafact-button-primary"
                 >
                   Upload Track
                 </button>
@@ -338,15 +338,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
               {userTracks.length === 0 ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400 mb-4">
+                  <div className="text-audafact-text-secondary mb-4">
                     <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                   </div>
-                  <p className="text-gray-600 mb-4">No tracks uploaded yet</p>
+                  <p className="audafact-text-secondary mb-4">No tracks uploaded yet</p>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                    className="audafact-button-primary"
                   >
                     Upload Your First Track
                   </button>
@@ -361,7 +361,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         e.dataTransfer.setData('text/plain', track.id);
                         e.dataTransfer.effectAllowed = 'copy';
                       }}
-                      className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -371,7 +371,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               e.stopPropagation();
                               handlePreviewPlay(track, true);
                             }}
-                            className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                             title={playingAssets[track.id] ? 'Pause Preview' : 'Play Preview'}
                           >
                             {playingAssets[track.id] ? (
@@ -387,8 +387,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
                           {/* Track Info */}
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-gray-900 truncate">{track.name}</h4>
-                            <p className="text-sm text-gray-500">
+                            <h4 className="font-medium audafact-text-primary truncate">{track.name}</h4>
+                            <p className="text-sm audafact-text-secondary">
                               {track.type ? track.type.split('/')[1]?.toUpperCase() || 'AUDIO' : 'AUDIO'} • {track.size}
                             </p>
                           </div>
@@ -402,7 +402,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               e.stopPropagation();
                               handleAddTrack(track, true);
                             }}
-                            className="flex-shrink-0 p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                            className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                             title="Add to Studio"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -416,7 +416,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               e.stopPropagation();
                               handleRemoveUserTrack(track.id);
                             }}
-                            className="flex-shrink-0 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                             title="Remove Track"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -435,11 +435,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
           {activeTab === 'library' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-md font-medium text-gray-900">Available Tracks</h3>
+                <h3 className="text-md font-medium audafact-heading">Available Tracks</h3>
               </div>
 
               <div className="space-y-3">
-                <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                <div className="text-sm audafact-text-secondary bg-audafact-surface-2 p-2 rounded">
                   Click the play button to preview, or drag tracks to the drop zone. Click the + icon to add tracks (defaults to preview mode).
                 </div>
                 {audioAssets.map((asset) => (
@@ -450,7 +450,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                       e.dataTransfer.setData('text/plain', asset.id);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
-                    className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -460,7 +460,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             e.stopPropagation();
                             handlePreviewPlay(asset, false);
                           }}
-                          className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                          className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                           title={playingAssets[asset.id] ? 'Pause Preview' : 'Play Preview'}
                         >
                           {playingAssets[asset.id] ? (
@@ -476,8 +476,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
                         {/* Track Info */}
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-gray-900 truncate">{asset.name}</h4>
-                          <p className="text-sm text-gray-500">{asset.type.toUpperCase()} • {asset.size}</p>
+                          <h4 className="font-medium audafact-text-primary truncate">{asset.name}</h4>
+                          <p className="text-sm audafact-text-secondary">{asset.type.toUpperCase()} • {asset.size}</p>
                         </div>
                       </div>
 
@@ -487,7 +487,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           e.stopPropagation();
                           handleAddTrack(asset, false);
                         }}
-                        className="flex-shrink-0 p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                        className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                         title="Add to Studio (Preview Mode)"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

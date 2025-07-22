@@ -47,11 +47,11 @@ const TimeSignatureControls = ({
   };
 
   return (
-    <div className="flex items-center space-x-4 p-3 bg-gray-50 rounded-lg border">
+    <div className="flex items-center space-x-4 p-3 audafact-card">
       {/* Time Signature Label */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700">Time Signature</label>
-        <span className="text-xs text-gray-500">Beats per measure</span>
+        <label className="text-sm font-medium audafact-heading">Time Signature</label>
+        <span className="text-xs audafact-text-secondary">Beats per measure</span>
       </div>
 
       {/* Custom Time Signature Input */}
@@ -62,16 +62,16 @@ const TimeSignatureControls = ({
           max="32"
           value={timeSignature.numerator}
           onChange={(e) => handleNumeratorChange(e.target.value)}
-          className="w-12 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-center"
+          className="w-12 px-2 py-1 text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent text-center"
         />
-        <span className="text-sm text-gray-600">/</span>
+        <span className="text-sm audafact-text-secondary">/</span>
         <input
           type="number"
           min="1"
           max="32"
           value={timeSignature.denominator}
           onChange={(e) => handleDenominatorChange(e.target.value)}
-          className="w-12 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-center"
+          className="w-12 px-2 py-1 text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent text-center"
         />
       </div>
 
@@ -79,18 +79,18 @@ const TimeSignatureControls = ({
       <div className="relative">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+          className="px-3 py-1.5 text-sm font-medium bg-audafact-surface-2 text-audafact-text-secondary border border-audafact-divider rounded-md hover:bg-audafact-divider hover:text-audafact-text-primary transition-colors duration-200"
         >
           Common
         </button>
         
         {isOpen && (
-          <div className="absolute top-full left-0 mt-1 w-40 bg-white rounded-md shadow-lg border z-10">
+          <div className="absolute top-full left-0 mt-1 w-40 bg-audafact-surface-1 rounded-md shadow-card border border-audafact-divider z-10">
             {commonTimeSignatures.map((ts) => (
               <button
                 key={ts.label}
                 onClick={() => handleCommonTimeSignatureSelect(ts)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 text-gray-700"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-audafact-surface-2 text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
               >
                 {ts.label}
               </button>
@@ -101,10 +101,10 @@ const TimeSignatureControls = ({
 
       {/* Current Time Signature Display */}
       <div className="flex flex-col">
-        <span className="text-sm font-medium text-indigo-600">
+        <span className="text-sm font-medium audafact-accent-cyan">
           {timeSignature.numerator}/{timeSignature.denominator}
         </span>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs audafact-text-secondary">
           {timeSignature.numerator} beats per measure
         </span>
 

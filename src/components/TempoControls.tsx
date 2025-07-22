@@ -170,11 +170,11 @@ const TempoControls = ({
   };
 
   return (
-    <div className="flex items-center space-x-4 p-3 bg-gray-50 rounded-lg border">
+    <div className="flex items-center space-x-4 p-3 audafact-card">
       {/* Tempo Label */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700">Original Tempo</label>
-        <span className="text-xs text-gray-500">BPM</span>
+        <label className="text-sm font-medium audafact-heading">Original Tempo</label>
+        <span className="text-xs audafact-text-secondary">BPM</span>
       </div>
 
       {/* Manual Tempo Input */}
@@ -186,15 +186,15 @@ const TempoControls = ({
           value={tempoInput}
           onChange={(e) => handleTempoInputChange(e.target.value)}
           onBlur={handleTempoInputBlur}
-          className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          className="w-16 px-2 py-1 text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent"
           disabled={isTapTempoActive}
         />
-        <span className="text-sm text-gray-600">→</span>
+        <span className="text-sm audafact-text-secondary">→</span>
         <div className="flex flex-col">
-          <span className="text-sm font-medium text-indigo-600">
+          <span className="text-sm font-medium audafact-accent-cyan">
             {Math.round(effectiveTempo)} BPM
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs audafact-text-secondary">
             Speed: {playbackSpeed.toFixed(2)}x
           </span>
         </div>
@@ -203,10 +203,10 @@ const TempoControls = ({
       {/* Tap Tempo Button */}
       <button
         onClick={toggleTapTempo}
-        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors duration-200 ${
           isTapTempoActive
-            ? 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
-            : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
+            ? 'bg-audafact-alert-red text-audafact-text-primary border border-audafact-alert-red hover:bg-opacity-90'
+            : 'bg-audafact-surface-2 text-audafact-text-secondary border border-audafact-divider hover:bg-audafact-divider hover:text-audafact-text-primary'
         }`}
         title={isTapTempoActive ? 'Click to stop tap tempo' : 'Click to start tap tempo'}
       >
@@ -217,10 +217,10 @@ const TempoControls = ({
       {isTapTempoActive && (
         <div className="flex items-center space-x-2">
           <div className="flex items-center space-x-1">
-            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-red-600 font-medium">Active</span>
+            <div className="w-2 h-2 bg-audafact-alert-red rounded-full animate-pulse"></div>
+            <span className="text-sm text-audafact-alert-red font-medium">Active</span>
           </div>
-          <span className="text-sm text-gray-600">
+          <span className="text-sm audafact-text-secondary">
             {tapCount > 0 ? `Taps: ${tapCount}` : 'Press Spacebar to tap'}
           </span>
         </div>

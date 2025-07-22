@@ -10,6 +10,7 @@ interface MeasureDisplayProps {
   onTimeSignatureChange: (timeSignature: TimeSignature) => void;
   firstMeasureTime: number;
   visible?: boolean;
+  containerRef?: React.RefObject<HTMLDivElement>;
 }
 
 const MeasureDisplay = ({
@@ -20,12 +21,14 @@ const MeasureDisplay = ({
   timeSignature,
   onTimeSignatureChange,
   firstMeasureTime,
-  visible = true
+  visible = true,
+  containerRef: externalContainerRef
 }: MeasureDisplayProps) => {
   const [isDraggingFirstMeasure, setIsDraggingFirstMeasure] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartTime, setDragStartTime] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const internalContainerRef = useRef<HTMLDivElement>(null);
+  const containerRef = externalContainerRef || internalContainerRef;
 
   // Calculate measure duration in seconds
   const measureDuration = useCallback(() => {
@@ -63,25 +66,21 @@ const MeasureDisplay = ({
 
   // Convert time to pixel position
   const timeToPixels = useCallback((time: number) => {
-    if (!containerRef.current) return 0;
-    const containerWidth = containerRef.current.offsetWidth;
-    // Apply zoom level to pixels per second calculation
-    // Base pixels per second is container width / duration
-    // Zoom level affects this by multiplying the effective pixels per second
-    const basePixelsPerSecond = containerWidth / duration;
+    // Calculate pixels per second based on zoom level
+    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
+    const basePixelsPerSecond = 40;
     const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
     return time * zoomedPixelsPerSecond;
-  }, [duration, zoomLevel]);
+  }, [zoomLevel]);
 
   // Convert pixel position to time
   const pixelsToTime = useCallback((pixels: number) => {
-    if (!containerRef.current) return 0;
-    const containerWidth = containerRef.current.offsetWidth;
-    // Apply zoom level to pixels per second calculation
-    const basePixelsPerSecond = containerWidth / duration;
+    // Calculate pixels per second based on zoom level
+    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
+    const basePixelsPerSecond = 40;
     const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
     return pixels / zoomedPixelsPerSecond;
-  }, [duration, zoomLevel]);
+  }, [zoomLevel]);
 
   // Handle first measure marker drag start
   const handleFirstMeasureMouseDown = useCallback((e: React.MouseEvent) => {
@@ -126,37 +125,40 @@ const MeasureDisplay = ({
 
   const measures = calculateMeasures();
 
+  // Don't render anything if not visible
+  if (!visible) {
+    return null;
+  }
+
   return (
     <div 
-      ref={containerRef}
-      className={`absolute inset-0 ${visible ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      ref={internalContainerRef}
+      className="absolute inset-0 pointer-events-auto"
       style={{ 
         height: '100%'
       }}
     >
       {/* First Measure Marker */}
-      {visible && (
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 pointer-events-auto cursor-ew-resize z-20"
-          style={{
-            left: `${timeToPixels(firstMeasureTime)}px`,
-            transform: 'translateX(-50%)'
-          }}
-          onMouseDown={handleFirstMeasureMouseDown}
-          title={`First measure at ${firstMeasureTime.toFixed(2)}s`}
-        >
-          <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-yellow-900 text-xs px-1 py-0.5 rounded whitespace-nowrap">
-            Measure 1
-          </div>
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-yellow-500 pointer-events-auto cursor-ew-resize z-20"
+        style={{
+          left: `${timeToPixels(firstMeasureTime)}px`,
+          transform: 'translateX(-50%)'
+        }}
+        onMouseDown={handleFirstMeasureMouseDown}
+        title={`First measure at ${firstMeasureTime.toFixed(2)}s`}
+      >
+        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-yellow-900 text-xs px-1 py-0.5 rounded whitespace-nowrap">
+          Measure 1
         </div>
-      )}
+      </div>
 
       {/* Measure Lines */}
-      {visible && measures.map((measure, index) => (
+      {measures.map((measure, index) => (
         <div key={index}>
           {/* Measure line - made darker */}
           <div
-            className="absolute top-0 bottom-0 w-px bg-gray-500"
+            className="absolute top-0 bottom-0 w-px bg-yellow-400 opacity-80"
             style={{
               left: `${timeToPixels(measure.time)}px`,
               transform: 'translateX(-50%)'
@@ -166,7 +168,7 @@ const MeasureDisplay = ({
           {/* Measure number (show every 4th measure to avoid clutter) */}
           {measure.number % 4 === 1 && (
             <div
-              className="absolute top-1 left-1/2 transform -translate-x-1/2 bg-gray-100 text-gray-600 text-xs px-1 py-0.5 rounded whitespace-nowrap"
+              className="absolute top-1 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-yellow-900 text-xs px-1 py-0.5 rounded whitespace-nowrap font-medium"
               style={{
                 left: `${timeToPixels(measure.time)}px`,
                 transform: 'translateX(-50%)'

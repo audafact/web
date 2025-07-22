@@ -10,7 +10,7 @@ const Navbar = () => {
   const isStudioPage = location.pathname === '/studio';
 
   return (
-    <nav className="bg-white shadow-sm">
+    <nav className="bg-audafact-surface-1 border-b border-audafact-divider shadow-card">
       <div className="container mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           {/* Left side: Hamburger menu and Logo/Brand */}
@@ -18,7 +18,7 @@ const Navbar = () => {
             {/* Hamburger Menu Button */}
             <button
               onClick={toggleSidePanel}
-              className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-gray-100 rounded-md transition-colors"
+              className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
               aria-label="Toggle sidebar"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -27,16 +27,30 @@ const Navbar = () => {
             </button>
             
             <Link to="/" className="flex items-center">
-              <span className="text-xl font-bold text-indigo-600">TrackStitch</span>
+              <span className="text-xl font-poppins font-bold">Audafact</span>
             </Link>
           </div>
 
           {/* Navigation Links */}
           <div className="hidden md:flex space-x-8">
-            <Link to="/" className="text-gray-600 hover:text-indigo-600">
+            <Link 
+              to="/" 
+              className={`font-medium transition-colors duration-200 ${
+                location.pathname === '/' 
+                  ? 'text-audafact-accent-cyan' 
+                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+              }`}
+            >
               Home
             </Link>
-            <Link to="/studio" className="text-gray-600 hover:text-indigo-600">
+            <Link 
+              to="/studio" 
+              className={`font-medium transition-colors duration-200 ${
+                location.pathname === '/studio' 
+                  ? 'text-audafact-accent-cyan' 
+                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+              }`}
+            >
               Studio
             </Link>
           </div>
@@ -47,14 +61,14 @@ const Navbar = () => {
               user ? (
                 <button
                   onClick={() => supabase.auth.signOut()}
-                  className="text-gray-600 hover:text-indigo-600"
+                  className="text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
                 >
                   Sign Out
                 </button>
               ) : (
                 <Link
                   to="/login"
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                  className="audafact-button-primary"
                 >
                   Sign In
                 </Link>

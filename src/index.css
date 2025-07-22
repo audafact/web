@@ -1,6 +1,21 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Base styles for Audafact dark theme */
+@layer base {
+  html {
+    font-family: "Inter", sans-serif;
+  }
+
+  body {
+    background-color: #0a0d14;
+    color: #ffffff;
+    font-family: "Inter", sans-serif;
+  }
+}
 
 /* Hide scrollbars for webkit browsers */
 .scrollbar-hide {
@@ -16,26 +31,26 @@
   display: none;
 }
 
-/* Custom slider styling */
+/* Custom slider styling for Audafact theme */
 .slider::-webkit-slider-thumb {
   appearance: none;
   height: 16px;
   width: 16px;
   border-radius: 50%;
-  background: #4f46e5;
+  background: #00f5c3;
   cursor: pointer;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 2px solid #111827;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .slider::-moz-range-thumb {
   height: 16px;
   width: 16px;
   border-radius: 50%;
-  background: #4f46e5;
+  background: #00f5c3;
   cursor: pointer;
-  border: 2px solid #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 2px solid #111827;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .slider:focus {
@@ -43,5 +58,50 @@
 }
 
 .slider:focus::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 245, 195, 0.2);
+}
+
+/* Audafact component styles */
+@layer components {
+  .audafact-card {
+    @apply bg-audafact-surface-1 rounded-card shadow-card border border-audafact-divider;
+  }
+
+  .audafact-card-hover {
+    @apply hover:shadow-card-hover transition-shadow duration-200;
+  }
+
+  .audafact-button-primary {
+    @apply bg-audafact-accent-blue text-audafact-text-primary px-4 py-2 rounded-lg font-medium hover:bg-opacity-90 transition-colors duration-200;
+  }
+
+  .audafact-button-secondary {
+    @apply bg-audafact-surface-2 text-audafact-text-primary px-4 py-2 rounded-lg font-medium hover:bg-audafact-divider transition-colors duration-200;
+  }
+
+  .audafact-tool-name {
+    @apply font-poppins font-bold text-audafact-text-primary tracking-tool-name lowercase;
+  }
+
+  .audafact-heading {
+    @apply font-inter font-semibold text-audafact-text-primary;
+  }
+
+  .audafact-text-secondary {
+    @apply text-audafact-text-secondary;
+  }
+
+  .audafact-accent-cyan {
+    @apply text-audafact-accent-cyan;
+  }
+
+  .audafact-waveform-bg {
+    @apply bg-audafact-surface-1 border border-audafact-divider;
+    background-image: linear-gradient(
+        rgba(139, 148, 158, 0.1) 1px,
+        transparent 1px
+      ),
+      linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
 }

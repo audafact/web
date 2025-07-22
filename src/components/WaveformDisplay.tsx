@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useWavesurfer } from '@wavesurfer/react';
-import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
 import MeasureDisplay from './MeasureDisplay';
+import GridLines from './GridLines';
 import { TimeSignature } from '../types/music';
 
 interface WaveformDisplayProps {
@@ -150,11 +150,10 @@ const WaveformDisplay = ({
 
   // Effect to instantiate plugins only once per file
   useEffect(() => {
-    const timelinePlugin = TimelinePlugin.create();
     const regionsPlugin = RegionsPlugin.create();
     regionsPluginRef.current = regionsPlugin;
 
-    setPlugins([timelinePlugin, regionsPlugin]);
+    setPlugins([regionsPlugin]);
 
     // Reset setup flag when file changes
     initialSetupDoneRef.current = false;
@@ -170,9 +169,9 @@ const WaveformDisplay = ({
   const { wavesurfer, isReady, currentTime } = useWavesurfer({
     container: containerRef,
     url: audioUrl,
-    waveColor: '#E5E7EB',
-    progressColor: '#4F46E5',
-    cursorColor: '#4F46E5',
+    waveColor: '#00F5C3',
+    progressColor: '#00F5C3',
+    cursorColor: '#00F5C3',
     height: 120,
     normalize: true,
     autoplay: false,
@@ -230,7 +229,7 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (wavesurfer && isReady) {
       const duration = wavesurfer.getDuration();
-      const initialWidth = duration * 20 * zoomLevel; // 20 is the base minPxPerSec
+      const initialWidth = duration * 40 * zoomLevel; // 40 is the base minPxPerSec
       
       if (containerRef.current) {
         containerRef.current.style.width = `${initialWidth}px`;
@@ -245,7 +244,7 @@ const WaveformDisplay = ({
     const parentContainer = containerRef.current.parentElement;
     if (!parentContainer) return;
 
-    const pxPerSec = 20 * zoomLevel;
+    const pxPerSec = 40 * zoomLevel;
     const playheadPosition = (currentTime ?? 0) * pxPerSec;
     const containerWidth = parentContainer.clientWidth;
     const containerCenter = containerWidth / 2;
@@ -277,7 +276,7 @@ const WaveformDisplay = ({
     
     // Get current time directly from wavesurfer instance for accuracy
     const centerTime = wavesurfer.getCurrentTime();
-    const pxPerSec = 20 * targetZoomLevel;
+    const pxPerSec = 40 * targetZoomLevel;
     const playheadPosition = centerTime * pxPerSec;
     const parentContainer = containerRef.current.parentElement;
     
@@ -336,20 +335,20 @@ const WaveformDisplay = ({
       const region = regionsPluginRef.current.addRegion({
         start: loopStart,
         end: loopEnd,
-        color: 'rgba(79, 70, 229, 0.2)',
+        color: 'rgba(0, 245, 195, 0.2)',
         drag: true,
         resize: true,
         id: `loop-region-${trackId || 'default'}`,
         // Add visual styling for better interaction
         handleStyle: {
           left: {
-            backgroundColor: 'rgba(79, 70, 229, 0.8)',
-            border: '2px solid #4f46e5',
+            backgroundColor: 'rgba(0, 245, 195, 0.8)',
+            border: '2px solid #00F5C3',
             borderRadius: '2px',
           },
           right: {
-            backgroundColor: 'rgba(79, 70, 229, 0.8)',
-            border: '2px solid #4f46e5',
+            backgroundColor: 'rgba(0, 245, 195, 0.8)',
+            border: '2px solid #00F5C3',
             borderRadius: '2px',
           }
         }
@@ -380,20 +379,20 @@ const WaveformDisplay = ({
         const region = regionsPluginRef.current.addRegion({
           start: clampedStart,
           end: regionEnd,
-          color: 'rgba(239, 68, 68, 0.3)',
+          color: 'rgba(255, 77, 79, 0.3)',
           drag: true,
           resize: false,
           id: `cue-${trackId || 'default'}-${index}`,
           // Add visual styling for better interaction
           handleStyle: {
             left: {
-              backgroundColor: 'rgba(239, 68, 68, 0.8)',
-              border: '2px solid #ef4444',
+              backgroundColor: 'rgba(255, 77, 79, 0.8)',
+              border: '2px solid #FF4D4F',
               borderRadius: '2px',
             },
             right: {
-              backgroundColor: 'rgba(239, 68, 68, 0.8)',
-              border: '2px solid #ef4444',
+              backgroundColor: 'rgba(255, 77, 79, 0.8)',
+              border: '2px solid #FF4D4F',
               borderRadius: '2px',
             }
           }
@@ -471,8 +470,8 @@ const WaveformDisplay = ({
     thumb.style.cssText = `
       width: 24px;
       height: 24px;
-      background-color: #ef4444;
-      border: 2px solid #dc2626;
+      background-color: #FF4D4F;
+      border: 2px solid #FF4D4F;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -555,7 +554,7 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (wavesurfer && isReady && !initialSetupDoneRef.current) {
       // Set initial zoom level
-      const newMinPxPerSec = 20 * zoomLevel;
+      const newMinPxPerSec = 40 * zoomLevel;
       wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       
       // Create initial regions
@@ -582,7 +581,7 @@ const WaveformDisplay = ({
   // Effect to handle zoom changes
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
-      const newMinPxPerSec = 20 * zoomLevel;
+      const newMinPxPerSec = 40 * zoomLevel;
       wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       
       // Update container width to match new zoom level
@@ -625,7 +624,7 @@ const WaveformDisplay = ({
   return (
     <div className="w-full box-border overflow-hidden relative">
       {!isReady && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-500 bg-gray-50 z-10">
+        <div className="absolute inset-0 flex items-center justify-center audafact-text-secondary bg-audafact-surface-1 z-10">
           Loading waveform...
         </div>
       )}
@@ -644,25 +643,46 @@ const WaveformDisplay = ({
             style={{ 
               height: '170px', 
               minWidth: '100%',
-              position: 'relative'
+              position: 'relative',
+              backgroundColor: '#111827',
+              backgroundImage: `
+                linear-gradient(rgba(139, 148, 158, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px)
+              `,
+              backgroundSize: '20px 20px'
             }}
-          />
+          >
+            {/* Grid Lines Overlay - Always visible */}
+            {isReady && wavesurfer && (
+              <GridLines
+                key={`grid-lines-${trackId || 'default'}`}
+                duration={wavesurfer.getDuration()}
+                tempo={tempo}
+                zoomLevel={zoomLevel}
+                timeSignature={timeSignature}
+                firstMeasureTime={firstMeasureTime}
+                visible={true}
+                containerRef={containerRef}
+              />
+            )}
+            
+            {/* Measure Display Overlay */}
+            {isReady && wavesurfer && (
+              <MeasureDisplay
+                key={`measure-display-${trackId || 'default'}`}
+                duration={wavesurfer.getDuration()}
+                tempo={tempo}
+                zoomLevel={zoomLevel}
+                onFirstMeasureChange={onFirstMeasureChange || (() => {})}
+                timeSignature={timeSignature}
+                onTimeSignatureChange={onTimeSignatureChange || (() => {})}
+                firstMeasureTime={firstMeasureTime}
+                visible={internalShowMeasures}
+                containerRef={containerRef}
+              />
+            )}
+          </div>
         </div>
-        
-        {/* Measure Display Overlay */}
-        {isReady && wavesurfer && (
-          <MeasureDisplay
-            key={`measure-display-${trackId || 'default'}`}
-            duration={wavesurfer.getDuration()}
-            tempo={tempo}
-            zoomLevel={zoomLevel}
-            onFirstMeasureChange={onFirstMeasureChange || (() => {})}
-            timeSignature={timeSignature}
-            onTimeSignatureChange={onTimeSignatureChange || (() => {})}
-            firstMeasureTime={firstMeasureTime}
-            visible={internalShowMeasures}
-          />
-        )}
       </div>
     </div>
   );
@@ -670,7 +690,7 @@ const WaveformDisplay = ({
 
 const WaveformDisplayContainer = (props: WaveformDisplayProps) => {
   return (
-     <div className="w-full relative box-border overflow-hidden bg-gray-50" style={{ height: '190px' }}>
+     <div className="w-full relative box-border overflow-hidden audafact-waveform-bg" style={{ height: '190px' }}>
        <WaveformDisplay {...props} />
      </div>
   );

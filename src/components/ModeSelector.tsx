@@ -5,27 +5,27 @@ interface ModeSelectorProps {
 
 const ModeSelector = ({ mode, onModeChange }: ModeSelectorProps) => {
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm">
+    <div className="audafact-card p-6">
       <div className="flex space-x-4">
         <button
           onClick={() => onModeChange('loop')}
-          className={`flex-1 py-2 px-4 rounded-md ${
+          className={`flex-1 py-2 px-4 rounded-md transition-colors duration-200 ${
             mode === 'loop'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+              : 'bg-audafact-surface-2 text-audafact-text-secondary hover:bg-audafact-divider hover:text-audafact-text-primary'
           }`}
         >
-          Loop Mode
+          loop xtractor
         </button>
         <button
           onClick={() => onModeChange('cue')}
-          className={`flex-1 py-2 px-4 rounded-md ${
+          className={`flex-1 py-2 px-4 rounded-md transition-colors duration-200 ${
             mode === 'cue'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-audafact-alert-red text-audafact-text-primary'
+              : 'bg-audafact-surface-2 text-audafact-text-secondary hover:bg-audafact-divider hover:text-audafact-text-primary'
           }`}
         >
-          Cue Mode
+          xcuevator
         </button>
       </div>
     </div>

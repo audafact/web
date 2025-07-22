@@ -36,6 +36,9 @@ interface TrackControlsProps {
   onHighpassFreqChange?: (freq: number) => void;
   filterEnabled?: boolean;
   onFilterEnabledChange?: (enabled: boolean) => void;
+  // Add delete button props
+  showDeleteButton?: boolean;
+  onDelete?: () => void;
 }
 
 const TrackControls = ({ 
@@ -66,7 +69,9 @@ const TrackControls = ({
   highpassFreq,
   onHighpassFreqChange,
   filterEnabled,
-  onFilterEnabledChange
+  onFilterEnabledChange,
+  showDeleteButton = false,
+  onDelete
 }: TrackControlsProps) => {
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -570,28 +575,28 @@ const TrackControls = ({
   }, []);
 
   return (
-    <div className={`bg-white p-4 rounded-lg shadow-sm space-y-4 ${disabled ? 'opacity-50' : ''}`}>
+    <div className={`audafact-card p-4 space-y-4 ${disabled ? 'opacity-50' : ''}`}>
       {/* Playback Controls */}
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <button
             onClick={togglePlayback}
             disabled={disabled}
-            className={`p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+            className={`p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan transition-colors duration-200 ${
               disabled 
-                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                ? 'bg-audafact-text-secondary text-audafact-bg-primary cursor-not-allowed' 
+                : 'bg-audafact-accent-cyan text-audafact-bg-primary hover:bg-opacity-90'
             }`}
           >
             {isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </button>
           {/* Display current playback time and duration */}
-          <div className="text-center text-xs text-gray-500">
+          <div className="text-center text-xs audafact-text-secondary">
             {currentTime.toFixed(2)}s / {audioBuffer.duration.toFixed(2)}s
           </div>
           
           {mode === 'loop' && (
-            <div className="text-sm text-gray-600">
+            <div className="text-sm audafact-text-secondary">
               Loop: {loopStart.toFixed(2)}s - {loopEnd.toFixed(2)}s
             </div>
           )}
@@ -600,19 +605,19 @@ const TrackControls = ({
         {mode === 'cue' && (
           <div className="flex items-center space-x-3">
             {isSelected && (
-              <div className="text-xs text-gray-500">
+              <div className="text-xs audafact-text-secondary">
                 Press 1-0 keys to trigger cues
               </div>
             )}
             <button
               onClick={onSelect}
               disabled={disabled}
-              className={`px-3 py-1 rounded text-sm ${
+              className={`px-3 py-1 rounded text-sm transition-colors duration-200 ${
                 disabled
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                  ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed' 
                   : isSelected 
-                    ? 'bg-red-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-audafact-alert-red text-audafact-text-primary' 
+                    : 'bg-audafact-surface-2 text-audafact-text-secondary hover:bg-audafact-divider hover:text-audafact-text-primary'
               }`}
             >
               {isSelected ? 'Selected to Cue' : 'Select to Cue'}
@@ -625,7 +630,7 @@ const TrackControls = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Volume Control */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Volume</label>
+          <label className="text-sm font-medium audafact-heading">Volume</label>
           <div className="flex items-center space-x-3">
             <input
               type="range"
@@ -639,17 +644,17 @@ const TrackControls = ({
                 const newVolume = parseFloat(e.target.value);
                 if (onVolumeChange) onVolumeChange(newVolume);
               }}
-              className={`flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+              className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-sm text-gray-600 w-12">{Math.round(volume * 100)}%</span>
+            <span className="text-sm audafact-text-secondary w-12">{Math.round(volume * 100)}%</span>
           </div>
         </div>
 
         {/* Speed Control */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">
+          <label className="text-sm font-medium audafact-heading">
             Playback Speed: {speed.toFixed(2)}x
           </label>
           <div className="flex items-center space-x-3">
@@ -667,7 +672,7 @@ const TrackControls = ({
                 currentSpeedRef.current = newSpeed;
                 if (onSpeedChange) onSpeedChange(newSpeed);
               }}
-              className={`flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+              className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
@@ -683,7 +688,7 @@ const TrackControls = ({
         <div className="flex items-center justify-between">
           <button
             onClick={() => handleFilterEnabledChange(!filterEnabled)}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
           >
             <span>Audio Filters</span>
             <svg 
@@ -695,14 +700,28 @@ const TrackControls = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
+          
+          {/* Delete Track Button - positioned opposite to Audio Filters toggle */}
+          {showDeleteButton && onDelete && (
+            <button
+              onClick={onDelete}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 border border-audafact-divider rounded transition-colors duration-200"
+              title="Delete Track"
+            >
+              <span>Delete</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {filterEnabled && (
-          <div className="p-4 border-b bg-white">
+          <div className="p-4 border-b bg-audafact-surface-1">
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-700">
+                  <label className="text-sm font-medium audafact-heading">
                     Low Pass Filter: {(lowpassFreq || 20000) >= 1000 
                       ? `${((lowpassFreq || 20000) / 1000).toFixed(1)}kHz` 
                       : `${(lowpassFreq || 20000)}Hz`}
@@ -720,11 +739,11 @@ const TrackControls = ({
                     const freq = parseInt(e.target.value);
                     handleLowpassFreqChange(freq);
                   }}
-                  className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+                  className={`w-full h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                     disabled ? 'cursor-not-allowed opacity-50' : ''
                   }`}
                 />
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs audafact-text-secondary">
                   <span>20Hz</span>
                   <span>20kHz</span>
                 </div>
@@ -732,7 +751,7 @@ const TrackControls = ({
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-700">
+                  <label className="text-sm font-medium audafact-heading">
                     High Pass Filter: {(highpassFreq || 20) >= 1000 
                       ? `${((highpassFreq || 20) / 1000).toFixed(1)}kHz` 
                       : `${(highpassFreq || 20)}Hz`}
@@ -750,11 +769,11 @@ const TrackControls = ({
                     const freq = parseInt(e.target.value);
                     handleHighpassFreqChange(freq);
                   }}
-                  className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider ${
+                  className={`w-full h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                     disabled ? 'cursor-not-allowed opacity-50' : ''
                   }`}
                 />
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs audafact-text-secondary">
                   <span>20Hz</span>
                   <span>20kHz</span>
                 </div>
@@ -767,19 +786,19 @@ const TrackControls = ({
       {/* Cue Point Controls */}
       {mode === 'cue' && (
         <div>
-          <h4 className="text-xs font-medium mb-2 text-gray-600">Cue Points</h4>
+          <h4 className="text-xs font-medium mb-2 audafact-text-secondary">Cue Points</h4>
           <div className="grid grid-cols-10 gap-1">
             {cuePoints.map((point, index) => (
               <button
                 key={index}
                 onClick={() => !disabled && playCuePoint(index)}
                 disabled={disabled}
-                className={`text-xs py-1 px-1 rounded ${
+                className={`text-xs py-1 px-1 rounded transition-colors duration-200 ${
                   disabled
-                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
                     : activeCueIndex === index 
-                      ? 'bg-red-600 text-white' 
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      ? 'bg-audafact-alert-red text-audafact-text-primary' 
+                      : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
                 }`}
               >
                 {index + 1}

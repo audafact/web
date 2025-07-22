@@ -656,6 +656,16 @@ const Studio = () => {
   const removeTrack = (trackId: string) => {
     if (tracks.length <= 1) return; // Don't allow removing the last track
     
+    // Find the track to be removed
+    const trackToRemove = tracks.find(track => track.id === trackId);
+    if (!trackToRemove) return; // Track not found
+    
+    // Don't allow removing tracks in preview mode
+    if (trackToRemove.mode === 'preview') {
+      console.warn('Cannot remove track in preview mode');
+      return;
+    }
+    
     setTracks(prev => {
       const filtered = prev.filter(track => track.id !== trackId);
       
@@ -1249,15 +1259,15 @@ const Studio = () => {
   if (isLoading) {
     return (
       <div className="max-w-6xl mx-auto p-6">
-        <div className="bg-white rounded-lg border p-8 text-center">
-          <h1 className="text-2xl font-medium text-gray-900 mb-4">
-            Loading TrackStitch Studio
+        <div className="audafact-card p-8 text-center">
+          <h1 className="text-2xl font-medium audafact-heading mb-4">
+            Loading Audafact Studio
           </h1>
-          <p className="text-gray-600 mb-8">
+          <p className="audafact-text-secondary mb-8">
             Loading audio track...
           </p>
           <div className="flex justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-audafact-accent-cyan"></div>
           </div>
         </div>
       </div>
@@ -1268,14 +1278,14 @@ const Studio = () => {
   if (error) {
     return (
       <div className="max-w-6xl mx-auto p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-          <h1 className="text-2xl font-medium text-red-900 mb-4">
+        <div className="bg-audafact-surface-1 border border-audafact-alert-red rounded-lg p-8 text-center">
+          <h1 className="text-2xl font-medium text-audafact-alert-red mb-4">
             Error Loading Track
           </h1>
-          <p className="text-red-600 mb-8">{error}</p>
+          <p className="text-audafact-alert-red mb-8">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors"
+            className="bg-audafact-alert-red text-audafact-text-primary px-4 py-2 rounded-md hover:bg-opacity-90 transition-colors"
           >
             Try Again
           </button>
@@ -1288,16 +1298,16 @@ const Studio = () => {
   if (tracks.length === 0) {
     return (
       <div className="max-w-6xl mx-auto p-6">
-        <div className="bg-white rounded-lg border p-8 text-center">
-          <h1 className="text-2xl font-medium text-gray-900">
+        <div className="audafact-card p-8 text-center">
+          <h1 className="text-2xl font-medium audafact-heading">
             No Track Loaded
           </h1>
-          <p className="text-gray-600">
+          <p className="audafact-text-secondary">
             No track is currently loaded. Please refresh the page to load a random track.
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors"
+            className="audafact-button-primary mt-4"
           >
             Load Random Track
           </button>
@@ -1328,10 +1338,10 @@ const Studio = () => {
         {tracks.map((track, index) => (
           <div 
             key={track.id} 
-            className={`rounded-lg border bg-white overflow-hidden transition-all duration-300 ${
+            className={`audafact-card overflow-hidden transition-all duration-300 relative ${
               index === 0 
-                ? 'border-blue-200 shadow-md' // Top track styling
-                : 'border-gray-200 shadow-sm' // Lower tracks styling
+                ? 'border-audafact-accent-cyan shadow-card' // Top track styling
+                : 'border-audafact-divider shadow-sm' // Lower tracks styling
             }`}
             style={{
               transform: isAddingTrack && index > 0 ? 'translateY(10px)' : 'translateY(0)',
@@ -1345,18 +1355,19 @@ const Studio = () => {
               onTouchEnd: handleTouchEnd
             })}
           >
+
           {/* Add Track and Navigation Controls - Only show on first track */}
           {index === 0 && (
           <div 
-            className="flex items-center justify-between bg-gray-50 border-b border-gray-200 py-1 px-2"
+            className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
           >
             <button
               onClick={handlePreviousTrack}
               disabled={isTrackLoading}
               className={`p-2 rounded-full transition-all duration-200 ${
                 isTrackLoading
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
+                  ? 'text-audafact-text-secondary cursor-not-allowed'
+                  : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
               }`}
               title="Previous Track (Left Arrow)"
             >
@@ -1371,8 +1382,8 @@ const Studio = () => {
                 disabled={!canAddTrack || isAddingTrack || isTrackLoading}
                 className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
                   !canAddTrack || isAddingTrack || isTrackLoading
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : 'text-green-600 hover:text-green-700 hover:bg-white shadow-sm'
+                    ? 'text-audafact-text-secondary cursor-not-allowed'
+                    : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                 } ${addTrackAnimation ? 'animate-pulse' : ''}`}
                 title={canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks'}
               >
@@ -1392,8 +1403,8 @@ const Studio = () => {
               disabled={isTrackLoading}
               className={`p-2 rounded-full transition-all duration-200 ${
                 isTrackLoading
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white shadow-sm'
+                  ? 'text-audafact-text-secondary cursor-not-allowed'
+                  : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
               }`}
               title="Next Track (Right Arrow)"
             >
@@ -1404,7 +1415,7 @@ const Studio = () => {
           </div>
           )}
           {/* Consolidated Track Header */}
-          <div className="p-4 border-b bg-gray-50">
+          <div className="p-4 border-b bg-audafact-surface-2">
             <div className="flex flex-col gap-3">
               {/* Top Row: Title, Mode Switch, and File Info */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -1415,53 +1426,40 @@ const Studio = () => {
                     {tracks.length > 1 && (
                       <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
                         index === 0 
-                          ? 'bg-blue-100 text-blue-700' 
-                          : 'bg-gray-100 text-gray-600'
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary' 
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary'
                       }`}>
                         {index + 1}
                       </span>
                     )}
                     
-                  <h2 className={`text-lg font-medium truncate ${
-                    track.mode === 'loop' ? 'text-indigo-600' : 
-                    track.mode === 'cue' ? 'text-red-500' : 'text-blue-600'
+                  <h2 className={`text-lg font-medium truncate audafact-heading ${
+                    track.mode === 'loop' ? 'text-audafact-accent-cyan' : 
+                    track.mode === 'cue' ? 'text-audafact-alert-red' : 'text-audafact-accent-blue'
                   }`}>
-                    {track.mode === 'loop' ? 'Loop Track' : 
-                     track.mode === 'cue' ? 'Sample Track' : 'Preview Track'
+                    {track.mode === 'loop' ? 'loop xtractor' : 
+                     track.mode === 'cue' ? 'xcuevator' : 'preview track'
                   }
                   </h2>
-                    
-                    {/* Remove Track Button - only show if multiple tracks */}
-                    {tracks.length > 1 && (
-                      <button
-                        onClick={() => removeTrack(track.id)}
-                        className="p-1 text-gray-400 hover:text-red-500 transition-colors rounded"
-                        title="Remove Track"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 
                 {/* Compact Mode Switch */}
-                <div className="flex items-center bg-white rounded-md p-0.5 border">
+                <div className="flex items-center bg-audafact-surface-1 rounded-md p-0.5 border border-audafact-divider">
                   {/* Only show Preview button for the top track */}
                   {tracks.findIndex(t => t.id === track.id) === 0 ? (
                   <button
                     onClick={() => handleModeChange(track.id, 'preview')}
                     className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                       track.mode === 'preview'
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-gray-600 hover:text-gray-800'
+                        ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
+                        : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                     }`}
                   >
                     Preview
                   </button>
                   ) : (
                     <span 
-                      className="px-2 py-1 text-xs font-medium text-gray-400 cursor-not-allowed"
+                      className="px-2 py-1 text-xs font-medium text-audafact-text-secondary cursor-not-allowed"
                       title="Preview mode only available for top track"
                     >
                       Preview
@@ -1471,8 +1469,8 @@ const Studio = () => {
                     onClick={() => handleModeChange(track.id, 'loop')}
                     className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                       track.mode === 'loop'
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-gray-600 hover:text-gray-800'
+                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
+                        : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                     }`}
                   >
                     Loop
@@ -1481,8 +1479,8 @@ const Studio = () => {
                     onClick={() => handleModeChange(track.id, 'cue')}
                     className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                       track.mode === 'cue'
-                        ? 'bg-red-600 text-white shadow-sm'
-                        : 'text-gray-600 hover:text-gray-800'
+                        ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                        : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                     }`}
                   >
                     Chop
@@ -1495,8 +1493,8 @@ const Studio = () => {
                     onClick={() => handleTrackSelect(track.id)}
                     className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
                       track.id === selectedCueTrackId
-                        ? 'bg-red-600 text-white shadow-sm'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 border border-gray-300'
+                        ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                        : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 border border-audafact-divider'
                     }`}
                     title={track.id === selectedCueTrackId ? 'This track is selected for cue triggering' : 'Click to select this track for cue triggering'}
                   >
@@ -1520,17 +1518,17 @@ const Studio = () => {
               </div>
                 
                 {/* Right side: File name and controls */}
-                <div className="flex items-center gap-2 text-xs text-gray-500">
+                <div className="flex items-center gap-2 text-xs audafact-text-secondary">
                   <span className="truncate max-w-32 sm:max-w-48" title={track.file.name}>
                     {track.file.name}
                   </span>
                   
                   {/* Compact Zoom Controls */}
-                  <div className="flex items-center bg-white rounded border">
+                  <div className="flex items-center bg-audafact-surface-1 rounded border border-audafact-divider">
                     <button
                       onClick={() => handleZoomOut(track.id)}
                       disabled={(zoomLevels[track.id] || 1) <= 1}
-                      className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-1 hover:bg-audafact-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Zoom Out"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1540,7 +1538,7 @@ const Studio = () => {
                     
                     <button
                       onClick={() => handleResetZoom(track.id)}
-                      className="px-1.5 py-1 text-xs border-x hover:bg-gray-100"
+                      className="px-1.5 py-1 text-xs border-x border-audafact-divider hover:bg-audafact-surface-2"
                       title="Reset Zoom"
                     >
                       {(zoomLevels[track.id] || 1) === 1 ? '1x' : `${(zoomLevels[track.id] || 1).toFixed(1)}x`}
@@ -1549,7 +1547,7 @@ const Studio = () => {
                     <button
                       onClick={() => handleZoomIn(track.id)}
                       disabled={(zoomLevels[track.id] || 1) >= 8}
-                      className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-1 hover:bg-audafact-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Zoom In"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1568,8 +1566,8 @@ const Studio = () => {
                     onClick={() => handleToggleMeasures(track.id)}
                     className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                       showMeasures[track.id]
-                        ? 'bg-green-100 text-green-700 border border-green-300'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary border border-audafact-accent-cyan'
+                        : 'bg-audafact-surface-1 text-audafact-text-secondary border border-audafact-divider hover:bg-audafact-surface-2'
                     }`}
                   >
                     {showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
@@ -1580,8 +1578,8 @@ const Studio = () => {
                       onClick={() => handleToggleCueThumbs(track.id)}
                       className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                         showCueThumbs[track.id]
-                          ? 'bg-red-100 text-red-700 border border-red-300'
-                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                          ? 'bg-audafact-alert-red text-audafact-text-primary border border-audafact-alert-red'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary border border-audafact-divider hover:bg-audafact-surface-2'
                       }`}
                     >
                       {showCueThumbs[track.id] ? 'Hide Cue Thumbs' : 'Show Cue Thumbs'}
@@ -1589,7 +1587,7 @@ const Studio = () => {
                   )}
 
                   {showMeasures[track.id] && (
-                    <div className="px-2 py-1 text-xs text-gray-600 bg-gray-100 rounded border">
+                    <div className="px-2 py-1 text-xs audafact-text-secondary bg-audafact-surface-1 rounded border border-audafact-divider">
                       First measure: {track.firstMeasureTime.toFixed(2)}s
                     </div>
                   )}
@@ -1598,7 +1596,7 @@ const Studio = () => {
                 {/* Controls Toggle */}
                 <button
                   onClick={() => handleToggleControls(track.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors"
                 >
                   <span>Controls</span>
                   <svg 
@@ -1616,7 +1614,7 @@ const Studio = () => {
 
           {/* Collapsible Controls Row */}
           {expandedControls[track.id] && (
-            <div className="p-4 border-b bg-white">
+            <div className="p-4 border-b bg-audafact-surface-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Tempo Controls */}
                 <div className="space-y-2">
@@ -1641,7 +1639,7 @@ const Studio = () => {
           )}
 
           {/* Waveform Display */}
-          <div className="bg-gray-50 relative" style={{ height: '140px' }}>
+          <div className="audafact-waveform-bg relative" style={{ height: '140px' }}>
             <WaveformDisplay
               audioFile={track.file}
               mode={track.mode}
@@ -1670,10 +1668,12 @@ const Studio = () => {
               isPlaying={playbackStates[track.id] || false}
               onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
             />
+            
+
           </div>
 
           {/* Track Controls */}
-          <div className="p-4 relative z-10 bg-white">
+          <div className="p-4 relative z-10 bg-audafact-surface-1">
             <TrackControls
               key={`controls-${track.id}`}
               mode={track.mode}
@@ -1704,10 +1704,12 @@ const Studio = () => {
               onHighpassFreqChange={(freq) => handleHighpassFreqChange(track.id, freq)}
               filterEnabled={filterEnabled[track.id] || false}
               onFilterEnabledChange={(enabled) => handleFilterEnabledChange(track.id, enabled)}
+              showDeleteButton={tracks.length > 1 && track.mode !== 'preview'}
+              onDelete={() => removeTrack(track.id)}
             />
 
             {track.mode === 'cue' && track.id === selectedCueTrackId && (
-              <div className="mt-3 bg-blue-50 p-2 rounded text-blue-700 text-xs">
+              <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
                 Press keyboard keys 1-0 to trigger cue points
               </div>
             )}
