@@ -112,6 +112,11 @@ const Studio = () => {
   // Add accordion state for collapsible controls
   const [expandedControls, setExpandedControls] = useState<{ [key: string]: boolean }>({});
   
+  // Filter state
+  const [lowpassFreqs, setLowpassFreqs] = useState<{ [key: string]: number }>({});
+  const [highpassFreqs, setHighpassFreqs] = useState<{ [key: string]: number }>({});
+  const [filterEnabled, setFilterEnabled] = useState<{ [key: string]: boolean }>({});
+  
   // Track navigation state
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -972,15 +977,23 @@ const Studio = () => {
     }));
   };
 
-  // Add handler for volume changes
+  // Handle volume changes
   const handleVolumeChange = (trackId: string, newVolume: number) => {
     setVolume(prev => ({ ...prev, [trackId]: newVolume }));
-    
-    // Update lastUsedVolume only for preview tracks
-    const track = tracks.find(t => t.id === trackId);
-    if (track?.mode === 'preview') {
-      setLastUsedVolume(newVolume);
-    }
+    setLastUsedVolume(newVolume);
+  };
+
+  // Handle filter changes
+  const handleLowpassFreqChange = (trackId: string, freq: number) => {
+    setLowpassFreqs(prev => ({ ...prev, [trackId]: freq }));
+  };
+
+  const handleHighpassFreqChange = (trackId: string, freq: number) => {
+    setHighpassFreqs(prev => ({ ...prev, [trackId]: freq }));
+  };
+
+  const handleFilterEnabledChange = (trackId: string, enabled: boolean) => {
+    setFilterEnabled(prev => ({ ...prev, [trackId]: enabled }));
   };
 
   // Add handler for toggling accordion controls
@@ -1045,6 +1058,11 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      
+      // Initialize filter state
+      setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
+      setHighpassFreqs(prev => ({ ...prev, [newTrack.id]: 20 }));
+      setFilterEnabled(prev => ({ ...prev, [newTrack.id]: false }));
       
       // Set a small delay to simulate waveform loading
       setTimeout(() => {
@@ -1127,6 +1145,11 @@ const Studio = () => {
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
       
+      // Initialize filter state
+      setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
+      setHighpassFreqs(prev => ({ ...prev, [newTrack.id]: 20 }));
+      setFilterEnabled(prev => ({ ...prev, [newTrack.id]: false }));
+      
       // Set a small delay to simulate waveform loading
       setTimeout(() => {
         // setIsWaveformLoading(false); // This line was removed
@@ -1202,6 +1225,11 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      
+      // Initialize filter state
+      setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
+      setHighpassFreqs(prev => ({ ...prev, [newTrack.id]: 20 }));
+      setFilterEnabled(prev => ({ ...prev, [newTrack.id]: false }));
       
       // Set a small delay to simulate waveform loading
       setTimeout(() => {
@@ -1670,6 +1698,12 @@ const Studio = () => {
               onPlaybackStateChange={(isPlaying: boolean) => handlePlaybackStateChange(track.id, isPlaying)}
               playbackTime={playbackTimes[track.id] || 0}
               disabled={false}
+              lowpassFreq={lowpassFreqs[track.id] || 20000}
+              onLowpassFreqChange={(freq) => handleLowpassFreqChange(track.id, freq)}
+              highpassFreq={highpassFreqs[track.id] || 20}
+              onHighpassFreqChange={(freq) => handleHighpassFreqChange(track.id, freq)}
+              filterEnabled={filterEnabled[track.id] || false}
+              onFilterEnabledChange={(enabled) => handleFilterEnabledChange(track.id, enabled)}
             />
 
             {track.mode === 'cue' && track.id === selectedCueTrackId && (

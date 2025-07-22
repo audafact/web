@@ -29,6 +29,13 @@ interface TrackControlsProps {
   playbackTime?: number;
   // Add disabled prop
   disabled?: boolean;
+  // Add filter props
+  lowpassFreq?: number;
+  onLowpassFreqChange?: (freq: number) => void;
+  highpassFreq?: number;
+  onHighpassFreqChange?: (freq: number) => void;
+  filterEnabled?: boolean;
+  onFilterEnabledChange?: (enabled: boolean) => void;
 }
 
 const TrackControls = ({ 
@@ -53,7 +60,13 @@ const TrackControls = ({
   playbackSpeed = 1,
   onPlaybackStateChange,
   playbackTime,
-  disabled = false
+  disabled = false,
+  lowpassFreq,
+  onLowpassFreqChange,
+  highpassFreq,
+  onHighpassFreqChange,
+  filterEnabled,
+  onFilterEnabledChange
 }: TrackControlsProps) => {
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -61,6 +74,11 @@ const TrackControls = ({
   const [activeCueIndex, setActiveCueIndex] = useState<number | null>(null);
   const [isSpeedSliderHovered, setIsSpeedSliderHovered] = useState(false);
   const [isSpeedSliderDragging, setIsSpeedSliderDragging] = useState(false);
+  
+  // Filter state
+  const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
+  const [internalHighpassFreq, setInternalHighpassFreq] = useState(highpassFreq || 20);
+  const [internalFilterEnabled, setInternalFilterEnabled] = useState(filterEnabled || false);
   
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -73,6 +91,37 @@ const TrackControls = ({
   const cueStartTimeRef = useRef<number>(0);
   // Track the actual starting position when playback begins
   const playbackStartTimeRef = useRef<number>(0);
+  
+  // Filter refs
+  const lowpassFilterRef = useRef<BiquadFilterNode | null>(null);
+  const highpassFilterRef = useRef<BiquadFilterNode | null>(null);
+  
+  // Current filter value refs for reliable state access
+  const currentFilterEnabledRef = useRef<boolean>(filterEnabled || false);
+  const currentLowpassFreqRef = useRef<number>(lowpassFreq || 20000);
+  const currentHighpassFreqRef = useRef<number>(highpassFreq || 20);
+
+  // Sync internal filter state with external props
+  useEffect(() => {
+    if (lowpassFreq !== undefined) {
+      setInternalLowpassFreq(lowpassFreq);
+      currentLowpassFreqRef.current = lowpassFreq;
+    }
+  }, [lowpassFreq]);
+
+  useEffect(() => {
+    if (highpassFreq !== undefined) {
+      setInternalHighpassFreq(highpassFreq);
+      currentHighpassFreqRef.current = highpassFreq;
+    }
+  }, [highpassFreq]);
+
+  useEffect(() => {
+    if (filterEnabled !== undefined) {
+      setInternalFilterEnabled(filterEnabled);
+      currentFilterEnabledRef.current = filterEnabled;
+    }
+  }, [filterEnabled]);
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
@@ -101,6 +150,37 @@ const TrackControls = ({
     return speedToTempo(speed);
   }, [speed, speedToTempo]);
 
+  // Filter control functions
+  const handleLowpassFreqChange = useCallback((freq: number) => {
+    setInternalLowpassFreq(freq);
+    currentLowpassFreqRef.current = freq;
+    if (lowpassFilterRef.current) {
+      lowpassFilterRef.current.frequency.setValueAtTime(freq, audioContext?.currentTime || 0);
+    }
+    if (onLowpassFreqChange) {
+      onLowpassFreqChange(freq);
+    }
+  }, [audioContext, onLowpassFreqChange]);
+
+  const handleHighpassFreqChange = useCallback((freq: number) => {
+    setInternalHighpassFreq(freq);
+    currentHighpassFreqRef.current = freq;
+    if (highpassFilterRef.current) {
+      highpassFilterRef.current.frequency.setValueAtTime(freq, audioContext?.currentTime || 0);
+    }
+    if (onHighpassFreqChange) {
+      onHighpassFreqChange(freq);
+    }
+  }, [audioContext, onHighpassFreqChange]);
+
+  const handleFilterEnabledChange = useCallback((enabled: boolean) => {
+    setInternalFilterEnabled(enabled);
+    currentFilterEnabledRef.current = enabled;
+    if (onFilterEnabledChange) {
+      onFilterEnabledChange(enabled);
+    }
+  }, [onFilterEnabledChange]);
+
   // Helper function to create audio chain with current volume and speed
   const createAudioChainWithCurrentSettings = useCallback(() => {
     if (!audioContext) return null;
@@ -115,11 +195,36 @@ const TrackControls = ({
     sourceNode.playbackRate.value = currentSpeed;
     gainNode.gain.value = currentVolume;
     
-    // Connect: source -> gain -> destination
-    sourceNode.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    return { sourceNode, gainNode };
+    // Create Web Audio API filters if enabled
+    if (currentFilterEnabledRef.current) {
+      const lowpassFilter = audioContext.createBiquadFilter();
+      lowpassFilter.type = 'lowpass';
+      lowpassFilter.frequency.value = currentLowpassFreqRef.current;
+      lowpassFilter.Q.value = 1;
+      
+      const highpassFilter = audioContext.createBiquadFilter();
+      highpassFilter.type = 'highpass';
+      highpassFilter.frequency.value = currentHighpassFreqRef.current;
+      highpassFilter.Q.value = 1;
+      
+      // Store filter refs
+      lowpassFilterRef.current = lowpassFilter;
+      highpassFilterRef.current = highpassFilter;
+      
+      // Connect: source -> highpass -> lowpass -> gain -> destination
+      sourceNode.connect(highpassFilter);
+      highpassFilter.connect(lowpassFilter);
+      lowpassFilter.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      return { sourceNode, gainNode, lowpassFilter, highpassFilter };
+    } else {
+      // Connect: source -> gain -> destination (no filters)
+      sourceNode.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      return { sourceNode, gainNode };
+    }
   }, [audioContext, audioBuffer]);
 
   // Optimized time update function using requestAnimationFrame
@@ -242,6 +347,14 @@ const TrackControls = ({
           gainNodeRef.current.disconnect();
           gainNodeRef.current = null;
         }
+        if (lowpassFilterRef.current) {
+          lowpassFilterRef.current.disconnect();
+          lowpassFilterRef.current = null;
+        }
+        if (highpassFilterRef.current) {
+          highpassFilterRef.current.disconnect();
+          highpassFilterRef.current = null;
+        }
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
           animationFrameRef.current = null;
@@ -255,7 +368,7 @@ const TrackControls = ({
         const audioChain = createAudioChainWithCurrentSettings();
         if (!audioChain) return;
         
-        const { sourceNode, gainNode } = audioChain;
+        const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
         
         if (mode === 'loop') {
           sourceNode.loop = true;
@@ -275,6 +388,14 @@ const TrackControls = ({
 
         audioSourceRef.current = sourceNode;
         gainNodeRef.current = gainNode;
+        
+        // Store filter references if they exist
+        if (lowpassFilter) {
+          lowpassFilterRef.current = lowpassFilter;
+        }
+        if (highpassFilter) {
+          highpassFilterRef.current = highpassFilter;
+        }
         setIsPlaying(true);
         if (onPlaybackStateChange) {
           onPlaybackStateChange(true);
@@ -290,6 +411,14 @@ const TrackControls = ({
             setIsPlaying(false);
             audioSourceRef.current = null;
             gainNodeRef.current = null;
+            if (lowpassFilterRef.current) {
+              lowpassFilterRef.current.disconnect();
+              lowpassFilterRef.current = null;
+            }
+            if (highpassFilterRef.current) {
+              highpassFilterRef.current.disconnect();
+              highpassFilterRef.current = null;
+            }
             if (animationFrameRef.current) {
               cancelAnimationFrame(animationFrameRef.current);
               animationFrameRef.current = null;
@@ -325,6 +454,14 @@ const TrackControls = ({
         gainNodeRef.current.disconnect();
         gainNodeRef.current = null;
       }
+      if (lowpassFilterRef.current) {
+        lowpassFilterRef.current.disconnect();
+        lowpassFilterRef.current = null;
+      }
+      if (highpassFilterRef.current) {
+        highpassFilterRef.current.disconnect();
+        highpassFilterRef.current = null;
+      }
       
       // Set the active cue index and update refs immediately
       setActiveCueIndex(index);
@@ -340,11 +477,19 @@ const TrackControls = ({
       const audioChain = createAudioChainWithCurrentSettings();
       if (!audioChain) return;
       
-      const { sourceNode, gainNode } = audioChain;
+      const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
       
       // Store references
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
+      
+      // Store filter references if they exist
+      if (lowpassFilter) {
+        lowpassFilterRef.current = lowpassFilter;
+      }
+      if (highpassFilter) {
+        highpassFilterRef.current = highpassFilter;
+      }
       
       // Store start time
       startTimeRef.current = audioContext.currentTime;
@@ -366,6 +511,14 @@ const TrackControls = ({
           setIsPlaying(false);
           audioSourceRef.current = null;
           gainNodeRef.current = null;
+          if (lowpassFilterRef.current) {
+            lowpassFilterRef.current.disconnect();
+            lowpassFilterRef.current = null;
+          }
+          if (highpassFilterRef.current) {
+            highpassFilterRef.current.disconnect();
+            highpassFilterRef.current = null;
+          }
           if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
             animationFrameRef.current = null;
@@ -406,6 +559,12 @@ const TrackControls = ({
       }
       if (gainNodeRef.current) {
         gainNodeRef.current.disconnect();
+      }
+      if (lowpassFilterRef.current) {
+        lowpassFilterRef.current.disconnect();
+      }
+      if (highpassFilterRef.current) {
+        highpassFilterRef.current.disconnect();
       }
     };
   }, []);
@@ -533,6 +692,76 @@ const TrackControls = ({
             </span>
           </span>
         </div>
+      </div>
+
+      {/* Filter Controls Row */}
+      <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="filter-enabled"
+            checked={filterEnabled || false}
+            disabled={disabled}
+            onChange={(e) => {
+              if (disabled) return;
+              handleFilterEnabledChange(e.target.checked);
+            }}
+            className={`w-4 h-4 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+          />
+          <label htmlFor="filter-enabled" className={`text-xs ${disabled ? 'text-gray-400' : 'text-gray-600'}`}>
+            Filters
+          </label>
+        </div>
+
+        {(filterEnabled || false) && (
+          <>
+            <div className="flex items-center space-x-2 flex-1">
+              <label className="text-xs text-gray-600 w-12">LP:</label>
+              <input
+                type="range"
+                min="20"
+                max="20000"
+                step="1"
+                value={lowpassFreq || 20000}
+                disabled={disabled}
+                onChange={(e) => {
+                  if (disabled) return;
+                  const freq = parseInt(e.target.value);
+                  handleLowpassFreqChange(freq);
+                }}
+                className={`flex-1 h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+              />
+              <span className="text-xs text-gray-500 w-12">
+                {(lowpassFreq || 20000) >= 1000 
+                  ? `${((lowpassFreq || 20000) / 1000).toFixed(1)}k` 
+                  : (lowpassFreq || 20000)}Hz
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-2 flex-1">
+              <label className="text-xs text-gray-600 w-12">HP:</label>
+              <input
+                type="range"
+                min="20"
+                max="20000"
+                step="1"
+                value={highpassFreq || 20}
+                disabled={disabled}
+                onChange={(e) => {
+                  if (disabled) return;
+                  const freq = parseInt(e.target.value);
+                  handleHighpassFreqChange(freq);
+                }}
+                className={`flex-1 h-1 ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+              />
+              <span className="text-xs text-gray-500 w-12">
+                {(highpassFreq || 20) >= 1000 
+                  ? `${((highpassFreq || 20) / 1000).toFixed(1)}k` 
+                  : (highpassFreq || 20)}Hz
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Cue Point Controls - only show in cue mode */}
