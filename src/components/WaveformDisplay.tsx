@@ -176,14 +176,13 @@ const WaveformDisplay = ({
   const { wavesurfer, isReady, currentTime } = useWavesurfer({
     container: containerRef,
     url: audioUrl,
-    waveColor: '#00F5C3',
+    waveColor: '#008CFF',
     progressColor: '#00F5C3',
     cursorColor: '#00F5C3',
     height: 120,
     normalize: true,
     autoplay: false,
     plugins: plugins,
-    minPxPerSec: 40, // Will be updated after initialization
   });
 
 
