@@ -34,8 +34,6 @@ interface TrackControlsProps {
   onLowpassFreqChange?: (freq: number) => void;
   highpassFreq?: number;
   onHighpassFreqChange?: (freq: number) => void;
-  filterEnabled?: boolean;
-  onFilterEnabledChange?: (enabled: boolean) => void;
   // Add delete button props
   showDeleteButton?: boolean;
   onDelete?: () => void;
@@ -68,8 +66,6 @@ const TrackControls = ({
   onLowpassFreqChange,
   highpassFreq,
   onHighpassFreqChange,
-  filterEnabled,
-  onFilterEnabledChange,
   showDeleteButton = false,
   onDelete
 }: TrackControlsProps) => {
@@ -83,7 +79,7 @@ const TrackControls = ({
   // Filter state
   const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
   const [internalHighpassFreq, setInternalHighpassFreq] = useState(highpassFreq || 20);
-  const [internalFilterEnabled, setInternalFilterEnabled] = useState(filterEnabled || false);
+  const [isFilterSectionExpanded, setIsFilterSectionExpanded] = useState(false);
   
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -102,7 +98,6 @@ const TrackControls = ({
   const highpassFilterRef = useRef<BiquadFilterNode | null>(null);
   
   // Current filter value refs for reliable state access
-  const currentFilterEnabledRef = useRef<boolean>(filterEnabled || false);
   const currentLowpassFreqRef = useRef<number>(lowpassFreq || 20000);
   const currentHighpassFreqRef = useRef<number>(highpassFreq || 20);
 
@@ -121,12 +116,7 @@ const TrackControls = ({
     }
   }, [highpassFreq]);
 
-  useEffect(() => {
-    if (filterEnabled !== undefined) {
-      setInternalFilterEnabled(filterEnabled);
-      currentFilterEnabledRef.current = filterEnabled;
-    }
-  }, [filterEnabled]);
+
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
@@ -178,13 +168,14 @@ const TrackControls = ({
     }
   }, [audioContext, onHighpassFreqChange]);
 
-  const handleFilterEnabledChange = useCallback((enabled: boolean) => {
-    setInternalFilterEnabled(enabled);
-    currentFilterEnabledRef.current = enabled;
-    if (onFilterEnabledChange) {
-      onFilterEnabledChange(enabled);
-    }
-  }, [onFilterEnabledChange]);
+
+
+  // Check if filters are actually active (have non-default values)
+  const areFiltersActive = useCallback(() => {
+    const lowpassFreq = internalLowpassFreq;
+    const highpassFreq = internalHighpassFreq;
+    return lowpassFreq < 20000 || highpassFreq > 20;
+  }, [internalLowpassFreq, internalHighpassFreq]);
 
   // Helper function to create audio chain with current volume and speed
   const createAudioChainWithCurrentSettings = useCallback(() => {
@@ -200,16 +191,21 @@ const TrackControls = ({
     sourceNode.playbackRate.value = currentSpeed;
     gainNode.gain.value = currentVolume;
     
-    // Create Web Audio API filters if enabled
-    if (currentFilterEnabledRef.current) {
+    // Create Web Audio API filters if they have non-default values
+    const lowpassFreq = currentLowpassFreqRef.current;
+    const highpassFreq = currentHighpassFreqRef.current;
+    const isLowpassActive = lowpassFreq < 20000;
+    const isHighpassActive = highpassFreq > 20;
+    
+    if (isLowpassActive || isHighpassActive) {
       const lowpassFilter = audioContext.createBiquadFilter();
       lowpassFilter.type = 'lowpass';
-      lowpassFilter.frequency.value = currentLowpassFreqRef.current;
+      lowpassFilter.frequency.value = lowpassFreq;
       lowpassFilter.Q.value = 1;
       
       const highpassFilter = audioContext.createBiquadFilter();
       highpassFilter.type = 'highpass';
-      highpassFilter.frequency.value = currentHighpassFreqRef.current;
+      highpassFilter.frequency.value = highpassFreq;
       highpassFilter.Q.value = 1;
       
       // Store filter refs
@@ -687,12 +683,12 @@ const TrackControls = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <button
-            onClick={() => handleFilterEnabledChange(!filterEnabled)}
+            onClick={() => setIsFilterSectionExpanded(!isFilterSectionExpanded)}
             className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
           >
-            <span>Audio Filters</span>
+            <span>Audio Filters {areFiltersActive() && <span className="text-audafact-accent-cyan">●</span>}</span>
             <svg 
-              className={`w-3 h-3 transition-transform ${filterEnabled ? 'rotate-180' : ''}`} 
+              className={`w-3 h-3 transition-transform ${isFilterSectionExpanded ? 'rotate-180' : ''}`} 
               fill="none" 
               stroke="currentColor" 
               viewBox="0 0 24 24"
@@ -705,7 +701,7 @@ const TrackControls = ({
           {showDeleteButton && onDelete && (
             <button
               onClick={onDelete}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 border border-audafact-divider rounded transition-colors duration-200"
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary hover:text-audafact-red hover:bg-audafact-surface-2 border border-audafact-divider rounded transition-colors duration-200"
               title="Delete Track"
             >
               <span>Delete</span>
@@ -716,7 +712,7 @@ const TrackControls = ({
           )}
         </div>
 
-        {filterEnabled && (
+        {isFilterSectionExpanded && (
           <div className="p-4 border-b bg-audafact-surface-1">
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">

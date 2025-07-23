@@ -132,6 +132,9 @@ const Studio = () => {
   const [addTrackAnimation, setAddTrackAnimation] = useState<boolean>(false);
   const [canAddTrack, setCanAddTrack] = useState<boolean>(false);
   const [showAddTrackGesture, setShowAddTrackGesture] = useState<boolean>(false);
+  const [lastGestureTime, setLastGestureTime] = useState<number>(0);
+  const [isGestureProcessing, setIsGestureProcessing] = useState<boolean>(false);
+  const lastProcessedGestureRef = useRef<string>('');
   
   // Separate loading states
   const [isTrackLoading, setIsTrackLoading] = useState<boolean>(false);
@@ -313,6 +316,9 @@ const Studio = () => {
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
     
+    // Prevent multiple touch starts
+    if (touchStartX !== null) return; // Already tracking a touch
+    
     // Check if the touch target is within a waveform container
     const target = e.target as Element;
     const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
@@ -320,18 +326,19 @@ const Studio = () => {
     if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
     
     // Check if the touch target is within track controls or consolidated header
-    const isTrackControlsTouch = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isTrackControlsTouch = target.closest('.audafact-card.p-4.space-y-4') !== null;
     const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
     
     if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
     
     // Only allow swipe gestures in the navigation controls area
-    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider.py-1.px-2') !== null;
     
     if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
     
     // Prevent browser navigation gestures from the start
     e.preventDefault();
+    e.stopPropagation(); // Prevent event bubbling
     
     setTouchStartX(e.targetTouches[0].clientX);
     setTouchStartY(e.targetTouches[0].clientY);
@@ -350,13 +357,13 @@ const Studio = () => {
     if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
     
     // Check if the touch target is within track controls or consolidated header
-    const isTrackControlsTouch = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isTrackControlsTouch = target.closest('.audafact-card.p-4.space-y-4') !== null;
     const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
     
     if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
     
     // Only allow swipe gestures in the navigation controls area
-    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider.py-1.px-2') !== null;
     
     if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
     
@@ -402,6 +409,10 @@ const Studio = () => {
     if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
     if (touchStartX === null || touchEndX === null || touchStartY === null || touchEndY === null) return;
     
+    // Prevent multiple touch ends
+    e.preventDefault();
+    e.stopPropagation(); // Prevent event bubbling
+    
     // Check if the touch target is within a waveform container
     const target = e.target as Element;
     const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
@@ -409,13 +420,13 @@ const Studio = () => {
     if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
     
     // Check if the touch target is within track controls or consolidated header
-    const isTrackControlsTouch = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isTrackControlsTouch = target.closest('.audafact-card.p-4.space-y-4') !== null;
     const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
     
     if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
     
     // Only allow swipe gestures in the navigation controls area
-    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider.py-1.px-2') !== null;
     
     if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
     
@@ -428,10 +439,10 @@ const Studio = () => {
     const absDeltaY = Math.abs(deltaY);
     
     // Strict horizontal swipe validation:
-    // 1. Horizontal movement must be at least 100px
-    // 2. Horizontal movement must be at least 3x larger than vertical
-    // 3. Vertical movement must be less than 50px
-    const isValidHorizontalSwipe = absDeltaX > 100 && absDeltaX > absDeltaY * 3 && absDeltaY < 50;
+    // 1. Horizontal movement must be at least 120px (increased from 100px)
+    // 2. Horizontal movement must be at least 4x larger than vertical (increased from 3x)
+    // 3. Vertical movement must be less than 40px (decreased from 50px)
+    const isValidHorizontalSwipe = absDeltaX > 120 && absDeltaX > absDeltaY * 4 && absDeltaY < 40;
     
     // Strict vertical swipe validation for add track:
     // 1. Vertical movement must be at least 100px
@@ -440,7 +451,49 @@ const Studio = () => {
     // 4. Must be a downward swipe (negative deltaY means finger moved down)
     const isValidVerticalSwipe = absDeltaY > 100 && absDeltaY > absDeltaX * 3 && absDeltaX < 50;
     
+    // Prevent multiple gesture processing
+    if (isGestureProcessing) {
+      // Reset touch state and ignore this gesture
+      setTouchStartX(null);
+      setTouchEndX(null);
+      setTouchStartY(null);
+      setTouchEndY(null);
+      setIsSwiping(false);
+      setSwipeDirection(null);
+      setShowAddTrackGesture(false);
+      return;
+    }
+    
+    // Debounce gestures to prevent rapid successive triggers
+    const now = Date.now();
+    const timeSinceLastGesture = now - lastGestureTime;
+    const minGestureInterval = 800; // Increased to 800ms between gestures
+    
+    if (timeSinceLastGesture < minGestureInterval) {
+      // Reset touch state and ignore this gesture
+      setTouchStartX(null);
+      setTouchEndX(null);
+      setTouchStartY(null);
+      setTouchEndY(null);
+      setIsSwiping(false);
+      setSwipeDirection(null);
+      setShowAddTrackGesture(false);
+      return;
+    }
+    
     if (isValidHorizontalSwipe) {
+      const gestureType = deltaX > 0 ? 'swipe-left' : 'swipe-right';
+      const gestureKey = `${gestureType}-${now}`;
+      
+      // Prevent duplicate gestures
+      if (lastProcessedGestureRef.current === gestureKey) {
+        return;
+      }
+      
+      setLastGestureTime(now);
+      setIsGestureProcessing(true);
+      lastProcessedGestureRef.current = gestureKey;
+      
       if (deltaX > 0) {
         // Swiped left (finger moved left) - next track
         handleNextTrack();
@@ -448,10 +501,30 @@ const Studio = () => {
         // Swiped right (finger moved right) - previous track
         handlePreviousTrack();
       }
+      // Reset gesture processing flag after a delay
+      setTimeout(() => {
+        setIsGestureProcessing(false);
+        lastProcessedGestureRef.current = '';
+      }, 1000);
     } else if (isValidVerticalSwipe && deltaY < 0) {
       // Swiped down (finger moved down) - add track
       if (canAddTrack && !isAddingTrack) {
+        const gestureKey = `swipe-down-${now}`;
+        
+        // Prevent duplicate gestures
+        if (lastProcessedGestureRef.current === gestureKey) {
+          return;
+        }
+        
+        setLastGestureTime(now);
+        setIsGestureProcessing(true);
+        lastProcessedGestureRef.current = gestureKey;
         addNewTrack();
+        // Reset gesture processing flag after a delay
+        setTimeout(() => {
+          setIsGestureProcessing(false);
+          lastProcessedGestureRef.current = '';
+        }, 1000);
       }
     }
     
@@ -468,6 +541,22 @@ const Studio = () => {
   // Mouse wheel handler for track navigation and adding tracks
   const handleWheel = (e: React.WheelEvent) => {
     if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
+    
+    // Prevent multiple gesture processing (same protection as touch handlers)
+    if (isGestureProcessing) {
+      e.preventDefault();
+      return;
+    }
+    
+    // Debounce wheel gestures to prevent rapid successive triggers
+    const now = Date.now();
+    const timeSinceLastGesture = now - lastGestureTime;
+    const minGestureInterval = 800; // Same as touch handlers
+    
+    if (timeSinceLastGesture < minGestureInterval) {
+      e.preventDefault();
+      return;
+    }
     
     // Check if the wheel event target is within a waveform container
     const target = e.target as Element;
@@ -502,6 +591,9 @@ const Studio = () => {
         // Prevent default only for horizontal gestures
         e.preventDefault();
         
+        setLastGestureTime(now);
+        setIsGestureProcessing(true);
+        
         if (e.deltaX > 0) {
         // Scrolling right - next track
         handleNextTrack();
@@ -509,10 +601,17 @@ const Studio = () => {
         // Scrolling left - previous track
         handlePreviousTrack();
       }
+      
+      // Reset gesture processing flag after a delay
+      setTimeout(() => setIsGestureProcessing(false), 1000);
     } else if (isVerticalGesture && e.deltaY < 0 && canAddTrack && !isAddingTrack) {
       // Scrolling down - add track (negative deltaY = down)
       e.preventDefault();
+      setLastGestureTime(now);
+      setIsGestureProcessing(true);
       addNewTrack();
+      // Reset gesture processing flag after a delay
+      setTimeout(() => setIsGestureProcessing(false), 1000);
     }
     // For other gestures, allow normal scrolling to pass through
   };
@@ -523,7 +622,7 @@ const Studio = () => {
     if (tracks.length === 0) return;
     
     const nextIndex = (currentTrackIndex + 1) % audioAssets.length;
-    await loadTrackByIndex(nextIndex);
+    await loadTrackByIndex(nextIndex, true); // true = only update first track
   }, [tracks.length, currentTrackIndex, isTrackLoading]);
 
   const handlePreviousTrack = useCallback(async () => {
@@ -531,10 +630,10 @@ const Studio = () => {
     if (tracks.length === 0) return;
     
     const prevIndex = currentTrackIndex === 0 ? audioAssets.length - 1 : currentTrackIndex -1;
-    await loadTrackByIndex(prevIndex);
+    await loadTrackByIndex(prevIndex, true); // true = only update first track
   }, [tracks.length, currentTrackIndex, isTrackLoading]);
 
-  const loadTrackByIndex = async (index: number) => {
+  const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
     try {
       setIsTrackLoading(true);
 
@@ -574,8 +673,13 @@ const Studio = () => {
       // Load the audio file into buffer
       const buffer = await loadAudioBuffer(file, context);
       
-      // Generate track ID
-      const trackId = asset.id;
+      // Generate track ID - preserve existing first track ID if only updating first track
+      let trackId;
+      if (onlyUpdateFirstTrack && tracks.length > 0) {
+        trackId = tracks[0].id; // Keep the existing first track's ID
+      } else {
+        trackId = asset.id; // Use asset ID for new tracks
+      }
       
       // Try to load settings from localStorage
       const settings = loadTrackSettingsFromLocal(trackId) || {};
@@ -596,7 +700,22 @@ const Studio = () => {
         showMeasures: settings.showMeasures || false
       };
       
-      setTracks([newTrack]);
+      if (onlyUpdateFirstTrack && tracks.length > 0) {
+        // Only update the first track, preserve other tracks
+        setTracks(prevTracks => {
+          const updatedTracks = [...prevTracks];
+          // Update the first track in place to preserve React's reference
+          updatedTracks[0] = {
+            ...updatedTracks[0], // Keep existing properties
+            ...newTrack, // Override with new track data
+            id: updatedTracks[0].id // Ensure we keep the original ID
+          };
+          return updatedTracks;
+        });
+      } else {
+        // Replace all tracks (original behavior)
+        setTracks([newTrack]);
+      }
       setCurrentTrackIndex(index);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
       setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
