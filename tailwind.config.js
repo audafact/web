@@ -10,6 +10,8 @@ export default {
           "bg-primary": "#0A0D14",
           // Surface Elevation 1 (Cards/Panels) - Dark midnight blue
           "surface-1": "#111827",
+          // Surface Elevation 1 Enhanced (Cards with better contrast)
+          "surface-1-enhanced": "#1A1F2E",
           // Surface Elevation 2 (Button hover/Dropdown background) - Medium midnight blue
           "surface-2": "#1F2937",
           // Accent Cyan (Waveform lines, progress bars, cue overlays) - Brighter cyan

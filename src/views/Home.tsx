@@ -26,7 +26,7 @@ const Home = () => {
       <section className="py-16">
         <div className="grid md:grid-cols-3 gap-8">
           {/* Loop Feature */}
-          <div className="p-6 audafact-card audafact-card-hover">
+          <div className="p-6 audafact-card-enhanced audafact-card-hover">
             <div className="text-audafact-accent-cyan text-2xl mb-4">🔄</div>
             <h3 className="text-xl font-semibold audafact-heading mb-2">loop xtractor</h3>
             <p className="audafact-text-secondary">
@@ -35,7 +35,7 @@ const Home = () => {
           </div>
 
           {/* Cue Feature */}
-          <div className="p-6 audafact-card audafact-card-hover">
+          <div className="p-6 audafact-card-enhanced audafact-card-hover">
             <div className="text-audafact-accent-cyan text-2xl mb-4">🎯</div>
             <h3 className="text-xl font-semibold audafact-heading mb-2">xcuevator</h3>
             <p className="audafact-text-secondary">
@@ -44,7 +44,7 @@ const Home = () => {
           </div>
 
           {/* Visual Feature */}
-          <div className="p-6 audafact-card audafact-card-hover">
+          <div className="p-6 audafact-card-enhanced audafact-card-hover">
             <div className="text-audafact-accent-cyan text-2xl mb-4">📊</div>
             <h3 className="text-xl font-semibold audafact-heading mb-2">waveform visualization</h3>
             <p className="audafact-text-secondary">
@@ -56,7 +56,7 @@ const Home = () => {
 
       {/* Call to Action */}
       {!user && (
-        <section className="text-center py-16 audafact-card">
+        <section className="text-center py-16 audafact-card-enhanced">
           <h2 className="text-3xl font-bold audafact-heading mb-4">
             Ready to Start?
           </h2>

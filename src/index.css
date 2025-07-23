@@ -70,6 +70,10 @@
     @apply bg-audafact-surface-1 rounded-card shadow-card border border-audafact-divider;
   }
 
+  .audafact-card-enhanced {
+    @apply bg-audafact-surface-1-enhanced rounded-card shadow-card border border-audafact-divider;
+  }
+
   .audafact-card-hover {
     @apply hover:shadow-card-hover transition-shadow duration-200;
   }
