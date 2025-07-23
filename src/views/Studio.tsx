@@ -1202,14 +1202,6 @@ const Studio = () => {
         showMeasures: false
       };
 
-      console.log('Studio - Created new track from library:', {
-        id: newTrack.id,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        bufferDuration: buffer.duration
-      });
-
       // Add the track to the beginning of the tracks array
       setTracks(prev => {
         const updatedTracks = [newTrack, ...prev];
@@ -1282,14 +1274,6 @@ const Studio = () => {
         firstMeasureTime: 0,
         showMeasures: false
       };
-
-      console.log('Studio - Created new track from user upload:', {
-        id: newTrack.id,
-        fileName: userTrack.file.name,
-        fileSize: userTrack.file.size,
-        fileType: userTrack.file.type,
-        bufferDuration: buffer.duration
-      });
 
       // Add the track to the beginning of the tracks array
       setTracks(prev => {
@@ -1716,7 +1700,7 @@ const Studio = () => {
           )}
 
           {/* Waveform Display */}
-          <div className="audafact-waveform-bg relative" style={{ height: '140px' }}>
+          <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
             <WaveformDisplay
               audioFile={track.file}
               mode={track.mode}

@@ -729,6 +729,31 @@ const WaveformDisplay = ({
     }
   }, [showMeasures, wavesurfer, isReady]);
 
+  // Calculate grid size based on tempo
+  const calculateGridSize = useCallback(() => {
+    // Convert tempo (BPM) to seconds per beat
+    const secondsPerBeat = 60 / tempo;
+    
+    // The denominator tells us what note gets one beat
+    // 4 = quarter note, 8 = eighth note, 2 = half note, etc.
+    const beatNoteValue = 4 / timeSignature.denominator;
+    
+    // Calculate beat duration: duration per beat × beat note value
+    const beatDuration = secondsPerBeat * beatNoteValue;
+    
+    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
+    const basePixelsPerSecond = 40;
+    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
+    
+    // Calculate pixels per beat
+    const pixelsPerBeat = beatDuration * zoomedPixelsPerSecond;
+    
+    // Round to nearest pixel and ensure minimum size
+    return Math.max(10, Math.round(pixelsPerBeat));
+  }, [tempo, timeSignature, zoomLevel]);
+
+  const gridSize = calculateGridSize();
+
   return (
     <div className="w-full box-border overflow-hidden relative">
       {!isReady && (
@@ -758,13 +783,13 @@ const WaveformDisplay = ({
                 linear-gradient(rgba(139, 148, 158, 0.1) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px)
               `,
-              backgroundSize: '20px 20px'
+              backgroundSize: `${gridSize}px ${gridSize}px`
             }}
           >
             {/* Grid Lines Overlay - Always visible */}
             {isReady && wavesurfer && (
               <GridLines
-                key={`grid-lines-${trackId || 'default'}`}
+                key={`grid-lines-${trackId || 'default'}-${tempo}`}
                 duration={wavesurfer.getDuration()}
                 tempo={tempo}
                 zoomLevel={zoomLevel}
@@ -772,13 +797,14 @@ const WaveformDisplay = ({
                 firstMeasureTime={firstMeasureTime}
                 visible={true}
                 containerRef={containerRef}
+                showMeasures={internalShowMeasures}
               />
             )}
             
             {/* Measure Display Overlay */}
             {isReady && wavesurfer && (
               <MeasureDisplay
-                key={`measure-display-${trackId || 'default'}`}
+                key={`measure-display-${trackId || 'default'}-${tempo}`}
                 duration={wavesurfer.getDuration()}
                 tempo={tempo}
                 zoomLevel={zoomLevel}

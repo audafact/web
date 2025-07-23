@@ -125,6 +125,8 @@ const MeasureDisplay = ({
 
   const measures = calculateMeasures();
 
+
+
   // Don't render anything if not visible
   if (!visible) {
     return null;
@@ -133,9 +135,12 @@ const MeasureDisplay = ({
   return (
     <div 
       ref={internalContainerRef}
-      className="absolute inset-0 pointer-events-auto"
+      className="absolute pointer-events-auto"
       style={{ 
-        height: '100%'
+        height: '120px',
+        top: 0,
+        left: 0,
+        right: 0
       }}
     >
       {/* First Measure Marker */}
