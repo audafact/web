@@ -44,7 +44,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   isLoading,
   initialMode
 }) => {
-  const [activeTab, setActiveTab] = useState<'my-tracks' | 'library'>('my-tracks');
+  const [activeTab, setActiveTab] = useState<'my-tracks' | 'library'>(() => {
+    // Check for saved tab preference, default to 'library' if none exists
+    const savedTab = localStorage.getItem('sidePanelActiveTab');
+    return (savedTab as 'my-tracks' | 'library') || 'library';
+  });
   const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
   const [playingAssets, setPlayingAssets] = useState<{ [key: string]: boolean }>({});
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
@@ -93,6 +97,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
       setActiveTab('library');
     }
   }, [initialMode, activeTab]);
+
+  // Save tab preference to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('sidePanelActiveTab', activeTab);
+  }, [activeTab]);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -301,16 +310,6 @@ const SidePanel: React.FC<SidePanelProps> = ({
         {/* Tab Navigation */}
         <div className="flex border-b border-audafact-divider">
           <button
-            onClick={() => setActiveTab('my-tracks')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
-              activeTab === 'my-tracks'
-                ? 'text-audafact-accent-cyan border-b-2 border-audafact-accent-cyan bg-audafact-surface-2'
-                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
-            }`}
-          >
-            My Tracks
-          </button>
-          <button
             onClick={() => setActiveTab('library')}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
               activeTab === 'library'
@@ -319,6 +318,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
             }`}
           >
             Audafact Library
+          </button>
+          <button
+            onClick={() => setActiveTab('my-tracks')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
+              activeTab === 'my-tracks'
+                ? 'text-audafact-accent-cyan border-b-2 border-audafact-accent-cyan bg-audafact-surface-2'
+                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+            }`}
+          >
+            My Tracks
           </button>
         </div>
 

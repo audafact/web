@@ -125,6 +125,7 @@ const Studio = () => {
   const [touchEndY, setTouchEndY] = useState<number | null>(null);
   const [isSwiping, setIsSwiping] = useState<boolean>(false);
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
+  const [isWaveformScrolling, setIsWaveformScrolling] = useState<boolean>(false);
   
   // Add track functionality state
   const [isAddingTrack, setIsAddingTrack] = useState<boolean>(false);
@@ -310,7 +311,24 @@ const Studio = () => {
 
   // Touch/swipe handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isTrackLoading) return; // Disable during loading
+    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
+    
+    // Check if the touch target is within a waveform container
+    const target = e.target as Element;
+    const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
+    
+    if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
+    
+    // Check if the touch target is within track controls or consolidated header
+    const isTrackControlsTouch = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
+    
+    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
+    
+    // Only allow swipe gestures in the navigation controls area
+    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    
+    if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
     
     // Prevent browser navigation gestures from the start
     e.preventDefault();
@@ -322,8 +340,25 @@ const Studio = () => {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isTrackLoading) return; // Disable during loading
+    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
     if (touchStartX === null || touchStartY === null) return;
+    
+    // Check if the touch target is within a waveform container
+    const target = e.target as Element;
+    const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
+    
+    if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
+    
+    // Check if the touch target is within track controls or consolidated header
+    const isTrackControlsTouch = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
+    
+    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
+    
+    // Only allow swipe gestures in the navigation controls area
+    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    
+    if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
     
     const currentX = e.targetTouches[0].clientX;
     const currentY = e.targetTouches[0].clientY;
@@ -364,8 +399,25 @@ const Studio = () => {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (isTrackLoading) return; // Disable during loading
+    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
     if (touchStartX === null || touchEndX === null || touchStartY === null || touchEndY === null) return;
+    
+    // Check if the touch target is within a waveform container
+    const target = e.target as Element;
+    const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
+    
+    if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
+    
+    // Check if the touch target is within track controls or consolidated header
+    const isTrackControlsTouch = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
+    
+    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
+    
+    // Only allow swipe gestures in the navigation controls area
+    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    
+    if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
     
     // Prevent any browser navigation
     e.preventDefault();
@@ -415,7 +467,24 @@ const Studio = () => {
 
   // Mouse wheel handler for track navigation and adding tracks
   const handleWheel = (e: React.WheelEvent) => {
-    if (isTrackLoading) return; // Disable during loading
+    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
+    
+    // Check if the wheel event target is within a waveform container
+    const target = e.target as Element;
+    const isWaveformWheel = target.closest('.audafact-waveform-bg') !== null;
+    
+    if (isWaveformWheel) return; // Don't handle wheel gestures on waveform
+    
+    // Check if the wheel event target is within track controls or consolidated header
+    const isTrackControlsWheel = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
+    const isConsolidatedHeaderWheel = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
+    
+    if (isTrackControlsWheel || isConsolidatedHeaderWheel) return; // Don't handle wheel gestures on track controls or header
+    
+    // Only allow wheel gestures in the navigation controls area
+    const isNavigationControlsWheel = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
+    
+    if (!isNavigationControlsWheel) return; // Only handle wheel gestures in navigation controls
     
     const absDeltaX = Math.abs(e.deltaX);
     const absDeltaY = Math.abs(e.deltaY);
@@ -888,6 +957,14 @@ const Studio = () => {
       ...prev,
       [trackId]: time
     }));
+  };
+
+  // Handle waveform scroll state changes
+  const handleWaveformScrollStateChange = (trackId: string, isScrolling: boolean) => {
+    // Only track scroll state for the first track (where swipe gestures are active)
+    if (tracks.length > 0 && trackId === tracks[0]?.id) {
+      setIsWaveformScrolling(isScrolling);
+    }
   };
 
   // Zoom functions
@@ -1667,6 +1744,7 @@ const Studio = () => {
               onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
               isPlaying={playbackStates[track.id] || false}
               onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
+              onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
             />
             
 

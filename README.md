@@ -1,8 +1,8 @@
-# TrackStitch - Audio Track Stitching Application
+# Audafact - Audio Artifact Creation Platform
 
 Project Date: 2025-07-01 23:20:34
 
-TrackStitch is a React-based web application for audio track manipulation and stitching, built with Vite, TypeScript, and Tailwind CSS.
+Audafact empowers creators to dig, dissect, and deploy audio artifacts with precision tools for cueing, looping, and sampling. Built with React, Vite, TypeScript, and Tailwind CSS.
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ TrackStitch is a React-based web application for audio track manipulation and st
 
    ```bash
    git clone <repository-url>
-   cd trackstitch
+   cd audafact
    ```
 
 2. **Install dependencies**:

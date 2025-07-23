@@ -37,6 +37,8 @@ interface WaveformDisplayProps {
   isPlaying?: boolean;
   // Playhead position change callback
   onPlayheadChange?: (time: number) => void;
+  // Scroll state callback
+  onScrollStateChange?: (isScrolling: boolean) => void;
 }
 
 const WaveformDisplay = ({
@@ -71,12 +73,17 @@ const WaveformDisplay = ({
   isPlaying = false,
   // Playhead position change callback
   onPlayheadChange,
+  // Scroll state callback
+  onScrollStateChange,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | undefined>(undefined);
   const [plugins, setPlugins] = useState<any[]>([]);
   const [internalShowMeasures, setInternalShowMeasures] = useState(false);
   const [internalIsPlaying, setInternalIsPlaying] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Refs to track regions and prevent recreation
   const regionsPluginRef = useRef<any>(null);
@@ -176,6 +183,7 @@ const WaveformDisplay = ({
     normalize: true,
     autoplay: false,
     plugins: plugins,
+    minPxPerSec: 40, // Will be updated after initialization
   });
 
 
@@ -225,17 +233,40 @@ const WaveformDisplay = ({
     };
   }, [wavesurfer, onPlayheadChange, isPlaying, internalIsPlaying]);
 
+  // Calculate the appropriate minPxPerSec for the current zoom level
+  const calculateMinPxPerSec = useCallback(() => {
+    if (!wavesurfer || !isReady || !containerRef.current) return 40 * zoomLevel;
+    
+    const duration = wavesurfer.getDuration();
+    if (zoomLevel <= 1) {
+      // At 1x zoom, calculate the minPxPerSec needed to fit the entire waveform
+      // We need to get the actual scroll container width (the immediate parent)
+      const scrollContainer = containerRef.current.parentElement;
+      if (scrollContainer) {
+        const availableWidth = scrollContainer.clientWidth;
+        // Ensure the waveform fits exactly within the available width
+        return availableWidth / duration;
+      }
+    }
+    return 40 * zoomLevel;
+  }, [wavesurfer, isReady, zoomLevel]);
+
   // Set initial width for both containers when ready
   useEffect(() => {
     if (wavesurfer && isReady) {
       const duration = wavesurfer.getDuration();
-      const initialWidth = duration * 40 * zoomLevel; // 40 is the base minPxPerSec
+      const minPxPerSec = calculateMinPxPerSec();
       
-      if (containerRef.current) {
-        containerRef.current.style.width = `${initialWidth}px`;
-      }
+      // Use a small delay to ensure DOM is fully rendered
+      setTimeout(() => {
+        if (containerRef.current) {
+          // Always use the exact waveform width based on duration and minPxPerSec
+          const waveformWidth = duration * minPxPerSec;
+          containerRef.current.style.width = `${waveformWidth}px`;
+        }
+      }, 50);
     }
-  }, [wavesurfer, isReady, zoomLevel]);
+  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
 
   // Auto-scroll to follow playhead during playback with center-lock behavior
   useEffect(() => {
@@ -244,29 +275,29 @@ const WaveformDisplay = ({
     const parentContainer = containerRef.current.parentElement;
     if (!parentContainer) return;
 
-    const pxPerSec = 40 * zoomLevel;
+    // Only auto-scroll if playing
+    if (!isPlaying) return;
+
+    const pxPerSec = calculateMinPxPerSec();
     const playheadPosition = (currentTime ?? 0) * pxPerSec;
     const containerWidth = parentContainer.clientWidth;
     const containerCenter = containerWidth / 2;
     
-    // Only auto-scroll if playing
-    if (isPlaying) {
-      // Calculate where the playhead should be relative to the scroll position
-      // We want the playhead to be at the center of the container once it reaches there
-      const targetScrollLeft = playheadPosition - containerCenter;
+    // Calculate where the playhead should be relative to the scroll position
+    // We want the playhead to be at the center of the container once it reaches there
+    const targetScrollLeft = playheadPosition - containerCenter;
+    
+    // Only start scrolling once the playhead would reach the center
+    if (playheadPosition >= containerCenter) {
+      const totalWidth = wavesurfer.getDuration() * pxPerSec;
+      const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
+      const clampedScrollTarget = Math.max(0, Math.min(targetScrollLeft, maxScrollLeft));
       
-      // Only start scrolling once the playhead would reach the center
-      if (playheadPosition >= containerCenter) {
-        const totalWidth = wavesurfer.getDuration() * pxPerSec;
-        const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
-        const clampedScrollTarget = Math.max(0, Math.min(targetScrollLeft, maxScrollLeft));
-        
-        // Smoothly scroll to keep playhead at center
-        parentContainer.scrollTo({
-          left: clampedScrollTarget,
-          behavior: 'auto' // Use 'auto' for immediate scrolling during playback
-        });
-      }
+      // Smoothly scroll to keep playhead at center
+      parentContainer.scrollTo({
+        left: clampedScrollTarget,
+        behavior: 'auto' // Use 'auto' for immediate scrolling during playback
+      });
     }
   }, [currentTime, wavesurfer, isReady, zoomLevel, isPlaying]);
 
@@ -276,7 +307,7 @@ const WaveformDisplay = ({
     
     // Get current time directly from wavesurfer instance for accuracy
     const centerTime = wavesurfer.getCurrentTime();
-    const pxPerSec = 40 * targetZoomLevel;
+    const pxPerSec = calculateMinPxPerSec();
     const playheadPosition = centerTime * pxPerSec;
     const parentContainer = containerRef.current.parentElement;
     
@@ -553,8 +584,8 @@ const WaveformDisplay = ({
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
     if (wavesurfer && isReady && !initialSetupDoneRef.current) {
-      // Set initial zoom level
-      const newMinPxPerSec = 40 * zoomLevel;
+      // Set initial zoom level using calculated minPxPerSec
+      const newMinPxPerSec = calculateMinPxPerSec();
       wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       
       // Create initial regions
@@ -576,12 +607,12 @@ const WaveformDisplay = ({
       prevCuePointsRef.current = [...cuePoints];
       prevModeRef.current = mode;
     }
-  }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode]);
+  }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode, createRegions, calculateMinPxPerSec]);
 
   // Effect to handle zoom changes
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
-      const newMinPxPerSec = 40 * zoomLevel;
+      const newMinPxPerSec = calculateMinPxPerSec();
       wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       
       // Update container width to match new zoom level
@@ -594,7 +625,84 @@ const WaveformDisplay = ({
       // Use improved centering with small delay for layout updates
       setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 10);
     }
-  }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom]);
+  }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
+
+  // Effect to handle window resize at 1x zoom
+  useEffect(() => {
+    if (zoomLevel > 1 || !wavesurfer || !isReady || !initialSetupDoneRef.current) return;
+
+    const handleResize = () => {
+      if (!containerRef.current || !scrollContainerRef.current) return;
+      
+      const scrollContainer = containerRef.current.parentElement;
+      if (scrollContainer) {
+        // Update WaveSurfer minPxPerSec to match the new container width
+        const duration = wavesurfer.getDuration();
+        const newMinPxPerSec = scrollContainer.clientWidth / duration;
+        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+        
+        // Update container width to match the new minPxPerSec
+        const newWidth = duration * newMinPxPerSec;
+        containerRef.current.style.width = `${newWidth}px`;
+        
+        // Update scroll container width to match the available space
+        const parentContainer = scrollContainerRef.current.parentElement?.parentElement;
+        if (parentContainer) {
+          scrollContainerRef.current.style.width = '100%';
+        }
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [zoomLevel, wavesurfer, isReady]);
+
+  // Effect to manage scroll container width at 1x zoom
+  useEffect(() => {
+    if (!scrollContainerRef.current || !wavesurfer || !isReady) return;
+    
+    if (zoomLevel <= 1) {
+      // At 1x zoom, set the scroll container to fit the available space
+      const parentContainer = scrollContainerRef.current.parentElement?.parentElement;
+      if (parentContainer) {
+        scrollContainerRef.current.style.width = '100%';
+      }
+    } else {
+      // At higher zoom levels, let the scroll container be auto
+      scrollContainerRef.current.style.width = 'auto';
+    }
+  }, [zoomLevel, wavesurfer, isReady]);
+
+  // Effect to handle scroll events and communicate scroll state
+  useEffect(() => {
+    if (!scrollContainerRef.current || !onScrollStateChange) return;
+
+    const handleScroll = () => {
+      setIsScrolling(true);
+      onScrollStateChange(true);
+      
+      // Clear existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      
+      // Set a timeout to mark scrolling as finished after 150ms of no scroll events
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsScrolling(false);
+        onScrollStateChange(false);
+      }, 150);
+    };
+
+    const scrollContainer = scrollContainerRef.current;
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, [onScrollStateChange]);
 
   // Optimized playhead update with throttling
   useEffect(() => {
@@ -631,8 +739,9 @@ const WaveformDisplay = ({
 
       <div className={`transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
         <div 
+          ref={scrollContainerRef}
           style={{ 
-            overflowX: 'auto', 
+            overflowX: zoomLevel <= 1 ? 'hidden' : 'auto', 
             overflowY: 'hidden'
           }}
         >
