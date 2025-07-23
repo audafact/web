@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useWavesurfer } from '@wavesurfer/react';
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
+import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
 import MeasureDisplay from './MeasureDisplay';
 import GridLines from './GridLines';
 import { TimeSignature } from '../types/music';

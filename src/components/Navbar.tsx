@@ -26,7 +26,13 @@ const Navbar = () => {
               </svg>
             </button>
             
-            <Link to="/" className="flex items-center">
+            <Link to="/" className="flex items-center gap-2">
+              {/* Favicon */}
+              <img 
+                src="/favicon.svg" 
+                alt="Audafact Logo" 
+                className="w-8 h-8"
+              />
               <span className="text-xl font-poppins font-bold">Audafact</span>
             </Link>
           </div>

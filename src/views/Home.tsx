@@ -46,9 +46,9 @@ const Home = () => {
           {/* Visual Feature */}
           <div className="p-6 audafact-card audafact-card-hover">
             <div className="text-audafact-accent-cyan text-2xl mb-4">📊</div>
-            <h3 className="text-xl font-semibold audafact-heading mb-2">Visual Feedback</h3>
+            <h3 className="text-xl font-semibold audafact-heading mb-2">waveform visualization</h3>
             <p className="audafact-text-secondary">
-              See your music with clear waveform visualization. Makes editing and sampling intuitive.
+              See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision waveform analysis.
             </p>
           </div>
         </div>

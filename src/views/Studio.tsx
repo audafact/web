@@ -139,6 +139,11 @@ const Studio = () => {
   // Separate loading states
   const [isTrackLoading, setIsTrackLoading] = useState<boolean>(false);
 
+  // Add drag and drop state
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
+  const [dragData, setDragData] = useState<{ type: string; name: string; id: string } | null>(null);
+
   // --- Utility functions for localStorage ---
   const saveCuePointsToLocal = (trackId: string, cuePoints: number[]) => {
     localStorage.setItem(`cuePoints-${trackId}`, JSON.stringify(cuePoints));
@@ -1149,6 +1154,105 @@ const Studio = () => {
     }
   };
 
+  // Drag and drop handlers for SidePanel tracks
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Check if this is a track drag from SidePanel by checking dataTransfer types
+    if (e.dataTransfer.types.includes('text/plain')) {
+      e.dataTransfer.dropEffect = 'copy';
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Check if this is a track drag from SidePanel by checking dataTransfer types
+    if (e.dataTransfer.types.includes('text/plain') && e.dataTransfer.types.includes('application/json')) {
+      setIsDragOver(true);
+      
+      // Try to get the drag data for better visual feedback
+      try {
+        const jsonData = e.dataTransfer.getData('application/json');
+        if (jsonData) {
+          const parsed = JSON.parse(jsonData);
+          setDragData(parsed);
+        }
+      } catch (error) {
+        // Ignore errors, we'll still show the basic drag indicator
+      }
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Only clear drag state if we're leaving the drop zone entirely
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+      setDragTarget(null);
+      setDragData(null);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const trackId = e.dataTransfer.getData('text/plain');
+    if (!trackId) return;
+    
+    setIsDragOver(false);
+    setDragTarget(null);
+    setDragData(null);
+    
+    try {
+      // Find the asset in the audioAssets array
+      const asset = audioAssets.find(a => a.id === trackId);
+      if (asset) {
+        // Add from library
+        await handleAddFromLibrary(asset, 'preview');
+        return;
+      }
+      
+      // If not found in library, it might be a user track
+      // We need to get user tracks from localStorage
+      const savedTracks = localStorage.getItem('userTracks');
+      if (savedTracks) {
+        try {
+          const userTracks = JSON.parse(savedTracks);
+          const userTrack = userTracks.find((t: any) => t.id === trackId);
+          if (userTrack && userTrack.fileData) {
+            // Convert base64 back to File object
+            const byteString = atob(userTrack.fileData.split(',')[1]);
+            const mimeString = userTrack.fileData.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+              ia[i] = byteString.charCodeAt(i);
+            }
+            const file = new File([ab], userTrack.name, { type: mimeString });
+            
+            // Add as user track
+            await handleUploadTrack(file, 'preview');
+            return;
+          }
+        } catch (error) {
+          console.error('Error parsing user tracks:', error);
+        }
+      }
+      
+      console.warn('Track not found for drop:', trackId);
+    } catch (error) {
+      console.error('Error handling drop:', error);
+      setError('Failed to add dropped track. Please try again.');
+    }
+  };
+
   // Handle time signature changes
   const handleTimeSignatureChange = (trackId: string, timeSignature: TimeSignature) => {
     setTracks(prev => 
@@ -1498,10 +1602,18 @@ const Studio = () => {
 
   return (
     <div 
-      className="max-w-6xl mx-auto p-4 lg:p-6 space-y-6 relative"
+      className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
+        isSidePanelOpen 
+          ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
+          : 'max-w-6xl'
+      }`}
       style={{ 
         overscrollBehaviorX: 'none'
       }}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {/* Add Track Gesture Indicator */}
       {showAddTrackGesture && (
@@ -1514,6 +1626,29 @@ const Studio = () => {
           </div>
         </div>
       )}
+
+      {/* Drag and Drop Indicator */}
+      {isDragOver && (
+        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+          <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <div className="text-center">
+              <span className="text-lg font-medium block">
+                Drop track to add to studio
+              </span>
+              {dragData && (
+                <span className="text-sm opacity-90 block mt-1">
+                  {dragData.name}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+
       {/* Render all tracks */}
         {tracks.map((track, index) => (
           <div 
@@ -1522,7 +1657,7 @@ const Studio = () => {
               index === 0 
                 ? 'border-audafact-accent-cyan shadow-card' // Top track styling
                 : 'border-audafact-divider shadow-sm' // Lower tracks styling
-            }`}
+            } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''}`}
             style={{
               transform: isAddingTrack && index > 0 ? 'translateY(10px)' : 'translateY(0)',
               ...(index === 0 && { touchAction: 'pan-y pinch-zoom' })

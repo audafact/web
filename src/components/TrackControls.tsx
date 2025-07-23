@@ -30,6 +30,8 @@ interface TrackControlsProps {
   // Add disabled prop
   disabled?: boolean;
   // Add filter props
+  filterEnabled?: boolean;
+  onFilterEnabledChange?: (enabled: boolean) => void;
   lowpassFreq?: number;
   onLowpassFreqChange?: (freq: number) => void;
   highpassFreq?: number;

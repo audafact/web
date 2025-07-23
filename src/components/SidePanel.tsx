@@ -182,6 +182,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
         // Default to preview mode for uploaded files
         onUploadTrack(file, 'preview');
+        
+        // Only close the sidebar on mobile and tablets (full-width mode)
+        // On desktop (lg and above), keep the sidebar open
+        if (window.innerWidth < 1024) {
+          onToggle();
+        }
       };
       
       reader.readAsDataURL(file);
@@ -243,8 +249,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
       const libraryAsset = asset as AudioAsset;
       onAddFromLibrary(libraryAsset, 'preview');
     }
-    // Close the sidebar after adding a track
-    onToggle();
+    
+    // Only close the sidebar on mobile and tablets (full-width mode)
+    // On desktop (lg and above), keep the sidebar open
+    if (window.innerWidth < 1024) {
+      onToggle();
+    }
   };
 
   const handleRemoveUserTrack = (trackId: string) => {
@@ -280,10 +290,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   return (
     <>
-      {/* Mobile overlay */}
+      {/* Mobile and Tablet overlay */}
       {isOpen && (
         <div 
-          className="fixed top-9 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 md:hidden"
+          className="fixed top-9 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={onToggle}
         />
       )}
@@ -291,7 +301,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Sidebar */}
       <div className={`fixed top-9 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      }`} style={{ width: '100vw', maxWidth: '400px' }}>
+      } w-full lg:w-auto lg:max-w-[400px]`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-audafact-divider">
           <h2 className="text-lg font-semibold audafact-heading">
@@ -332,7 +342,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-4 h-full overflow-y-auto">
+        <div className="p-6 lg:p-4 h-full overflow-y-auto">
           {activeTab === 'my-tracks' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -366,10 +376,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     <div
                       key={track.id}
                       draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData('text/plain', track.id);
-                        e.dataTransfer.effectAllowed = 'copy';
-                      }}
+                                          onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', track.id);
+                      e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'user-track',
+                        name: track.name,
+                        id: track.id
+                      }));
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
                       className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
                     >
                       <div className="flex items-center justify-between">
@@ -457,6 +472,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/plain', asset.id);
+                      e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'library-track',
+                        name: asset.name,
+                        id: asset.id
+                      }));
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
