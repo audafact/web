@@ -293,15 +293,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Mobile and Tablet overlay */}
       {isOpen && (
         <div 
-          className="fixed top-9 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed top-10 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={onToggle}
         />
       )}
       
       {/* Sidebar */}
-      <div className={`fixed top-9 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
+      <div className={`fixed top-10 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      } w-full lg:w-auto lg:max-w-[400px]`}>
+      } w-full lg:w-[400px]`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-audafact-divider">
           <h2 className="text-lg font-semibold audafact-heading">
@@ -344,19 +344,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
         {/* Content */}
         <div className="p-6 lg:p-4 h-full overflow-y-auto">
           {activeTab === 'my-tracks' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="space-y-4 min-h-[400px]">
+              <div className="flex items-center justify-center">
                 <h3 className="text-md font-medium audafact-heading">My Uploaded Tracks</h3>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1 text-sm audafact-button-primary"
-                >
-                  Upload Track
-                </button>
               </div>
 
               {userTracks.length === 0 ? (
-                <div className="text-center py-8">
+                <div className="text-center py-8 flex-1 flex flex-col justify-center">
                   <div className="text-audafact-text-secondary mb-4">
                     <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -411,8 +405,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
                           {/* Track Info */}
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium audafact-text-primary truncate">{track.name}</h4>
-                            <p className="text-sm audafact-text-secondary">
+                            <h4 className="font-medium audafact-text-primary truncate max-w-[200px]" title={track.name}>{track.name}</h4>
+                            <p className="text-sm audafact-text-secondary truncate max-w-[200px]">
                               {track.type ? track.type.split('/')[1]?.toUpperCase() || 'AUDIO' : 'AUDIO'} • {track.size}
                             </p>
                           </div>
@@ -457,7 +451,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
           )}
 
           {activeTab === 'library' && (
-            <div className="space-y-4">
+            <div className="space-y-4 min-h-[400px]">
               <div className="flex items-center justify-between">
                 <h3 className="text-md font-medium audafact-heading">Available Tracks</h3>
               </div>
@@ -505,8 +499,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
                         {/* Track Info */}
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium audafact-text-primary truncate">{asset.name}</h4>
-                          <p className="text-sm audafact-text-secondary">{asset.type.toUpperCase()} • {asset.size}</p>
+                          <h4 className="font-medium audafact-text-primary truncate max-w-[200px]" title={asset.name}>{asset.name}</h4>
+                          <p className="text-sm audafact-text-secondary truncate max-w-[200px]">{asset.type.toUpperCase()} • {asset.size}</p>
                         </div>
                       </div>
 

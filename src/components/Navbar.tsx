@@ -12,7 +12,7 @@ const Navbar = () => {
   return (
     <nav className="sticky top-0 bg-audafact-surface-1 border-b border-audafact-divider shadow-card z-50">
       <div className="w-full px-8">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex items-center h-16 relative">
           {/* Left side: Hamburger menu and Logo/Brand */}
           <div className="flex items-center gap-4">
             {/* Hamburger Menu Button */}
@@ -37,8 +37,8 @@ const Navbar = () => {
             </Link>
           </div>
 
-          {/* Navigation Links */}
-          <div className="hidden md:flex space-x-8">
+          {/* Navigation Links - Absolutely Centered */}
+          <div className="hidden md:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
             <Link 
               to="/" 
               className={`font-medium transition-colors duration-200 ${
@@ -62,7 +62,7 @@ const Navbar = () => {
           </div>
 
           {/* Auth Section */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4 ml-auto">
             {!loading && (
               user ? (
                 <button
