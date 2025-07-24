@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
+import { useRecording } from '../context/RecordingContext';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
 import ModeSelector from '../components/ModeSelector';
 import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
+import RecordingControls from '../components/RecordingControls';
 import SidePanel from '../components/SidePanel';
 import { TimeSignature } from '../types/music';
 
@@ -86,6 +88,7 @@ interface UserTrack {
 const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
+  const { addRecordingEvent } = useRecording();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -1755,6 +1758,10 @@ const Studio = () => {
         </div>
       )}
 
+      {/* Global Recording Controls */}
+      <div className="flex justify-end mb-4">
+        <RecordingControls />
+      </div>
 
       {/* Render all tracks */}
         {tracks.map((track, index) => (
@@ -2129,6 +2136,7 @@ const Studio = () => {
               onFilterEnabledChange={(enabled) => handleFilterEnabledChange(track.id, enabled)}
               showDeleteButton={tracks.length > 1 && track.mode !== 'preview'}
               onDelete={() => removeTrack(track.id)}
+              trackId={track.id}
             />
 
             {track.mode === 'cue' && track.id === selectedCueTrackId && (

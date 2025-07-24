@@ -2,6 +2,7 @@ import { RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { AudioProvider } from './context/AudioContext';
 import { SidePanelProvider } from './context/SidePanelContext';
+import { RecordingProvider } from './context/RecordingContext';
 import { router } from './routes';
 
 function App() {
@@ -9,7 +10,9 @@ function App() {
     <AuthProvider>
       <AudioProvider>
         <SidePanelProvider>
-          <RouterProvider router={router} />
+          <RecordingProvider>
+            <RouterProvider router={router} />
+          </RecordingProvider>
         </SidePanelProvider>
       </AudioProvider>
     </AuthProvider>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
+import { useRecording } from '../context/RecordingContext';
 
 interface TrackControlsProps {
   mode: 'preview' | 'loop' | 'cue';
@@ -39,6 +40,8 @@ interface TrackControlsProps {
   // Add delete button props
   showDeleteButton?: boolean;
   onDelete?: () => void;
+  // Add recording props
+  trackId?: string;
 }
 
 const TrackControls = ({ 
@@ -69,8 +72,10 @@ const TrackControls = ({
   highpassFreq,
   onHighpassFreqChange,
   showDeleteButton = false,
-  onDelete
+  onDelete,
+  trackId
 }: TrackControlsProps) => {
+  const { addRecordingEvent } = useRecording();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -157,7 +162,21 @@ const TrackControls = ({
     if (onLowpassFreqChange) {
       onLowpassFreqChange(freq);
     }
-  }, [audioContext, onLowpassFreqChange]);
+    
+    // Record filter change event
+    if (trackId) {
+      addRecordingEvent({
+        type: 'filter_change',
+        trackId,
+        data: { 
+          filterType: 'lowpass',
+          oldFreq: internalLowpassFreq,
+          newFreq: freq,
+          mode
+        }
+      });
+    }
+  }, [audioContext, onLowpassFreqChange, trackId, addRecordingEvent, internalLowpassFreq, mode]);
 
   const handleHighpassFreqChange = useCallback((freq: number) => {
     setInternalHighpassFreq(freq);
@@ -168,7 +187,21 @@ const TrackControls = ({
     if (onHighpassFreqChange) {
       onHighpassFreqChange(freq);
     }
-  }, [audioContext, onHighpassFreqChange]);
+    
+    // Record filter change event
+    if (trackId) {
+      addRecordingEvent({
+        type: 'filter_change',
+        trackId,
+        data: { 
+          filterType: 'highpass',
+          oldFreq: internalHighpassFreq,
+          newFreq: freq,
+          mode
+        }
+      });
+    }
+  }, [audioContext, onHighpassFreqChange, trackId, addRecordingEvent, internalHighpassFreq, mode]);
 
 
 
@@ -366,6 +399,15 @@ const TrackControls = ({
         if (onPlaybackStateChange) {
           onPlaybackStateChange(false);
         }
+        
+        // Record loop stop event
+        if (trackId && mode === 'loop') {
+          addRecordingEvent({
+            type: 'loop_stop',
+            trackId,
+            data: { mode }
+          });
+        }
       } else {
         // Start playback - create audio chain manually to ensure current volume and speed are applied
         const audioChain = createAudioChainWithCurrentSettings();
@@ -402,6 +444,20 @@ const TrackControls = ({
         setIsPlaying(true);
         if (onPlaybackStateChange) {
           onPlaybackStateChange(true);
+        }
+        
+        // Record loop play event
+        if (trackId && mode === 'loop') {
+          addRecordingEvent({
+            type: 'loop_play',
+            trackId,
+            data: { 
+              mode,
+              loopStart,
+              loopEnd,
+              currentTime: playbackStartTimeRef.current
+            }
+          });
         }
         startTimeRef.current = audioContext.currentTime;
         
@@ -507,6 +563,19 @@ const TrackControls = ({
       // Start the animation frame loop for smooth updates
       lastUpdateTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
+      
+      // Record cue trigger event
+      if (trackId) {
+        addRecordingEvent({
+          type: 'cue_trigger',
+          trackId,
+          data: {
+            cueIndex: index,
+            cueTime,
+            mode
+          }
+        });
+      }
       
       // Handle playback end
       sourceNode.onended = () => {
@@ -641,6 +710,19 @@ const TrackControls = ({
                 if (disabled) return;
                 const newVolume = parseFloat(e.target.value);
                 if (onVolumeChange) onVolumeChange(newVolume);
+                
+                // Record volume change event
+                if (trackId) {
+                  addRecordingEvent({
+                    type: 'volume_change',
+                    trackId,
+                    data: { 
+                      oldVolume: volume,
+                      newVolume,
+                      mode
+                    }
+                  });
+                }
               }}
               className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
@@ -669,6 +751,19 @@ const TrackControls = ({
                 setSpeed(newSpeed);
                 currentSpeedRef.current = newSpeed;
                 if (onSpeedChange) onSpeedChange(newSpeed);
+                
+                // Record speed change event
+                if (trackId) {
+                  addRecordingEvent({
+                    type: 'speed_change',
+                    trackId,
+                    data: { 
+                      oldSpeed: speed,
+                      newSpeed,
+                      mode
+                    }
+                  });
+                }
               }}
               className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
