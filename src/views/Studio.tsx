@@ -1701,7 +1701,7 @@ const Studio = () => {
       onDrop={handleDrop}
     >
       {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
-      {!isSidePanelOpen && (
+      {!isSidePanelOpen && isDragOver && (
         <div
           className="fixed inset-0 z-40 bg-transparent"
           onDragOver={handleDragOver}
