@@ -1154,15 +1154,38 @@ const Studio = () => {
     }
   };
 
-  // Drag and drop handlers for SidePanel tracks
+  // Drag and drop handlers for SidePanel tracks and file drops
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Check if this is a track drag from SidePanel by checking dataTransfer types
-    if (e.dataTransfer.types.includes('text/plain')) {
+    // Check if we're dragging over the SidePanel area (only when SidePanel is open)
+    const target = e.target as Element;
+    const isInSidePanel = isSidePanelOpen && target.closest('[data-sidepanel]') !== null;
+    
+    if (isInSidePanel) {
+      // Don't show drag indicator when over SidePanel
+      setIsDragOver(false);
+      setDragData(null);
+      return;
+    }
+    
+    // Check if this is a track drag from SidePanel or file drop from computer
+    const hasSidePanelData = e.dataTransfer.types.includes('text/plain');
+    const hasFiles = e.dataTransfer.types.includes('Files');
+
+    if (hasSidePanelData || hasFiles) {
       e.dataTransfer.dropEffect = 'copy';
       setIsDragOver(true);
+      
+      // Set drag data for file drops immediately
+      if (hasFiles && !dragData) {
+        setDragData({
+          type: 'file',
+          name: 'Audio file',
+          id: `file-${Date.now()}`
+        });
+      }
     }
   };
 
@@ -1170,19 +1193,44 @@ const Studio = () => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Check if this is a track drag from SidePanel by checking dataTransfer types
-    if (e.dataTransfer.types.includes('text/plain') && e.dataTransfer.types.includes('application/json')) {
+    // Check if we're dragging over the SidePanel area (only when SidePanel is open)
+    const target = e.target as Element;
+    const isInSidePanel = isSidePanelOpen && target.closest('[data-sidepanel]') !== null;
+    
+    if (isInSidePanel) {
+      // Don't show drag indicator when over SidePanel
+      setIsDragOver(false);
+      setDragData(null);
+      return;
+    }
+    
+    // Check if this is a track drag from SidePanel or file drop from computer
+    const hasSidePanelData = e.dataTransfer.types.includes('text/plain') && e.dataTransfer.types.includes('application/json');
+    const hasFiles = e.dataTransfer.types.includes('Files');
+    
+    if (hasSidePanelData || hasFiles) {
       setIsDragOver(true);
       
-      // Try to get the drag data for better visual feedback
-      try {
-        const jsonData = e.dataTransfer.getData('application/json');
-        if (jsonData) {
-          const parsed = JSON.parse(jsonData);
-          setDragData(parsed);
+      // Try to get the drag data for better visual feedback (SidePanel tracks)
+      if (hasSidePanelData) {
+        try {
+          const jsonData = e.dataTransfer.getData('application/json');
+          if (jsonData) {
+            const parsed = JSON.parse(jsonData);
+            setDragData(parsed);
+          }
+        } catch (error) {
+          // Ignore errors, we'll still show the basic drag indicator
         }
-      } catch (error) {
-        // Ignore errors, we'll still show the basic drag indicator
+      }
+      
+      // Set drag data for file drops
+      if (hasFiles) {
+        setDragData({
+          type: 'file',
+          name: 'Audio file',
+          id: `file-${Date.now()}`
+        });
       }
     }
   };
@@ -1203,14 +1251,51 @@ const Studio = () => {
     e.preventDefault();
     e.stopPropagation();
     
-    const trackId = e.dataTransfer.getData('text/plain');
-    if (!trackId) return;
+    // Check if the drop occurred within the SidePanel area (only when SidePanel is open)
+    const target = e.target as Element;
+    const isInSidePanel = isSidePanelOpen && target.closest('[data-sidepanel]') !== null;
+    
+    if (isInSidePanel) {
+      // Ignore drops in the SidePanel area
+      setIsDragOver(false);
+      setDragTarget(null);
+      setDragData(null);
+      return;
+    }
     
     setIsDragOver(false);
     setDragTarget(null);
     setDragData(null);
     
     try {
+      // Check if this is a file drop from computer
+      if (e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        
+        // Validate file type
+        const validAudioTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/aac', 'audio/ogg', 'audio/flac'];
+        const isValidAudioFile = validAudioTypes.includes(file.type) || 
+          file.name.toLowerCase().endsWith('.wav') || 
+          file.name.toLowerCase().endsWith('.mp3') || 
+          file.name.toLowerCase().endsWith('.m4a') || 
+          file.name.toLowerCase().endsWith('.aac') || 
+          file.name.toLowerCase().endsWith('.ogg') || 
+          file.name.toLowerCase().endsWith('.flac');
+        
+        if (!isValidAudioFile) {
+          setError('Please drop a valid audio file (WAV, MP3, M4A, AAC, OGG, or FLAC)');
+          return;
+        }
+        
+        // Add the dropped file as a track
+        await handleUploadTrack(file, 'preview');
+        return;
+      }
+      
+      // Handle SidePanel track drops
+      const trackId = e.dataTransfer.getData('text/plain');
+      if (!trackId) return;
+      
       // Find the asset in the audioAssets array
       const asset = audioAssets.find(a => a.id === trackId);
       if (asset) {
@@ -1615,6 +1700,28 @@ const Studio = () => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
+      {!isSidePanelOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-transparent"
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        />
+      )}
+      
+      {/* Full-screen drag and drop overlay - only active when dragging and SidePanel is open */}
+      {isDragOver && isSidePanelOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-transparent"
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        />
+      )}
+      
       {/* Add Track Gesture Indicator */}
       {showAddTrackGesture && (
         <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
@@ -1636,7 +1743,7 @@ const Studio = () => {
             </svg>
             <div className="text-center">
               <span className="text-lg font-medium block">
-                Drop track to add to studio
+                {dragData?.type === 'file' ? 'Drop audio file to add to studio' : 'Drop track to add to studio'}
               </span>
               {dragData && (
                 <span className="text-sm opacity-90 block mt-1">

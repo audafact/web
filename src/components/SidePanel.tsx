@@ -299,9 +299,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
       )}
       
       {/* Sidebar */}
-      <div className={`fixed top-10 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
-        isOpen ? 'translate-x-0' : '-translate-x-full'
-      } w-full lg:w-[400px]`}>
+      <div 
+        data-sidepanel
+        className={`fixed top-10 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        } w-full lg:w-[400px]`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-audafact-divider">
           <h2 className="text-lg font-semibold audafact-heading">
