@@ -100,6 +100,9 @@ const TrackControls = ({
   // Track the actual starting position when playback begins
   const playbackStartTimeRef = useRef<number>(0);
   
+  // Track mode changes to handle audio source updates
+  const prevModeRef = useRef<string>(mode);
+  
   // Filter refs
   const lowpassFilterRef = useRef<BiquadFilterNode | null>(null);
   const highpassFilterRef = useRef<BiquadFilterNode | null>(null);
@@ -289,10 +292,60 @@ const TrackControls = ({
       if (mode === 'loop') {
         // For loop mode, calculate position within loop region
         const loopDuration = loopEnd - loopStart;
-        const position = loopStart + ((elapsed * playbackRate) % loopDuration);
-        setCurrentTime(position);
-        if (onPlaybackTimeChange) {
-          onPlaybackTimeChange(position);
+        
+        // Check if we're currently outside the loop region
+        const currentVisualPosition = currentTime;
+        const isOutsideLoop = currentVisualPosition < loopStart || currentVisualPosition > loopEnd;
+        
+        if (isOutsideLoop) {
+          // If outside loop region, continue from current position until we reach the loop
+          const currentPlaybackTime = playbackStartTimeRef.current + (elapsed * playbackRate);
+          const finalTime = currentPlaybackTime >= audioBuffer.duration ? 0 : currentPlaybackTime;
+          setCurrentTime(finalTime);
+          if (onPlaybackTimeChange) {
+            onPlaybackTimeChange(finalTime);
+          }
+          
+          // Check if we just entered the loop region
+          if (finalTime >= loopStart && finalTime <= loopEnd && audioSourceRef.current) {
+            // We've entered the loop region, restart audio source with looping enabled
+            const currentSourceNode = audioSourceRef.current;
+            
+            // Stop current source
+            currentSourceNode.stop();
+            
+            // Create new audio chain with looping enabled
+            const audioChain = createAudioChainWithCurrentSettings();
+            if (audioChain) {
+              const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+              
+              // Enable looping
+              sourceNode.loop = true;
+              sourceNode.loopStart = loopStart;
+              sourceNode.loopEnd = loopEnd;
+              
+              // Start from the current position within the loop
+              const positionInLoop = finalTime - loopStart;
+              sourceNode.start(0, loopStart + positionInLoop);
+              
+              // Update refs
+              audioSourceRef.current = sourceNode;
+              gainNodeRef.current = gainNode;
+              if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
+              if (highpassFilter) highpassFilterRef.current = highpassFilter;
+              
+              // Update start time for accurate position calculation
+              startTimeRef.current = audioContext.currentTime;
+              playbackStartTimeRef.current = loopStart + positionInLoop;
+            }
+          }
+        } else {
+          // If inside loop region, use normal loop calculation
+          const position = loopStart + ((elapsed * playbackRate) % loopDuration);
+          setCurrentTime(position);
+          if (onPlaybackTimeChange) {
+            onPlaybackTimeChange(position);
+          }
         }
       } else {
         // For non-loop mode, calculate position from the actual starting position
@@ -323,6 +376,66 @@ const TrackControls = ({
       setCurrentTime(playbackTime);
     }
   }, [playbackTime, isPlaying]);
+
+  // Handle mode changes during playback
+  useEffect(() => {
+    if (isPlaying && prevModeRef.current !== mode && audioSourceRef.current) {
+      // Mode changed during playback, restart audio source with new mode settings
+      const currentSourceNode = audioSourceRef.current;
+      
+      // Stop current source
+      currentSourceNode.stop();
+      
+      // Create new audio chain with current settings
+      const audioChain = createAudioChainWithCurrentSettings();
+      if (audioChain) {
+        const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+        
+        // Configure based on new mode
+        if (mode === 'loop') {
+          // Check if current position is within or after the loop region
+          const isWithinLoop = currentTime >= loopStart && currentTime <= loopEnd;
+          const isAfterLoop = currentTime > loopEnd;
+          
+          if (isWithinLoop) {
+            // If within loop region, enable looping
+            sourceNode.loop = true;
+            sourceNode.loopStart = loopStart;
+            sourceNode.loopEnd = loopEnd;
+            sourceNode.start(0, currentTime);
+            playbackStartTimeRef.current = currentTime;
+          } else if (isAfterLoop) {
+            // If after loop region, continue without looping
+            sourceNode.loop = false;
+            sourceNode.start(0, currentTime);
+            playbackStartTimeRef.current = currentTime;
+          } else {
+            // If before loop region, start from current position but prepare for looping
+            sourceNode.loop = false; // Don't loop yet
+            sourceNode.start(0, currentTime);
+            playbackStartTimeRef.current = currentTime;
+          }
+        } else {
+          // Preview or cue mode - no looping
+          sourceNode.loop = false;
+          sourceNode.start(0, currentTime);
+          playbackStartTimeRef.current = currentTime;
+        }
+        
+        // Update refs
+        audioSourceRef.current = sourceNode;
+        gainNodeRef.current = gainNode;
+        if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
+        if (highpassFilter) highpassFilterRef.current = highpassFilter;
+        
+        // Update start time for accurate position calculation
+        startTimeRef.current = audioContext?.currentTime || 0;
+      }
+    }
+    
+    // Update prevModeRef
+    prevModeRef.current = mode;
+  }, [mode, isPlaying, currentTime, loopStart, loopEnd, audioContext]);
 
   // Start/stop time updates
   useEffect(() => {
@@ -416,6 +529,7 @@ const TrackControls = ({
         const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
         
         if (mode === 'loop') {
+          // In loop mode, always start from the beginning of the loop region
           sourceNode.loop = true;
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;

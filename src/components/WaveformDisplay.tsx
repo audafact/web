@@ -385,7 +385,7 @@ const WaveformDisplay = ({
   const createRegions = useCallback(() => {
     if (!wavesurfer || !isReady || !regionsPluginRef.current) return;
 
-    clearRegions();
+    // clearRegions();
 
     if (mode === 'loop') {
       const region = regionsPluginRef.current.addRegion({
