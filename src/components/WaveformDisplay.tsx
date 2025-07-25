@@ -328,7 +328,8 @@ const WaveformDisplay = ({
   }, [wavesurfer, isReady, zoomLevel]);
 
   // Function to clear all regions
-  const clearRegions = () => {
+  const clearRegions = useCallback(() => {
+    // First, clear tracked regions
     if (regionsPluginRef.current && currentRegionsRef.current.length > 0) {
       currentRegionsRef.current.forEach(region => {
         try {
@@ -348,12 +349,37 @@ const WaveformDisplay = ({
       currentRegionsRef.current = [];
     }
     
-    // Also clean up any orphaned thumbs
+    // Then, clear ALL regions from the plugin to ensure no leftover regions
+    if (regionsPluginRef.current) {
+      try {
+        const allRegions = regionsPluginRef.current.getRegions();
+        Object.values(allRegions).forEach((region: any) => {
+          try {
+            if (region.thumbElement) {
+              region.thumbElement.remove();
+              region.thumbElement = null;
+            }
+            region.unAll();
+            region.remove();
+          } catch (e) {
+            console.warn('Region removal warning:', e);
+          }
+        });
+      } catch (e) {
+        console.warn('Error clearing all regions:', e);
+      }
+    }
+    
+    // Also clean up any orphaned thumbs for this track
     if (containerRef.current) {
-      const orphanedThumbs = containerRef.current.querySelectorAll('.cue-thumb');
+      const currentTrackId = trackId || 'default';
+      const orphanedThumbs = containerRef.current.querySelectorAll(`.cue-thumb-${currentTrackId}`);
       orphanedThumbs.forEach((thumb: Element) => thumb.remove());
     }
-  };
+    
+    // Force a small delay to ensure DOM updates are complete
+    return new Promise(resolve => setTimeout(resolve, 5));
+  }, [trackId]);
 
   // Function to create regions based on mode
   const createRegions = useCallback(() => {
@@ -472,8 +498,9 @@ const WaveformDisplay = ({
       region.thumbElement = null;
     }
     
-    // Also remove any existing thumb elements in the region
-    const existingThumbs = regionElement.querySelectorAll('.cue-thumb');
+    // Also remove any existing thumb elements in the region for this track
+    const currentTrackId = trackId || 'default';
+    const existingThumbs = regionElement.querySelectorAll(`.cue-thumb-${currentTrackId}`);
     existingThumbs.forEach((thumb: Element) => thumb.remove());
 
     // Create the hitbox
@@ -496,7 +523,7 @@ const WaveformDisplay = ({
 
     // Create the visible node
     const thumb = document.createElement('div');
-    thumb.className = 'cue-thumb';
+    thumb.className = `cue-thumb cue-thumb-${trackId || 'default'}`;
     thumb.style.cssText = `
       width: 24px;
       height: 24px;
@@ -530,9 +557,10 @@ const WaveformDisplay = ({
       }
     });
     
-    // Also remove any orphaned thumbs from the container
+    // Also remove any orphaned thumbs from the container for this track
     if (containerRef.current) {
-      const orphanedThumbs = containerRef.current.querySelectorAll('.cue-thumb');
+      const currentTrackId = trackId || 'default';
+      const orphanedThumbs = containerRef.current.querySelectorAll(`.cue-thumb-${currentTrackId}`);
       orphanedThumbs.forEach((thumb: Element) => thumb.remove());
     }
   }, []);
@@ -561,14 +589,32 @@ const WaveformDisplay = ({
     }
   }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions]);
 
-  // Recreate regions when mode changes or when relevant parameters change
+  // Handle mode changes explicitly to ensure proper region cleanup
   useEffect(() => {
     if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
     
-    // Check if we need to update regions
     const modeChanged = prevModeRef.current !== mode;
-    const needsUpdate = modeChanged || shouldUpdateRegions || 
-      (mode === 'cue' && prevCuePointsRef.current.length !== cuePoints.length);
+    if (modeChanged) {
+      // Clear regions immediately when mode changes
+      clearRegions().then(() => {
+        // Create new regions after clearing is complete
+        createRegions();
+      });
+      
+      // Update mode ref immediately
+      prevModeRef.current = mode;
+    }
+  }, [mode, wavesurfer, isReady, createRegions, clearRegions]);
+
+  // Recreate regions when relevant parameters change (but not mode changes)
+  useEffect(() => {
+    if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
+    
+    // Only update if mode hasn't changed (mode changes are handled separately)
+    const modeChanged = prevModeRef.current !== mode;
+    if (modeChanged) return;
+    
+    const needsUpdate = shouldUpdateRegions;
     
     if (needsUpdate) {
       createRegions();
@@ -576,9 +622,8 @@ const WaveformDisplay = ({
       prevLoopStartRef.current = loopStart;
       prevLoopEndRef.current = loopEnd;
       prevCuePointsRef.current = [...cuePoints];
-      prevModeRef.current = mode;
     }
-  }, [wavesurfer, isReady, shouldUpdateRegions, cuePoints.length, mode, loopStart, loopEnd, cuePoints]);
+  }, [wavesurfer, isReady, shouldUpdateRegions, mode, loopStart, loopEnd, cuePoints, createRegions]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
