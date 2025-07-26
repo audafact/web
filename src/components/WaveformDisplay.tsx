@@ -614,13 +614,16 @@ const WaveformDisplay = ({
     const needsUpdate = shouldUpdateRegions;
     
     if (needsUpdate) {
-      createRegions();
-      // Update all refs to prevent unnecessary recreations
-      prevLoopStartRef.current = loopStart;
-      prevLoopEndRef.current = loopEnd;
-      prevCuePointsRef.current = [...cuePoints];
+      // Clear regions first, then create new ones to prevent duplicates
+      clearRegions().then(() => {
+        createRegions();
+        // Update all refs to prevent unnecessary recreations
+        prevLoopStartRef.current = loopStart;
+        prevLoopEndRef.current = loopEnd;
+        prevCuePointsRef.current = [...cuePoints];
+      });
     }
-  }, [wavesurfer, isReady, shouldUpdateRegions, mode, loopStart, loopEnd, cuePoints, createRegions]);
+  }, [wavesurfer, isReady, shouldUpdateRegions, mode, loopStart, loopEnd, cuePoints, createRegions, clearRegions]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
