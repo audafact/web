@@ -217,12 +217,9 @@ const WaveformDisplay = ({
     if (!wavesurfer || !onPlayheadChange) return;
 
     const handleSeek = () => {
-      // Only notify of position changes when not playing
-      // During playback, position changes are handled by the audio system
-      if (!isPlaying && !internalIsPlaying) {
-        const newTime = wavesurfer.getCurrentTime();
-        onPlayheadChange(newTime);
-      }
+      // Allow position changes during both playback and when paused
+      const newTime = wavesurfer.getCurrentTime();
+      onPlayheadChange(newTime);
     };
 
     wavesurfer.on('interaction', handleSeek);
@@ -230,7 +227,7 @@ const WaveformDisplay = ({
     return () => {
       wavesurfer.un('interaction', handleSeek);
     };
-  }, [wavesurfer, onPlayheadChange, isPlaying, internalIsPlaying]);
+  }, [wavesurfer, onPlayheadChange]);
 
   // Calculate the appropriate minPxPerSec for the current zoom level
   const calculateMinPxPerSec = useCallback(() => {

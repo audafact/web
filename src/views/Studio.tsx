@@ -115,6 +115,17 @@ const Studio = () => {
   // Add accordion state for collapsible controls
   const [expandedControls, setExpandedControls] = useState<{ [key: string]: boolean }>({});
   
+  // Store seek functions for each track
+  const seekFunctionRefs = useRef<{ [key: string]: React.MutableRefObject<((seekTime: number) => void) | null> }>({});
+  
+  // Get or create seek function ref for a track
+  const getSeekFunctionRef = useCallback((trackId: string) => {
+    if (!seekFunctionRefs.current[trackId]) {
+      seekFunctionRefs.current[trackId] = { current: null };
+    }
+    return seekFunctionRefs.current[trackId];
+  }, []);
+  
   // Filter state
   const [lowpassFreqs, setLowpassFreqs] = useState<{ [key: string]: number }>({});
   const [highpassFreqs, setHighpassFreqs] = useState<{ [key: string]: number }>({});
@@ -1142,18 +1153,30 @@ const Studio = () => {
 
   // Handle manual playhead position changes from waveform
   const handlePlayheadChange = (trackId: string, time: number) => {
-    // Update the playback time for the track so TrackControls knows the new position
-    setPlaybackTimes(prev => ({
-      ...prev,
-      [trackId]: time
-    }));
-    
-    // Also update the appropriate playhead state
     const track = tracks.find(t => t.id === trackId);
-    if (track?.mode === 'loop') {
-      setLoopPlayhead(time);
+    const isTrackPlaying = playbackStates[trackId] || false;
+    
+
+    
+    if (isTrackPlaying) {
+      // If track is playing, use the direct seek function
+      const seekFunctionRef = seekFunctionRefs.current[trackId];
+      if (seekFunctionRef?.current) {
+        seekFunctionRef.current(time);
+      }
     } else {
-      setSamplePlayhead(time);
+      // If track is not playing, update playback time normally
+      setPlaybackTimes(prev => ({
+        ...prev,
+        [trackId]: time
+      }));
+      
+      // Also update the appropriate playhead state
+      if (track?.mode === 'loop') {
+        setLoopPlayhead(time);
+      } else {
+        setSamplePlayhead(time);
+      }
     }
   };
 
@@ -2137,6 +2160,7 @@ const Studio = () => {
               showDeleteButton={tracks.length > 1 && track.mode !== 'preview'}
               onDelete={() => removeTrack(track.id)}
               trackId={track.id}
+              seekFunctionRef={getSeekFunctionRef(track.id)}
             />
 
             {track.mode === 'cue' && track.id === selectedCueTrackId && (

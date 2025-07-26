@@ -42,6 +42,8 @@ interface TrackControlsProps {
   onDelete?: () => void;
   // Add recording props
   trackId?: string;
+  // Seek function ref
+  seekFunctionRef?: React.MutableRefObject<((seekTime: number) => void) | null>;
 }
 
 const TrackControls = ({ 
@@ -73,7 +75,8 @@ const TrackControls = ({
   onHighpassFreqChange,
   showDeleteButton = false,
   onDelete,
-  trackId
+  trackId,
+  seekFunctionRef
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
   const [speed, setSpeed] = useState(playbackSpeed);
@@ -110,6 +113,9 @@ const TrackControls = ({
   // Current filter value refs for reliable state access
   const currentLowpassFreqRef = useRef<number>(lowpassFreq || 20000);
   const currentHighpassFreqRef = useRef<number>(highpassFreq || 20);
+  
+  // Track when we're processing a seek to prevent interference from update loop
+  const isSeekingRef = useRef<boolean>(false);
 
   // Sync internal filter state with external props
   useEffect(() => {
@@ -269,6 +275,12 @@ const TrackControls = ({
   // Optimized time update function using requestAnimationFrame
   const updatePlaybackTime = useCallback(() => {
     if (!isPlaying || !audioContext || !audioSourceRef.current) return;
+    
+    // Skip updates if we're currently processing a seek
+    if (isSeekingRef.current) {
+      animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
+      return;
+    }
 
     const now = performance.now();
     // Only update if at least 16ms has passed (roughly 60fps)
@@ -369,6 +381,75 @@ const TrackControls = ({
       cueStartTimeRef.current = cuePoints[activeCueIndex];
     }
   }, [activeCueIndex, cuePoints]);
+
+  // Function to seek directly during playback (called by waveform clicks)
+  const seekToTime = useCallback((seekTime: number) => {
+    if (!isPlaying || !audioSourceRef.current || !audioContext || isSeekingRef.current) {
+      return;
+    }
+    
+
+    
+    isSeekingRef.current = true;
+    const currentSourceNode = audioSourceRef.current;
+    
+    // Stop current source
+    currentSourceNode.stop();
+    
+    // Create new audio chain with current settings
+    const audioChain = createAudioChainWithCurrentSettings();
+    if (audioChain) {
+      const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+      
+      // Configure based on current mode and new position
+      if (mode === 'loop') {
+        const isWithinLoop = seekTime >= loopStart && seekTime <= loopEnd;
+        
+        if (isWithinLoop) {
+          // If seeking within loop region, enable looping
+          sourceNode.loop = true;
+          sourceNode.loopStart = loopStart;
+          sourceNode.loopEnd = loopEnd;
+          sourceNode.start(0, seekTime);
+        } else {
+          // If seeking outside loop region, don't loop yet
+          sourceNode.loop = false;
+          sourceNode.start(0, seekTime);
+        }
+      } else {
+        // Preview or cue mode - no looping
+        sourceNode.loop = false;
+        sourceNode.start(0, seekTime);
+      }
+      
+      // Update refs
+      audioSourceRef.current = sourceNode;
+      gainNodeRef.current = gainNode;
+      if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
+      if (highpassFilter) highpassFilterRef.current = highpassFilter;
+      
+      // Update timing references for accurate position calculation
+      startTimeRef.current = audioContext.currentTime;
+      playbackStartTimeRef.current = seekTime;
+      
+      // Update current time state
+      setCurrentTime(seekTime);
+      
+      // Clear seeking flag after a brief delay to ensure audio source has started
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 10);
+    } else {
+      isSeekingRef.current = false;
+    }
+  }, [isPlaying, audioContext, mode, loopStart, loopEnd]);
+
+  // Expose seek function to parent component
+  useEffect(() => {
+    if (seekFunctionRef) {
+      seekFunctionRef.current = seekToTime;
+    }
+  }, [seekToTime, seekFunctionRef]);
 
   // Sync external playback time with internal state when not playing
   useEffect(() => {
