@@ -11,7 +11,7 @@ function App() {
       <AudioProvider>
         <SidePanelProvider>
           <RecordingProvider>
-            <RouterProvider router={router} />
+          <RouterProvider router={router} />
           </RecordingProvider>
         </SidePanelProvider>
       </AudioProvider>

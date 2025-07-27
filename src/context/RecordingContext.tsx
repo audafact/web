@@ -16,78 +16,125 @@ interface RecordingSession {
   duration: number;
 }
 
+interface Performance {
+  id: string;
+  startTime: number;
+  endTime?: number;
+  events: RecordingEvent[];
+  tracks: string[];
+  duration: number;
+}
+
+interface AudioRecording {
+  id: string;
+  startTime: number;
+  endTime?: number;
+  audioBlob?: Blob;
+  tracks: string[];
+  duration: number;
+  tempo: number;
+  countInBeats: number;
+}
+
 interface RecordingContextValue {
-  isRecording: boolean;
-  currentSession: RecordingSession | null;
-  recordedSessions: RecordingSession[];
-  startRecording: () => void;
-  stopRecording: () => void;
+  // Performance recording
+  isRecordingPerformance: boolean;
+  currentPerformance: Performance | null;
+  performances: Performance[];
+  startPerformanceRecording: () => void;
+  stopPerformanceRecording: () => void;
   addRecordingEvent: (event: Omit<RecordingEvent, 'timestamp'>) => void;
+  
+  // Audio recording
+  isRecordingAudio: boolean;
+  currentAudioRecording: AudioRecording | null;
+  audioRecordings: AudioRecording[];
+  startAudioRecording: (tempo: number, countInBeats?: number) => void;
+  stopAudioRecording: () => void;
+  
+  // Sessions (state snapshots)
+  savedSessions: RecordingSession[];
   saveCurrentState: (studioState: any) => void;
-  clearRecordings: () => void;
-  exportRecording: (sessionId: string) => void;
-  deleteRecording: (sessionId: string) => void;
+  
+  // Management
+  clearAll: () => void;
+  exportPerformance: (performanceId: string) => void;
+  exportSession: (sessionId: string) => void;
+  exportAudioRecording: (recordingId: string) => void;
+  deletePerformance: (performanceId: string) => void;
+  deleteSession: (sessionId: string) => void;
+  deleteAudioRecording: (recordingId: string) => void;
 }
 
 const RecordingContextInstance = createContext<RecordingContextValue | null>(null);
 
 export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [currentSession, setCurrentSession] = useState<RecordingSession | null>(null);
-  const [recordedSessions, setRecordedSessions] = useState<RecordingSession[]>([]);
-  const recordingStartTimeRef = useRef<number>(0);
+  // Performance recording state
+  const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
+  const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
+  const [performances, setPerformances] = useState<Performance[]>([]);
+  const performanceStartTimeRef = useRef<number>(0);
+  
+  // Audio recording state
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [currentAudioRecording, setCurrentAudioRecording] = useState<AudioRecording | null>(null);
+  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>([]);
+  
+  // Sessions state
+  const [savedSessions, setSavedSessions] = useState<RecordingSession[]>([]);
 
-  const startRecording = useCallback(() => {
-    const sessionId = `recording_${Date.now()}`;
+  // Performance recording functions
+  const startPerformanceRecording = useCallback(() => {
+    const performanceId = `performance_${Date.now()}`;
     const startTime = Date.now();
-    recordingStartTimeRef.current = startTime;
+    performanceStartTimeRef.current = startTime;
     
-    const newSession: RecordingSession = {
-      id: sessionId,
+    const newPerformance: Performance = {
+      id: performanceId,
       startTime,
       events: [],
       tracks: [],
       duration: 0
     };
     
-    setCurrentSession(newSession);
-    setIsRecording(true);
+    setCurrentPerformance(newPerformance);
+    setIsRecordingPerformance(true);
     
-    console.log('Recording started:', sessionId);
+    console.log('Performance recording started:', performanceId);
   }, []);
 
-  const stopRecording = useCallback(() => {
-    if (!currentSession) return;
+  const stopPerformanceRecording = useCallback(() => {
+    if (!currentPerformance) return;
     
     const endTime = Date.now();
-    const duration = endTime - currentSession.startTime;
+    const duration = endTime - currentPerformance.startTime;
     
-    const completedSession: RecordingSession = {
-      ...currentSession,
+    const completedPerformance: Performance = {
+      ...currentPerformance,
       endTime,
       duration
     };
     
-    setRecordedSessions(prev => [completedSession, ...prev]);
-    setCurrentSession(null);
-    setIsRecording(false);
+    setPerformances(prev => [completedPerformance, ...prev]);
+    setCurrentPerformance(null);
+    setIsRecordingPerformance(false);
     
-    console.log('Recording stopped:', completedSession.id, 'Duration:', duration);
-  }, [currentSession]);
+    console.log('Performance recording stopped:', completedPerformance.id, 'Duration:', duration);
+  }, [currentPerformance]);
 
   const addRecordingEvent = useCallback((event: Omit<RecordingEvent, 'timestamp'>) => {
-    if (!isRecording || !currentSession) return;
+    if (!isRecordingPerformance || !currentPerformance) return;
     
-    const timestamp = Date.now() - recordingStartTimeRef.current;
+    const timestamp = Date.now() - performanceStartTimeRef.current;
     const newEvent: RecordingEvent = {
       ...event,
       timestamp
     };
     
-    setCurrentSession(prev => {
+    setCurrentPerformance(prev => {
       if (!prev) return null;
       
-      // Add track to session if not already included
+      // Add track to performance if not already included
       const tracks = prev.tracks.includes(event.trackId) 
         ? prev.tracks 
         : [...prev.tracks, event.trackId];
@@ -98,35 +145,51 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         tracks
       };
     });
-  }, [isRecording, currentSession]);
+  }, [isRecordingPerformance, currentPerformance]);
 
-  const clearRecordings = useCallback(() => {
-    setRecordedSessions([]);
+  // Audio recording functions
+  const startAudioRecording = useCallback((tempo: number, countInBeats: number = 4) => {
+    const recordingId = `audio_${Date.now()}`;
+    const startTime = Date.now();
+    
+    const newRecording: AudioRecording = {
+      id: recordingId,
+      startTime,
+      tracks: [],
+      duration: 0,
+      tempo,
+      countInBeats
+    };
+    
+    setCurrentAudioRecording(newRecording);
+    setIsRecordingAudio(true);
+    
+    // TODO: Implement count-in and actual audio recording
+    console.log('Audio recording started:', recordingId, 'Tempo:', tempo, 'Count-in beats:', countInBeats);
   }, []);
 
-  const exportRecording = useCallback((sessionId: string) => {
-    const session = recordedSessions.find(s => s.id === sessionId);
-    if (!session) return;
+  const stopAudioRecording = useCallback(() => {
+    if (!currentAudioRecording) return;
     
-    const dataStr = JSON.stringify(session, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
+    const endTime = Date.now();
+    const duration = endTime - currentAudioRecording.startTime;
     
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `audafact_recording_${sessionId}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [recordedSessions]);
+    const completedRecording: AudioRecording = {
+      ...currentAudioRecording,
+      endTime,
+      duration
+    };
+    
+    setAudioRecordings(prev => [completedRecording, ...prev]);
+    setCurrentAudioRecording(null);
+    setIsRecordingAudio(false);
+    
+    console.log('Audio recording stopped:', completedRecording.id, 'Duration:', duration);
+  }, [currentAudioRecording]);
 
-  const deleteRecording = useCallback((sessionId: string) => {
-    setRecordedSessions(prev => prev.filter(s => s.id !== sessionId));
-  }, []);
-
+  // Session functions
   const saveCurrentState = useCallback((studioState: any) => {
-    const sessionId = `state_${Date.now()}`;
+    const sessionId = `session_${Date.now()}`;
     const currentTime = Date.now();
     
     const stateSession: RecordingSession = {
@@ -143,22 +206,107 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       duration: 0
     };
     
-    setRecordedSessions(prev => [stateSession, ...prev]);
+    setSavedSessions(prev => [stateSession, ...prev]);
     
     console.log('Studio state saved:', sessionId);
   }, []);
 
+  // Management functions
+  const clearAll = useCallback(() => {
+    setPerformances([]);
+    setAudioRecordings([]);
+    setSavedSessions([]);
+  }, []);
+
+  const exportPerformance = useCallback((performanceId: string) => {
+    const performance = performances.find(p => p.id === performanceId);
+    if (!performance) return;
+    
+    const dataStr = JSON.stringify(performance, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audafact_performance_${performanceId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [performances]);
+
+  const exportSession = useCallback((sessionId: string) => {
+    const session = savedSessions.find(s => s.id === sessionId);
+    if (!session) return;
+    
+    const dataStr = JSON.stringify(session, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audafact_session_${sessionId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [savedSessions]);
+
+  const exportAudioRecording = useCallback((recordingId: string) => {
+    const recording = audioRecordings.find(r => r.id === recordingId);
+    if (!recording || !recording.audioBlob) return;
+    
+    const url = URL.createObjectURL(recording.audioBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audafact_recording_${recordingId}.wav`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [audioRecordings]);
+
+  const deletePerformance = useCallback((performanceId: string) => {
+    setPerformances(prev => prev.filter(p => p.id !== performanceId));
+  }, []);
+
+  const deleteSession = useCallback((sessionId: string) => {
+    setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
+  }, []);
+
+  const deleteAudioRecording = useCallback((recordingId: string) => {
+    setAudioRecordings(prev => prev.filter(r => r.id !== recordingId));
+  }, []);
+
   const value: RecordingContextValue = {
-    isRecording,
-    currentSession,
-    recordedSessions,
-    startRecording,
-    stopRecording,
+    // Performance recording
+    isRecordingPerformance,
+    currentPerformance,
+    performances,
+    startPerformanceRecording,
+    stopPerformanceRecording,
     addRecordingEvent,
+    
+    // Audio recording
+    isRecordingAudio,
+    currentAudioRecording,
+    audioRecordings,
+    startAudioRecording,
+    stopAudioRecording,
+    
+    // Sessions
+    savedSessions,
     saveCurrentState,
-    clearRecordings,
-    exportRecording,
-    deleteRecording
+    
+    // Management
+    clearAll,
+    exportPerformance,
+    exportSession,
+    exportAudioRecording,
+    deletePerformance,
+    deleteSession,
+    deleteAudioRecording
   };
 
   return (

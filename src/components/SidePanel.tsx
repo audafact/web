@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRecording } from '../context/RecordingContext';
 
 // Import all available audio assets
@@ -45,7 +45,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   isLoading,
   initialMode
 }) => {
-  const { recordedSessions, exportRecording, deleteRecording } = useRecording();
+  const { savedSessions, performances, audioRecordings, exportSession, exportPerformance, exportAudioRecording, deleteSession, deletePerformance, deleteAudioRecording } = useRecording();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -62,6 +62,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [activeSessionsTab, setActiveSessionsTab] = useState<'saved' | 'shared' | null>(() => {
     const savedTab = localStorage.getItem('sidePanelActiveSessionsTab');
     return (savedTab as 'saved' | 'shared' | null) || null;
+  });
+  
+  const [activeRepoTab, setActiveRepoTab] = useState<'recordings' | 'performances' | null>(() => {
+    const savedTab = localStorage.getItem('sidePanelActiveRepoTab');
+    return (savedTab as 'recordings' | 'performances' | null) || null;
   });
   const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
   const [playingAssets, setPlayingAssets] = useState<{ [key: string]: boolean }>({});
@@ -123,6 +128,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
     setActiveSessionsTab(prev => prev === tab ? null : tab);
   };
 
+  const handleRepoTabSelect = (tab: 'recordings' | 'performances') => {
+    setActiveRepoTab(prev => prev === tab ? null : tab);
+  };
+
   // Auto-show library when opened in library mode
   useEffect(() => {
     if (initialMode === 'library' && activeAudioTab !== 'library') {
@@ -151,6 +160,14 @@ const SidePanel: React.FC<SidePanelProps> = ({
       localStorage.removeItem('sidePanelActiveSessionsTab');
     }
   }, [activeSessionsTab]);
+  
+  useEffect(() => {
+    if (activeRepoTab) {
+      localStorage.setItem('sidePanelActiveRepoTab', activeRepoTab);
+    } else {
+      localStorage.removeItem('sidePanelActiveRepoTab');
+    }
+  }, [activeRepoTab]);
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -391,11 +408,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
             {expandedMenus['audio-library'] && (
               <div className="bg-audafact-surface-2">
                 <button
-                  onClick={() => handleAudioTabSelect('library')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeAudioTab === 'library'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                        onClick={() => handleAudioTabSelect('library')}
+                        className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                          activeAudioTab === 'library'
+                            ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                            : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
                   }`}
                 >
                   Audafact Library
@@ -479,11 +496,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 )}
                 
                 <button
-                  onClick={() => handleAudioTabSelect('my-tracks')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeAudioTab === 'my-tracks'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                        onClick={() => handleAudioTabSelect('my-tracks')}
+                        className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                          activeAudioTab === 'my-tracks'
+                            ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                            : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
                   }`}
                 >
                   My Tracks
@@ -619,171 +636,246 @@ const SidePanel: React.FC<SidePanelProps> = ({
               </svg>
             </button>
             
-                         {expandedMenus['sessions'] && (
-               <div className="bg-audafact-surface-2">
-                 <button
-                   onClick={() => handleSessionsTabSelect('saved')}
-                   className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                     activeSessionsTab === 'saved'
-                       ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                       : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                   }`}
-                 >
-                   Saved Sessions
-                 </button>
-                 
-                 {/* Saved Sessions Content */}
-                 {activeSessionsTab === 'saved' && (
-                   <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
-                     <div className="space-y-4">
-                       <div className="flex items-center justify-between">
-                         <h3 className="text-md font-medium audafact-heading">Saved Sessions</h3>
-                         <span className="text-xs audafact-text-secondary">{recordedSessions.length} sessions</span>
-                       </div>
+            {expandedMenus['sessions'] && (
+              <div className="bg-audafact-surface-2">
+                <button
+                  onClick={() => handleSessionsTabSelect('saved')}
+                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                    activeSessionsTab === 'saved'
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                  }`}
+                >
+                  Saved Sessions
+                </button>
+            
+                {/* Saved Sessions Content */}
+                {activeSessionsTab === 'saved' && (
+                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-md font-medium audafact-heading">Saved Sessions</h3>
+                        <span className="text-xs audafact-text-secondary">{savedSessions.length} sessions</span>
+                      </div>
 
-                       {recordedSessions.length === 0 ? (
-                         <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                           <div className="text-audafact-text-secondary mb-4">
-                             <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                             </svg>
-                           </div>
-                           <p className="audafact-text-secondary mb-4">No sessions saved yet</p>
-                           <p className="text-xs audafact-text-secondary">Use "Record" to capture performances or "Save" to store current studio state</p>
-                         </div>
-                       ) : (
-                         <div className="space-y-3">
-                           {recordedSessions.map((session) => {
-                             const isStateSnapshot = session.id.startsWith('state_');
-                             const isRecording = session.id.startsWith('recording_');
-                             
-                             return (
-                               <div
-                                 key={session.id}
-                                 className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
-                               >
-                                 <div className="flex items-start justify-between mb-2">
-                                   <div className="flex-1 min-w-0">
-                                     <div className="flex items-center gap-2 mb-1">
-                                       <h4 className="font-medium audafact-text-primary text-sm">
-                                         {new Date(session.startTime).toLocaleDateString()} at {new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                       </h4>
-                                       {isStateSnapshot && (
-                                         <span className="px-2 py-0.5 text-xs bg-audafact-accent-cyan text-audafact-bg-primary rounded-full">
-                                           State
-                                         </span>
-                                       )}
-                                       {isRecording && (
-                                         <span className="px-2 py-0.5 text-xs bg-audafact-alert-red text-audafact-text-primary rounded-full">
-                                           Recording
-                                         </span>
-                                       )}
-                                     </div>
-                                     {isRecording && (
-                                       <p className="text-xs audafact-text-secondary">
-                                         Duration: {Math.floor(session.duration / 60000)}:{((session.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}
-                                       </p>
-                                     )}
-                                     <p className="text-xs audafact-text-secondary">
-                                       {isStateSnapshot ? 'Studio snapshot' : `${session.events.length} events`} • {session.tracks.length} tracks
-                                     </p>
-                                   </div>
-                                 <div className="flex items-center gap-1 ml-2">
-                                   <button
-                                     onClick={() => exportRecording(session.id)}
-                                     className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                     title="Export Session"
-                                   >
-                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                     </svg>
-                                   </button>
-                                   <button
-                                     onClick={() => deleteRecording(session.id)}
-                                     className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                     title="Delete Session"
-                                   >
-                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                     </svg>
-                                   </button>
-                                 </div>
-                               </div>
-                               
-                               {session.events.length > 0 && (
-                                 <details className="mt-2">
-                                   <summary className="text-xs audafact-text-secondary cursor-pointer hover:text-audafact-text-primary">
-                                     View Events ({session.events.length})
-                                   </summary>
-                                   <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                                     {session.events.slice(0, 5).map((event, index) => (
-                                       <div key={index} className="text-xs bg-audafact-surface-3 p-2 rounded">
-                                         <div className="flex justify-between">
-                                           <span className="font-mono text-audafact-accent-cyan">
-                                             {Math.floor(event.timestamp / 1000)}:{((event.timestamp % 1000) / 10).toFixed(0).padStart(2, '0')}
-                                           </span>
-                                           <span className="text-audafact-alert-red">{event.type}</span>
-                                         </div>
-                                         <div className="text-audafact-text-secondary">
-                                           Track: {event.trackId.substring(0, 8)}...
-                                         </div>
-                                       </div>
-                                     ))}
-                                     {session.events.length > 5 && (
-                                       <div className="text-xs text-center audafact-text-secondary py-1">
-                                         ...and {session.events.length - 5} more events
-                                       </div>
-                                     )}
-                                   </div>
-                                 </details>
-                               )}
-                             </div>
-                             );
-                           })}
-                         </div>
-                       )}
-                     </div>
-                   </div>
-                 )}
+                      {savedSessions.length === 0 ? (
+                        <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                          <div className="text-audafact-text-secondary mb-4">
+                            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                            </svg>
+                          </div>
+                          <p className="audafact-text-secondary mb-4">No sessions saved yet</p>
+                          <p className="text-xs audafact-text-secondary">Use "Record" to capture performances or "Save" to store current studio state</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {savedSessions.map((session) => {
+                            const isStateSnapshot = session.id.startsWith('session_');
+                            const isRecording = session.id.startsWith('recording_');
+                            
+                            return (
+                              <div
+                                key={session.id}
+                                className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
+                              >
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <h4 className="font-medium audafact-text-primary text-sm">
+                                        {new Date(session.startTime).toLocaleDateString()} at {new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </h4>
+                                      {isStateSnapshot && (
+                                        <span className="px-2 py-0.5 text-xs bg-audafact-accent-cyan text-audafact-bg-primary rounded-full">
+                                          State
+                                        </span>
+                                      )}
+                                      {isRecording && (
+                                        <span className="px-2 py-0.5 text-xs bg-audafact-alert-red text-audafact-text-primary rounded-full">
+                                          Recording
+                                        </span>
+                                      )}
+                                    </div>
+                                    {isRecording && (
+                                      <p className="text-xs audafact-text-secondary">
+                                        Duration: {Math.floor(session.duration / 60000)}:{((session.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}
+                                      </p>
+                                    )}
+                                    <p className="text-xs audafact-text-secondary">
+                                      {isStateSnapshot ? 'Studio snapshot' : `${session.events.length} events`} • {session.tracks.length} tracks
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1 ml-2">
+                                    <button
+                                      onClick={() => exportSession(session.id)}
+                                      className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title="Export Session"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => deleteSession(session.id)}
+                                      className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title="Delete Session"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              
+                                {session.events.length > 0 && (
+                                  <details className="mt-2">
+                                    <summary className="text-xs audafact-text-secondary cursor-pointer hover:text-audafact-text-primary">
+                                      View Events ({session.events.length})
+                                    </summary>
+                                    <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                                      {session.events.slice(0, 5).map((event, index) => (
+                                        <div key={index} className="text-xs bg-audafact-surface-3 p-2 rounded">
+                                          <div className="flex justify-between">
+                                            <span className="font-mono text-audafact-accent-cyan">
+                                              {Math.floor(event.timestamp / 1000)}:{((event.timestamp % 1000) / 10).toFixed(0).padStart(2, '0')}
+                                            </span>
+                                            <span className="text-audafact-alert-red">{event.type}</span>
+                                          </div>
+                                          <div className="text-audafact-text-secondary">
+                                            Track: {event.trackId.substring(0, 8)}...
+                                          </div>
+                                        </div>
+                                      ))}
+                                      {session.events.length > 5 && (
+                                        <div className="text-xs text-center audafact-text-secondary py-1">
+                                          ...and {session.events.length - 5} more events
+                                        </div>
+                                      )}
+                                    </div>
+                                  </details>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                  
-                 <button
-                   onClick={() => handleSessionsTabSelect('shared')}
-                   className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                     activeSessionsTab === 'shared'
-                       ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                       : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                   }`}
-                 >
-                   Shared Sessions
-                 </button>
+                <button
+                  onClick={() => handleSessionsTabSelect('shared')}
+                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                    activeSessionsTab === 'shared'
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                  }`}
+                >
+                  Shared Sessions
+                </button>
                  
-                 {/* Shared Sessions Content */}
-                 {activeSessionsTab === 'shared' && (
-                   <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
-                     <div className="space-y-4">
-                       <div className="flex items-center justify-between">
-                         <h3 className="text-md font-medium audafact-heading">Shared Sessions</h3>
-                       </div>
+                {/* Shared Sessions Content */}
+                {activeSessionsTab === 'shared' && (
+                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-md font-medium audafact-heading">Shared Sessions</h3>
+                      </div>
 
-                       <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                         <div className="text-audafact-text-secondary mb-4">
-                           <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                           </svg>
-                         </div>
-                         <p className="audafact-text-secondary mb-4">Shared sessions coming soon</p>
-                         <p className="text-xs audafact-text-secondary">Discover and import sessions shared by the community</p>
-                       </div>
-                     </div>
-                   </div>
-                 )}
-               </div>
-             )}
+                      <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                        <div className="text-audafact-text-secondary mb-4">
+                          <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                          </svg>
+                        </div>
+                        <p className="audafact-text-secondary mb-4">Shared sessions coming soon</p>
+                        <p className="text-xs audafact-text-secondary">Discover and import sessions shared by the community</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          {/* Repo Menu */}
+          <div className="border-b border-audafact-divider">
+            <button
+              onClick={() => toggleMenu('repo')}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
+            >
+              <span>Repo</span>
+              <svg 
+                className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['repo'] ? 'rotate-90' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            {expandedMenus['repo'] && (
+              <div className="bg-audafact-surface-2">
+                <button
+                  onClick={() => handleRepoTabSelect('recordings')}
+                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                    activeRepoTab === 'recordings'
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                  }`}
+                >
+                  Recordings
+                </button>
+                {activeRepoTab === 'recordings' && (
+                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-md font-medium audafact-heading">Audio Recordings</h3>
+                      <span className="text-xs audafact-text-secondary">{audioRecordings.length} recordings</span>
+                    </div>
+                    <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                      <div className="text-audafact-text-secondary mb-4">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                      </div>
+                      <p className="audafact-text-secondary mb-4">No audio recordings yet</p>
+                      <p className="text-xs audafact-text-secondary">Audio recording functionality coming soon</p>
+                    </div>
+                  </div>
+                )}
+                
+                <button
+                  onClick={() => handleRepoTabSelect('performances')}
+                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                    activeRepoTab === 'performances'
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                  }`}
+                >
+                  Performances
+                </button>
+                {activeRepoTab === 'performances' && (
+                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-md font-medium audafact-heading">Performance Recordings</h3>
+                      <span className="text-xs audafact-text-secondary">{performances.length} performances</span>
+                    </div>
+                    <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                      <div className="text-audafact-text-secondary mb-4">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                        </svg>
+                      </div>
+                      <p className="audafact-text-secondary mb-4">No performances recorded yet</p>
+                      <p className="text-xs audafact-text-secondary">Use "Record" to capture your studio performances</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
-
-
-
+      </div>
+      <div>
         {/* Hidden file input for upload functionality */}
         <input
           ref={fileInputRef}
