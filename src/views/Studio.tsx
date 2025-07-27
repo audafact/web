@@ -88,7 +88,7 @@ interface UserTrack {
 const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
-  const { addRecordingEvent } = useRecording();
+  const { addRecordingEvent, saveCurrentState } = useRecording();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -1417,6 +1417,35 @@ const Studio = () => {
     setFilterEnabled(prev => ({ ...prev, [trackId]: enabled }));
   };
 
+  // Handle save current studio state
+  const handleSaveCurrentState = () => {
+    const studioState = {
+      tracks: tracks.map(track => ({
+        id: track.id,
+        name: track.file.name,
+        mode: track.mode,
+        loopStart: track.loopStart,
+        loopEnd: track.loopEnd,
+        cuePoints: track.cuePoints,
+        tempo: track.tempo,
+        timeSignature: track.timeSignature,
+        firstMeasureTime: track.firstMeasureTime,
+        showMeasures: showMeasures[track.id] || false,
+        showCueThumbs: showCueThumbs[track.id] || false,
+        zoomLevel: zoomLevels[track.id] || 1,
+        playbackSpeed: playbackSpeeds[track.id] || 1,
+        volume: volume[track.id] || 1,
+        lowpassFreq: lowpassFreqs[track.id] || 20000,
+        highpassFreq: highpassFreqs[track.id] || 20,
+        filterEnabled: filterEnabled[track.id] || false
+      })),
+      selectedCueTrackId,
+      timestamp: Date.now()
+    };
+    
+    saveCurrentState(studioState);
+  };
+
   // Add handler for toggling accordion controls
   const handleToggleControls = (trackId: string) => {
     setExpandedControls(prev => ({
@@ -1783,7 +1812,7 @@ const Studio = () => {
 
       {/* Global Recording Controls */}
       <div className="flex justify-end mb-4">
-        <RecordingControls />
+        <RecordingControls onSave={handleSaveCurrentState} />
       </div>
 
       {/* Render all tracks */}

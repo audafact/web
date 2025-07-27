@@ -23,6 +23,7 @@ interface RecordingContextValue {
   startRecording: () => void;
   stopRecording: () => void;
   addRecordingEvent: (event: Omit<RecordingEvent, 'timestamp'>) => void;
+  saveCurrentState: (studioState: any) => void;
   clearRecordings: () => void;
   exportRecording: (sessionId: string) => void;
   deleteRecording: (sessionId: string) => void;
@@ -124,6 +125,29 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setRecordedSessions(prev => prev.filter(s => s.id !== sessionId));
   }, []);
 
+  const saveCurrentState = useCallback((studioState: any) => {
+    const sessionId = `state_${Date.now()}`;
+    const currentTime = Date.now();
+    
+    const stateSession: RecordingSession = {
+      id: sessionId,
+      startTime: currentTime,
+      endTime: currentTime,
+      events: [{
+        timestamp: 0,
+        type: 'cue_trigger', // Using a dummy type for state snapshots
+        trackId: 'studio',
+        data: studioState
+      }],
+      tracks: studioState.tracks?.map((track: any) => track.id) || [],
+      duration: 0
+    };
+    
+    setRecordedSessions(prev => [stateSession, ...prev]);
+    
+    console.log('Studio state saved:', sessionId);
+  }, []);
+
   const value: RecordingContextValue = {
     isRecording,
     currentSession,
@@ -131,6 +155,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     startRecording,
     stopRecording,
     addRecordingEvent,
+    saveCurrentState,
     clearRecordings,
     exportRecording,
     deleteRecording
