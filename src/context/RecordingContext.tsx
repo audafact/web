@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 
 interface RecordingEvent {
   timestamp: number;
@@ -23,6 +23,7 @@ interface Performance {
   events: RecordingEvent[];
   tracks: string[];
   duration: number;
+  audioBlob?: Blob; // Add audio blob to performances
 }
 
 interface AudioRecording {
@@ -34,6 +35,7 @@ interface AudioRecording {
   duration: number;
   tempo: number;
   countInBeats: number;
+  events: RecordingEvent[]; // Add events to audio recordings
 }
 
 interface RecordingContextValue {
@@ -41,9 +43,10 @@ interface RecordingContextValue {
   isRecordingPerformance: boolean;
   currentPerformance: Performance | null;
   performances: Performance[];
-  startPerformanceRecording: () => void;
+  startPerformanceRecording: (appAudioContext?: AudioContext) => void;
   stopPerformanceRecording: () => void;
   addRecordingEvent: (event: Omit<RecordingEvent, 'timestamp'>) => void;
+  getRecordingDestination: () => MediaStreamAudioDestinationNode | null;
   
   // Audio recording
   isRecordingAudio: boolean;
@@ -66,70 +69,310 @@ interface RecordingContextValue {
   deleteAudioRecording: (recordingId: string) => void;
 }
 
+// Helper function to convert AudioBuffer to WAV format
+const convertToWav = async (audioBuffer: AudioBuffer): Promise<Blob | null> => {
+  try {
+    const length = audioBuffer.length;
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    
+    // Create WAV header
+    const buffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+    const view = new DataView(buffer);
+    
+    // WAV header
+    const writeString = (offset: number, string: string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+    view.setUint16(32, numberOfChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * numberOfChannels * 2, true);
+    
+    // Write audio data
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(channel)[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    
+    return new Blob([buffer], { type: 'audio/wav' });
+  } catch (error) {
+    console.error('Error converting to WAV:', error);
+    return null;
+  }
+};
+
 const RecordingContextInstance = createContext<RecordingContextValue | null>(null);
 
 export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Performance recording state
   const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
   const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
-  const [performances, setPerformances] = useState<Performance[]>([]);
+  const [performances, setPerformances] = useState<Performance[]>(() => {
+    const saved = localStorage.getItem('audafact_performances');
+    return saved ? JSON.parse(saved) : [];
+  });
   const performanceStartTimeRef = useRef<number>(0);
   
   // Audio recording state
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [currentAudioRecording, setCurrentAudioRecording] = useState<AudioRecording | null>(null);
-  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>([]);
+  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>(() => {
+    const saved = localStorage.getItem('audafact_audioRecordings');
+    return saved ? JSON.parse(saved) : [];
+  });
   
   // Sessions state
-  const [savedSessions, setSavedSessions] = useState<RecordingSession[]>([]);
+  const [savedSessions, setSavedSessions] = useState<RecordingSession[]>(() => {
+    const saved = localStorage.getItem('audafact_savedSessions');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  // Performance recording functions
-  const startPerformanceRecording = useCallback(() => {
-    const performanceId = `performance_${Date.now()}`;
-    const startTime = Date.now();
-    performanceStartTimeRef.current = startTime;
-    
-    const newPerformance: Performance = {
-      id: performanceId,
-      startTime,
-      events: [],
-      tracks: [],
-      duration: 0
-    };
-    
-    setCurrentPerformance(newPerformance);
-    setIsRecordingPerformance(true);
-    
-    console.log('Performance recording started:', performanceId);
-  }, []);
+  // MediaRecorder ref for audio recording
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const performanceEventsRef = useRef<RecordingEvent[]>([]);
+  const performanceTracksRef = useRef<string[]>([]);
+  const audioCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+
+  // Persist data to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('audafact_performances', JSON.stringify(performances));
+  }, [performances]);
+
+  useEffect(() => {
+    localStorage.setItem('audafact_audioRecordings', JSON.stringify(audioRecordings));
+  }, [audioRecordings]);
+
+  useEffect(() => {
+    localStorage.setItem('audafact_savedSessions', JSON.stringify(savedSessions));
+  }, [savedSessions]);
+
+  // Combined recording functions
+  const startPerformanceRecording = useCallback(async (appAudioContext?: AudioContext) => {
+    try {
+      const performanceId = `performance_${Date.now()}`;
+      const startTime = Date.now();
+      performanceStartTimeRef.current = startTime;
+      
+      if (!appAudioContext) {
+        console.error('No audio context provided for recording');
+        alert('Audio context is required for recording. Please ensure audio is initialized.');
+        return;
+      }
+      
+      // Create a MediaStreamDestination to capture audio from the app
+      const destination = appAudioContext.createMediaStreamDestination();
+      recordingDestinationRef.current = destination;
+      
+      // We need to connect all active audio sources to our destination
+      // This will be done by the Studio component when it starts recording
+      console.log('Created MediaStreamDestination for app audio capture');
+      
+      console.log('Audio capture setup:', {
+        destinationChannels: destination.channelCount,
+        destinationSampleRate: destination.context.sampleRate,
+        audioContextState: appAudioContext.state
+      });
+      
+      // Create MediaRecorder with the captured audio stream
+      let mimeType = '';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4;codecs=mp4a.40.2')) {
+        mimeType = 'audio/mp4;codecs=mp4a.40.2';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      }
+      
+      console.log('MediaRecorder setup:', { 
+        mimeType, 
+        isSupported: MediaRecorder.isTypeSupported(mimeType)
+      });
+      
+      const mediaRecorder = new MediaRecorder(destination.stream, mimeType ? { mimeType } : undefined);
+      
+      // Add error handling for MediaRecorder
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event);
+      };
+      
+      mediaRecorder.onstart = () => {
+        console.log('MediaRecorder started successfully');
+      };
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioStreamRef.current = destination.stream;
+      
+      const chunks: Blob[] = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        console.log('MediaRecorder data available:', { 
+          size: event.data.size, 
+          type: event.data.type,
+          hasData: event.data.size > 0,
+          timestamp: Date.now()
+        });
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+      
+
+      
+      mediaRecorder.onstop = async () => {
+        console.log('MediaRecorder stopped, creating audio blob:', { chunksCount: chunks.length, totalSize: chunks.reduce((sum, chunk) => sum + chunk.size, 0) });
+        const originalBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+        console.log('Original audio blob created:', { size: originalBlob.size, type: originalBlob.type });
+        
+        // Convert to WAV format for better compatibility
+        let finalAudioBlob = originalBlob;
+        try {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const arrayBuffer = await originalBlob.arrayBuffer();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          
+          console.log('Audio buffer decoded:', {
+            duration: audioBuffer.duration,
+            sampleRate: audioBuffer.sampleRate,
+            numberOfChannels: audioBuffer.numberOfChannels,
+            length: audioBuffer.length
+          });
+          
+          // Convert to WAV format for better compatibility
+          const wavBlob = await convertToWav(audioBuffer);
+          if (wavBlob) {
+            finalAudioBlob = wavBlob;
+            console.log('Converted to WAV format:', { size: wavBlob.size, type: wavBlob.type });
+          }
+        } catch (error) {
+          console.warn('Failed to convert audio format, using original:', error);
+        }
+        
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+        
+        console.log('Performance recording completed:', {
+          id: performanceId,
+          eventsCount: performanceEventsRef.current.length,
+          tracksCount: performanceTracksRef.current.length,
+          duration,
+          hasAudio: !!finalAudioBlob,
+          finalFormat: finalAudioBlob.type
+        });
+        
+        const completedPerformance: Performance = {
+          id: performanceId,
+          startTime,
+          endTime,
+          duration,
+          events: performanceEventsRef.current,
+          tracks: performanceTracksRef.current,
+          audioBlob: finalAudioBlob
+        };
+        
+        setPerformances(prev => [completedPerformance, ...prev]);
+        setCurrentPerformance(null);
+        setIsRecordingPerformance(false);
+        
+        // Clear refs and stop audio monitoring
+        mediaRecorderRef.current = null;
+        audioStreamRef.current = null;
+        recordingDestinationRef.current = null;
+        
+        // Stop audio level monitoring
+        if (audioCheckIntervalRef.current) {
+          clearTimeout(audioCheckIntervalRef.current);
+          audioCheckIntervalRef.current = null;
+        }
+        
+        console.log('Performance recording stopped:', completedPerformance.id, 'Duration:', duration);
+      };
+      
+      const newPerformance: Performance = {
+        id: performanceId,
+        startTime,
+        events: [],
+        tracks: [],
+        duration: 0
+      };
+      
+      // Initialize refs for tracking events and tracks
+      performanceEventsRef.current = [];
+      performanceTracksRef.current = [];
+      
+      setCurrentPerformance(newPerformance);
+      setIsRecordingPerformance(true);
+      
+      // Start recording
+      mediaRecorder.start();
+      
+      console.log('Performance recording started:', performanceId);
+    } catch (error) {
+      console.error('Failed to start performance recording:', error);
+      alert('Failed to start recording. Please check microphone permissions.');
+    }
+  }, [currentPerformance]);
 
   const stopPerformanceRecording = useCallback(() => {
-    if (!currentPerformance) return;
+    if (!currentPerformance || !mediaRecorderRef.current) return;
     
-    const endTime = Date.now();
-    const duration = endTime - currentPerformance.startTime;
-    
-    const completedPerformance: Performance = {
-      ...currentPerformance,
-      endTime,
-      duration
-    };
-    
-    setPerformances(prev => [completedPerformance, ...prev]);
-    setCurrentPerformance(null);
-    setIsRecordingPerformance(false);
-    
-    console.log('Performance recording stopped:', completedPerformance.id, 'Duration:', duration);
+    try {
+      // Stop the MediaRecorder
+      mediaRecorderRef.current.stop();
+      
+      // Stop the audio stream
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
+      }
+      
+      mediaRecorderRef.current = null;
+      
+      console.log('Performance recording stop requested');
+    } catch (error) {
+      console.error('Error stopping performance recording:', error);
+    }
   }, [currentPerformance]);
 
   const addRecordingEvent = useCallback((event: Omit<RecordingEvent, 'timestamp'>) => {
-    if (!isRecordingPerformance || !currentPerformance) return;
+    if (!isRecordingPerformance || !currentPerformance) {
+      console.log('Recording event ignored - not recording or no current performance:', { isRecordingPerformance, hasCurrentPerformance: !!currentPerformance });
+      return;
+    }
     
     const timestamp = Date.now() - performanceStartTimeRef.current;
     const newEvent: RecordingEvent = {
       ...event,
       timestamp
     };
+    
+    // Update refs immediately
+    performanceEventsRef.current = [...performanceEventsRef.current, newEvent];
+    if (!performanceTracksRef.current.includes(event.trackId)) {
+      performanceTracksRef.current = [...performanceTracksRef.current, event.trackId];
+    }
+    
+    console.log('Recording event added:', { type: event.type, trackId: event.trackId, timestamp, totalEvents: performanceEventsRef.current.length });
     
     setCurrentPerformance(prev => {
       if (!prev) return null;
@@ -147,45 +390,16 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [isRecordingPerformance, currentPerformance]);
 
-  // Audio recording functions
-  const startAudioRecording = useCallback((tempo: number, countInBeats: number = 4) => {
-    const recordingId = `audio_${Date.now()}`;
-    const startTime = Date.now();
-    
-    const newRecording: AudioRecording = {
-      id: recordingId,
-      startTime,
-      tracks: [],
-      duration: 0,
-      tempo,
-      countInBeats
-    };
-    
-    setCurrentAudioRecording(newRecording);
-    setIsRecordingAudio(true);
-    
-    // TODO: Implement count-in and actual audio recording
-    console.log('Audio recording started:', recordingId, 'Tempo:', tempo, 'Count-in beats:', countInBeats);
-  }, []);
+    // Audio recording functions (deprecated - now combined with performance recording)
+  const startAudioRecording = useCallback(async (tempo: number, countInBeats: number = 4) => {
+    console.warn('startAudioRecording is deprecated. Use startPerformanceRecording instead.');
+    await startPerformanceRecording();
+  }, [startPerformanceRecording]);
 
   const stopAudioRecording = useCallback(() => {
-    if (!currentAudioRecording) return;
-    
-    const endTime = Date.now();
-    const duration = endTime - currentAudioRecording.startTime;
-    
-    const completedRecording: AudioRecording = {
-      ...currentAudioRecording,
-      endTime,
-      duration
-    };
-    
-    setAudioRecordings(prev => [completedRecording, ...prev]);
-    setCurrentAudioRecording(null);
-    setIsRecordingAudio(false);
-    
-    console.log('Audio recording stopped:', completedRecording.id, 'Duration:', duration);
-  }, [currentAudioRecording]);
+    console.warn('stopAudioRecording is deprecated. Use stopPerformanceRecording instead.');
+    stopPerformanceRecording();
+  }, [stopPerformanceRecording]);
 
   // Session functions
   const saveCurrentState = useCallback((studioState: any) => {
@@ -216,13 +430,19 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setPerformances([]);
     setAudioRecordings([]);
     setSavedSessions([]);
+    // Also clear from localStorage
+    localStorage.removeItem('audafact_performances');
+    localStorage.removeItem('audafact_audioRecordings');
+    localStorage.removeItem('audafact_savedSessions');
   }, []);
 
   const exportPerformance = useCallback((performanceId: string) => {
     const performance = performances.find(p => p.id === performanceId);
     if (!performance) return;
     
-    const dataStr = JSON.stringify(performance, null, 2);
+    // Export performance data (without audio blob)
+    const { audioBlob, ...performanceData } = performance;
+    const dataStr = JSON.stringify(performanceData, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     
@@ -233,6 +453,33 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    
+    // Export audio if it exists
+    if (audioBlob) {
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audioLink = document.createElement('a');
+      audioLink.href = audioUrl;
+      
+      // Determine file extension based on MIME type
+      let extension = 'webm';
+      if (audioBlob.type.includes('mp4')) {
+        extension = 'm4a'; // Use .m4a for audio MP4 files
+      } else if (audioBlob.type.includes('wav')) {
+        extension = 'wav';
+      } else if (audioBlob.type.includes('ogg')) {
+        extension = 'ogg';
+      } else if (audioBlob.type.includes('opus')) {
+        extension = 'opus';
+      }
+      
+      console.log('Exporting audio:', { type: audioBlob.type, extension, size: audioBlob.size });
+      
+      audioLink.download = `audafact_performance_${performanceId}.${extension}`;
+      document.body.appendChild(audioLink);
+      audioLink.click();
+      document.body.removeChild(audioLink);
+      URL.revokeObjectURL(audioUrl);
+    }
   }, [performances]);
 
   const exportSession = useCallback((sessionId: string) => {
@@ -279,6 +526,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setAudioRecordings(prev => prev.filter(r => r.id !== recordingId));
   }, []);
 
+  const getRecordingDestination = useCallback(() => {
+    return recordingDestinationRef.current;
+  }, []);
+
   const value: RecordingContextValue = {
     // Performance recording
     isRecordingPerformance,
@@ -287,6 +538,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     startPerformanceRecording,
     stopPerformanceRecording,
     addRecordingEvent,
+    getRecordingDestination,
     
     // Audio recording
     isRecordingAudio,

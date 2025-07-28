@@ -45,7 +45,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   isLoading,
   initialMode
 }) => {
-  const { savedSessions, performances, audioRecordings, exportSession, exportPerformance, exportAudioRecording, deleteSession, deletePerformance, deleteAudioRecording } = useRecording();
+  const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -815,33 +815,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
             </button>
             {expandedMenus['repo'] && (
               <div className="bg-audafact-surface-2">
-                <button
-                  onClick={() => handleRepoTabSelect('recordings')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeRepoTab === 'recordings'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
-                >
-                  Recordings
-                </button>
-                {activeRepoTab === 'recordings' && (
-                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-md font-medium audafact-heading">Audio Recordings</h3>
-                      <span className="text-xs audafact-text-secondary">{audioRecordings.length} recordings</span>
-                    </div>
-                    <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                      <div className="text-audafact-text-secondary mb-4">
-                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                        </svg>
-                      </div>
-                      <p className="audafact-text-secondary mb-4">No audio recordings yet</p>
-                      <p className="text-xs audafact-text-secondary">Audio recording functionality coming soon</p>
-                    </div>
-                  </div>
-                )}
+                
                 
                 <button
                   onClick={() => handleRepoTabSelect('performances')}
@@ -859,15 +833,100 @@ const SidePanel: React.FC<SidePanelProps> = ({
                       <h3 className="text-md font-medium audafact-heading">Performance Recordings</h3>
                       <span className="text-xs audafact-text-secondary">{performances.length} performances</span>
                     </div>
-                    <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                      <div className="text-audafact-text-secondary mb-4">
-                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                        </svg>
+                    
+                    {performances.length === 0 ? (
+                      <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                        <div className="text-audafact-text-secondary mb-4">
+                          <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                          </svg>
+                        </div>
+                        <p className="audafact-text-secondary mb-4">No performances recorded yet</p>
+                        <p className="text-xs audafact-text-secondary">Use "Record" to capture your studio performances</p>
                       </div>
-                      <p className="audafact-text-secondary mb-4">No performances recorded yet</p>
-                      <p className="text-xs audafact-text-secondary">Use "Record" to capture your studio performances</p>
-                    </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {performances.map((performance) => (
+                          <div
+                            key={performance.id}
+                            className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h4 className="font-medium audafact-text-primary text-sm">
+                                    {new Date(performance.startTime).toLocaleDateString()} at {new Date(performance.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </h4>
+                                  <span className="px-2 py-0.5 text-xs bg-audafact-alert-red text-audafact-text-primary rounded-full">
+                                    Performance
+                                  </span>
+                                </div>
+                                <p className="text-xs audafact-text-secondary">
+                                  Duration: {Math.floor(performance.duration / 60000)}:{((performance.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}
+                                </p>
+                                <p className="text-xs audafact-text-secondary">
+                                  {performance.events.length} events • {performance.tracks.length} tracks
+                                  {performance.audioBlob && ' • Audio recorded'}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1 ml-2">
+                                {performance.audioBlob && (
+                                  <button
+                                    onClick={() => {
+                                      try {
+                                        const url = URL.createObjectURL(performance.audioBlob!);
+                                        const audio = new Audio(url);
+                                        
+                                        audio.onerror = (e) => {
+                                          console.error('Audio playback error:', e);
+                                          alert('Failed to play audio. The format may not be supported.');
+                                        };
+                                        
+                                        audio.onloadeddata = () => {
+                                          console.log('Audio loaded successfully:', { duration: audio.duration, format: performance.audioBlob?.type });
+                                        };
+                                        
+                                        audio.play().catch(error => {
+                                          console.error('Audio play failed:', error);
+                                          alert('Failed to play audio. Please check browser audio permissions.');
+                                        });
+                                      } catch (error) {
+                                        console.error('Audio playback setup failed:', error);
+                                        alert('Failed to setup audio playback.');
+                                      }
+                                    }}
+                                    className="p-1 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                    title="Play Audio"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                                    </svg>
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => exportPerformance(performance.id)}
+                                  className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                  title="Export Performance"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => deletePerformance(performance.id)}
+                                  className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                  title="Delete Performance"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

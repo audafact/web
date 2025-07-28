@@ -44,6 +44,8 @@ interface TrackControlsProps {
   trackId?: string;
   // Seek function ref
   seekFunctionRef?: React.MutableRefObject<((seekTime: number) => void) | null>;
+  // Recording destination for audio capture
+  recordingDestination?: MediaStreamAudioDestinationNode | null;
 }
 
 const TrackControls = ({ 
@@ -76,11 +78,27 @@ const TrackControls = ({
   showDeleteButton = false,
   onDelete,
   trackId,
-  seekFunctionRef
+  seekFunctionRef,
+  recordingDestination
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
+  
+  // Reconnect audio sources when recording destination changes
+  useEffect(() => {
+    if (recordingDestination && audioSourceRef.current && isPlaying && audioContext) {
+      console.log(`Track ${trackId}: Reconnecting existing audio source to recording destination`);
+      
+      // Create a separate gain node for recording
+      const recordingGain = audioContext.createGain();
+      recordingGain.gain.value = gainNodeRef.current?.gain.value || 1;
+      
+      // Connect the audio source to the recording gain
+      audioSourceRef.current.connect(recordingGain);
+      recordingGain.connect(recordingDestination);
+    }
+  }, [recordingDestination, isPlaying, trackId, audioContext]);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState<number | null>(null);
   const [isSpeedSliderHovered, setIsSpeedSliderHovered] = useState(false);
@@ -262,11 +280,31 @@ const TrackControls = ({
       lowpassFilter.connect(gainNode);
       gainNode.connect(audioContext.destination);
       
+      // Also connect to recording destination if available
+      if (recordingDestination) {
+        // Create a separate gain node for recording to avoid conflicts
+        const recordingGain = audioContext.createGain();
+        recordingGain.gain.value = gainNode.gain.value;
+        lowpassFilter.connect(recordingGain);
+        recordingGain.connect(recordingDestination);
+        console.log(`Track ${trackId}: Connected audio source to recording destination (with filters)`);
+      }
+      
       return { sourceNode, gainNode, lowpassFilter, highpassFilter };
     } else {
       // Connect: source -> gain -> destination (no filters)
       sourceNode.connect(gainNode);
       gainNode.connect(audioContext.destination);
+      
+      // Also connect to recording destination if available
+      if (recordingDestination) {
+        // Create a separate gain node for recording to avoid conflicts
+        const recordingGain = audioContext.createGain();
+        recordingGain.gain.value = gainNode.gain.value;
+        sourceNode.connect(recordingGain);
+        recordingGain.connect(recordingDestination);
+        console.log(`Track ${trackId}: Connected audio source to recording destination (no filters)`);
+      }
       
       return { sourceNode, gainNode };
     }

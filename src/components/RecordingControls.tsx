@@ -5,14 +5,15 @@ import { useRecording } from '../context/RecordingContext';
 interface RecordingControlsProps {
   className?: string;
   onSave?: () => void;
+  audioContext?: AudioContext;
 }
 
-const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', onSave }) => {
+const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', onSave, audioContext }) => {
   const { 
     isRecordingPerformance, 
     currentPerformance, 
     startPerformanceRecording, 
-    stopPerformanceRecording 
+    stopPerformanceRecording
   } = useRecording();
   
   const [saveSuccess, setSaveSuccess] = React.useState(false);
@@ -59,9 +60,18 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
 
               {/* Record Button and Status - Right Side */}
         <div className="flex items-center gap-3">
+          {isRecordingPerformance && currentPerformance && (
+            <div className="flex items-center gap-2 text-sm audafact-text-secondary">
+              <span>Recording Performance & Audio...</span>
+              <span className="font-mono">
+                {formatDuration(Date.now() - currentPerformance.startTime)}
+              </span>
+            </div>
+          )}
+
           {!isRecordingPerformance ? (
             <button
-              onClick={startPerformanceRecording}
+              onClick={() => startPerformanceRecording(audioContext)}
               className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
             >
               <div className="w-3 h-3 bg-current rounded-full"></div>
@@ -73,17 +83,8 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
               className="flex items-center gap-2 px-4 py-2 bg-audafact-text-secondary text-audafact-bg-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
             >
               <div className="w-3 h-3 bg-current rounded-full animate-pulse"></div>
-              Stop
+              Stop Recording
             </button>
-          )}
-          
-          {isRecordingPerformance && currentPerformance && (
-            <div className="flex items-center gap-2 text-sm audafact-text-secondary">
-              <span>Recording...</span>
-              <span className="font-mono">
-                {formatDuration(Date.now() - currentPerformance.startTime)}
-              </span>
-            </div>
           )}
         </div>
     </div>

@@ -18,6 +18,8 @@ export default {
           "accent-cyan": "#00F5C3",
           // Accent Blue (Secondary action highlight) - Bright blue
           "accent-blue": "#008CFF",
+          // Accent Green (Success, play actions) - Bright green
+          "accent-green": "#10B981",
           // Text Primary (Main white/off-white text) - Pure white
           "text-primary": "#FFFFFF",
           // Text Secondary (Descriptive subtext/labels) - Lighter gray

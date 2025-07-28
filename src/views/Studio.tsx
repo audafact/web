@@ -88,7 +88,7 @@ interface UserTrack {
 const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
-  const { addRecordingEvent, saveCurrentState } = useRecording();
+  const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,19 @@ const Studio = () => {
   const [showCueThumbs, setShowCueThumbs] = useState<{ [key: string]: boolean }>({});
   // Add playback state tracking
   const [playbackStates, setPlaybackStates] = useState<{ [key: string]: boolean }>({});
+  
+  // Debug recording destination
+  useEffect(() => {
+    if (isRecordingPerformance) {
+      const destination = getRecordingDestination();
+      console.log('Studio: Recording destination available:', !!destination);
+      
+      // Check which tracks are playing
+      const playingTracks = Object.entries(playbackStates).filter(([_, isPlaying]) => isPlaying);
+      console.log('Studio: Playing tracks during recording:', playingTracks.map(([trackId]) => trackId));
+    }
+  }, [isRecordingPerformance, getRecordingDestination, playbackStates]);
+  
   // Add accordion state for collapsible controls
   const [expandedControls, setExpandedControls] = useState<{ [key: string]: boolean }>({});
   
@@ -1812,7 +1825,7 @@ const Studio = () => {
 
       {/* Global Recording Controls */}
       <div className="flex justify-end mb-4">
-        <RecordingControls onSave={handleSaveCurrentState} />
+        <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
       </div>
 
       {/* Render all tracks */}
@@ -2190,6 +2203,7 @@ const Studio = () => {
               onDelete={() => removeTrack(track.id)}
               trackId={track.id}
               seekFunctionRef={getSeekFunctionRef(track.id)}
+              recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
             />
 
             {track.mode === 'cue' && track.id === selectedCueTrackId && (
