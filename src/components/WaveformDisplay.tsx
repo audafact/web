@@ -325,7 +325,8 @@ const WaveformDisplay = ({
   }, [wavesurfer, isReady, zoomLevel]);
 
   // Function to clear all regions
-  const clearRegions = useCallback(() => {
+  const clearRegions = useCallback(async () => {
+    
     // First, clear tracked regions
     if (regionsPluginRef.current && currentRegionsRef.current.length > 0) {
       currentRegionsRef.current.forEach(region => {
@@ -350,18 +351,43 @@ const WaveformDisplay = ({
     if (regionsPluginRef.current) {
       try {
         const allRegions = regionsPluginRef.current.getRegions();
-        Object.values(allRegions).forEach((region: any) => {
-          try {
-            if (region.thumbElement) {
-              region.thumbElement.remove();
-              region.thumbElement = null;
+        
+        // Try using the plugin's clearRegions method first
+        try {
+          regionsPluginRef.current.clearRegions();
+        } catch (e) {
+          console.warn('plugin.clearRegions() failed, trying manual removal:', e);
+          
+          // Fallback to manual removal
+          Object.values(allRegions).forEach((region: any) => {
+            try {
+              // Remove thumb element if it exists
+              if (region.thumbElement) {
+                region.thumbElement.remove();
+                region.thumbElement = null;
+              }
+              
+              // Remove all event listeners
+              region.unAll();
+              
+              // Try to remove the region element from DOM directly
+              if (region.element && region.element.parentNode) {
+                region.element.parentNode.removeChild(region.element);
+              }
+              
+              // Remove the region from the plugin
+              region.remove();
+            } catch (e) {
+              console.warn('Region removal warning:', e);
             }
-            region.unAll();
-            region.remove();
-          } catch (e) {
-            console.warn('Region removal warning:', e);
-          }
-        });
+          });
+        }
+        
+        // Force a small delay to ensure removal is complete
+        await new Promise(resolve => setTimeout(resolve, 10));
+        
+        // Double-check that regions are actually removed
+        const remainingRegions = regionsPluginRef.current.getRegions();
       } catch (e) {
         console.warn('Error clearing all regions:', e);
       }
@@ -376,13 +402,13 @@ const WaveformDisplay = ({
     
     // Force a small delay to ensure DOM updates are complete
     return new Promise(resolve => setTimeout(resolve, 5));
-  }, [trackId]);
+  }, [trackId, isPlaying]);
 
   // Function to create regions based on mode
-  const createRegions = useCallback(() => {
+  const createRegions = useCallback(async () => {
     if (!wavesurfer || !isReady || !regionsPluginRef.current) return;
 
-    // clearRegions();
+    await clearRegions();
 
     if (mode === 'loop') {
       const region = regionsPluginRef.current.addRegion({
@@ -588,69 +614,89 @@ const WaveformDisplay = ({
 
   // Handle mode changes explicitly to ensure proper region cleanup
   useEffect(() => {
-    if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
-    
-    const modeChanged = prevModeRef.current !== mode;
-    if (modeChanged) {
-      // Clear regions immediately when mode changes
-      clearRegions().then(() => {
-        // Create new regions after clearing is complete
-        createRegions();
-      });
+    const handleModeChange = async () => {
+      if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
       
-      // Update mode ref immediately
-      prevModeRef.current = mode;
-    }
+      const modeChanged = prevModeRef.current !== mode;
+      if (modeChanged) {
+        // Clear regions immediately when mode changes
+        await clearRegions();
+        // Create new regions after clearing is complete
+        await createRegions();
+        
+        // Update mode ref immediately
+        prevModeRef.current = mode;
+      }
+    };
+    
+    handleModeChange();
   }, [mode, wavesurfer, isReady, createRegions, clearRegions]);
 
   // Recreate regions when relevant parameters change (but not mode changes)
   useEffect(() => {
-    if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
-    
-    // Only update if mode hasn't changed (mode changes are handled separately)
-    const modeChanged = prevModeRef.current !== mode;
-    if (modeChanged) return;
-    
-    const needsUpdate = shouldUpdateRegions;
-    
-    if (needsUpdate) {
-      // Clear regions first, then create new ones to prevent duplicates
-      clearRegions().then(() => {
-        createRegions();
+    const handleParameterChange = async () => {
+      if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
+      
+      // Only update if mode hasn't changed (mode changes are handled separately)
+      const modeChanged = prevModeRef.current !== mode;
+      if (modeChanged) return;
+      
+      // Check if only the parameters changed (not the mode)
+      const loopChanged = mode === 'loop' && (
+        prevLoopStartRef.current !== loopStart || 
+        prevLoopEndRef.current !== loopEnd
+      );
+      const cuePointsChanged = mode === 'cue' && (
+        prevCuePointsRef.current.length !== cuePoints.length ||
+        prevCuePointsRef.current.some((point, index) => point !== cuePoints[index])
+      );
+      
+      const needsUpdate = loopChanged || cuePointsChanged;
+      
+      if (needsUpdate) {
+        // Clear regions first, then create new ones to prevent duplicates
+        await clearRegions();
+        await createRegions();
         // Update all refs to prevent unnecessary recreations
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
-      });
-    }
-  }, [wavesurfer, isReady, shouldUpdateRegions, mode, loopStart, loopEnd, cuePoints, createRegions, clearRegions]);
+      }
+    };
+    
+    handleParameterChange();
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, createRegions, clearRegions]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
-    if (wavesurfer && isReady && !initialSetupDoneRef.current) {
-      // Set initial zoom level using calculated minPxPerSec
-      const newMinPxPerSec = calculateMinPxPerSec();
-      wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
-      
-      // Create initial regions
-      createRegions();
-      
-      // Set initial position
-      const initialTime = currentTime || playbackTime || 0;
-      setTimeout(() => {
-        if (wavesurfer && isReady) {
-          wavesurfer.setTime(initialTime);
-        }
-      }, 100);
-      
-      initialSetupDoneRef.current = true;
-      
-      // Update previous values
-      prevLoopStartRef.current = loopStart;
-      prevLoopEndRef.current = loopEnd;
-      prevCuePointsRef.current = [...cuePoints];
-      prevModeRef.current = mode;
-    }
+    const setupRegions = async () => {
+      if (wavesurfer && isReady && !initialSetupDoneRef.current) {
+        // Set initial zoom level using calculated minPxPerSec
+        const newMinPxPerSec = calculateMinPxPerSec();
+        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+        
+        // Create initial regions
+        await createRegions();
+        
+        // Set initial position
+        const initialTime = currentTime || playbackTime || 0;
+        setTimeout(() => {
+          if (wavesurfer && isReady) {
+            wavesurfer.setTime(initialTime);
+          }
+        }, 100);
+        
+        initialSetupDoneRef.current = true;
+        
+        // Update previous values
+        prevLoopStartRef.current = loopStart;
+        prevLoopEndRef.current = loopEnd;
+        prevCuePointsRef.current = [...cuePoints];
+        prevModeRef.current = mode;
+      }
+    };
+    
+    setupRegions();
   }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode, createRegions, calculateMinPxPerSec]);
 
   // Effect to handle zoom changes
@@ -665,6 +711,9 @@ const WaveformDisplay = ({
         const newWidth = duration * newMinPxPerSec;
         containerRef.current.style.width = `${newWidth}px`;
       }
+      
+      // Note: Removed region recreation on zoom to prevent layering issues
+      // Regions will be recreated only when mode or parameters change
       
       // Use improved centering with small delay for layout updates
       setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 10);
