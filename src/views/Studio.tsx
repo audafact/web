@@ -113,17 +113,7 @@ const Studio = () => {
   // Add playback state tracking
   const [playbackStates, setPlaybackStates] = useState<{ [key: string]: boolean }>({});
   
-  // Debug recording destination
-  useEffect(() => {
-    if (isRecordingPerformance) {
-      const destination = getRecordingDestination();
-      console.log('Studio: Recording destination available:', !!destination);
-      
-      // Check which tracks are playing
-      const playingTracks = Object.entries(playbackStates).filter(([_, isPlaying]) => isPlaying);
-      console.log('Studio: Playing tracks during recording:', playingTracks.map(([trackId]) => trackId));
-    }
-  }, [isRecordingPerformance, getRecordingDestination, playbackStates]);
+
   
   // Add accordion state for collapsible controls
   const [expandedControls, setExpandedControls] = useState<{ [key: string]: boolean }>({});

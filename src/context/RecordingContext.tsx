@@ -182,16 +182,6 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const destination = appAudioContext.createMediaStreamDestination();
       recordingDestinationRef.current = destination;
       
-      // We need to connect all active audio sources to our destination
-      // This will be done by the Studio component when it starts recording
-      console.log('Created MediaStreamDestination for app audio capture');
-      
-      console.log('Audio capture setup:', {
-        destinationChannels: destination.channelCount,
-        destinationSampleRate: destination.context.sampleRate,
-        audioContextState: appAudioContext.state
-      });
-      
       // Create MediaRecorder with the captured audio stream
       let mimeType = '';
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -204,10 +194,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         mimeType = 'audio/mp4';
       }
       
-      console.log('MediaRecorder setup:', { 
-        mimeType, 
-        isSupported: MediaRecorder.isTypeSupported(mimeType)
-      });
+
       
       const mediaRecorder = new MediaRecorder(destination.stream, mimeType ? { mimeType } : undefined);
       
@@ -216,22 +203,12 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         console.error('MediaRecorder error:', event);
       };
       
-      mediaRecorder.onstart = () => {
-        console.log('MediaRecorder started successfully');
-      };
-      
       mediaRecorderRef.current = mediaRecorder;
       audioStreamRef.current = destination.stream;
       
       const chunks: Blob[] = [];
       
       mediaRecorder.ondataavailable = (event) => {
-        console.log('MediaRecorder data available:', { 
-          size: event.data.size, 
-          type: event.data.type,
-          hasData: event.data.size > 0,
-          timestamp: Date.now()
-        });
         if (event.data.size > 0) {
           chunks.push(event.data);
         }
@@ -240,9 +217,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       
       mediaRecorder.onstop = async () => {
-        console.log('MediaRecorder stopped, creating audio blob:', { chunksCount: chunks.length, totalSize: chunks.reduce((sum, chunk) => sum + chunk.size, 0) });
         const originalBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-        console.log('Original audio blob created:', { size: originalBlob.size, type: originalBlob.type });
         
         // Convert to WAV format for better compatibility
         let finalAudioBlob = originalBlob;
@@ -251,18 +226,12 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const arrayBuffer = await originalBlob.arrayBuffer();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
           
-          console.log('Audio buffer decoded:', {
-            duration: audioBuffer.duration,
-            sampleRate: audioBuffer.sampleRate,
-            numberOfChannels: audioBuffer.numberOfChannels,
-            length: audioBuffer.length
-          });
+
           
           // Convert to WAV format for better compatibility
           const wavBlob = await convertToWav(audioBuffer);
           if (wavBlob) {
             finalAudioBlob = wavBlob;
-            console.log('Converted to WAV format:', { size: wavBlob.size, type: wavBlob.type });
           }
         } catch (error) {
           console.warn('Failed to convert audio format, using original:', error);
@@ -271,14 +240,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const endTime = Date.now();
         const duration = endTime - startTime;
         
-        console.log('Performance recording completed:', {
-          id: performanceId,
-          eventsCount: performanceEventsRef.current.length,
-          tracksCount: performanceTracksRef.current.length,
-          duration,
-          hasAudio: !!finalAudioBlob,
-          finalFormat: finalAudioBlob.type
-        });
+
         
         const completedPerformance: Performance = {
           id: performanceId,
@@ -305,7 +267,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           audioCheckIntervalRef.current = null;
         }
         
-        console.log('Performance recording stopped:', completedPerformance.id, 'Duration:', duration);
+
       };
       
       const newPerformance: Performance = {
@@ -325,8 +287,6 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       // Start recording
       mediaRecorder.start();
-      
-      console.log('Performance recording started:', performanceId);
     } catch (error) {
       console.error('Failed to start performance recording:', error);
       alert('Failed to start recording. Please check microphone permissions.');
@@ -348,7 +308,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       mediaRecorderRef.current = null;
       
-      console.log('Performance recording stop requested');
+
     } catch (error) {
       console.error('Error stopping performance recording:', error);
     }
@@ -372,7 +332,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       performanceTracksRef.current = [...performanceTracksRef.current, event.trackId];
     }
     
-    console.log('Recording event added:', { type: event.type, trackId: event.trackId, timestamp, totalEvents: performanceEventsRef.current.length });
+
     
     setCurrentPerformance(prev => {
       if (!prev) return null;
@@ -422,7 +382,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     
     setSavedSessions(prev => [stateSession, ...prev]);
     
-    console.log('Studio state saved:', sessionId);
+
   }, []);
 
   // Management functions
@@ -472,7 +432,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         extension = 'opus';
       }
       
-      console.log('Exporting audio:', { type: audioBlob.type, extension, size: audioBlob.size });
+
       
       audioLink.download = `audafact_performance_${performanceId}.${extension}`;
       document.body.appendChild(audioLink);

@@ -85,11 +85,11 @@ const TrackControls = ({
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
   
+
+  
   // Reconnect audio sources when recording destination changes
   useEffect(() => {
     if (recordingDestination && audioSourceRef.current && isPlaying && audioContext) {
-      console.log(`Track ${trackId}: Reconnecting existing audio source to recording destination`);
-      
       // Create a separate gain node for recording
       const recordingGain = audioContext.createGain();
       recordingGain.gain.value = gainNodeRef.current?.gain.value || 1;
@@ -98,7 +98,7 @@ const TrackControls = ({
       audioSourceRef.current.connect(recordingGain);
       recordingGain.connect(recordingDestination);
     }
-  }, [recordingDestination, isPlaying, trackId, audioContext]);
+  }, [recordingDestination, isPlaying, trackId, audioContext, mode]);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState<number | null>(null);
   const [isSpeedSliderHovered, setIsSpeedSliderHovered] = useState(false);
@@ -287,7 +287,6 @@ const TrackControls = ({
         recordingGain.gain.value = gainNode.gain.value;
         lowpassFilter.connect(recordingGain);
         recordingGain.connect(recordingDestination);
-        console.log(`Track ${trackId}: Connected audio source to recording destination (with filters)`);
       }
       
       return { sourceNode, gainNode, lowpassFilter, highpassFilter };
@@ -303,12 +302,11 @@ const TrackControls = ({
         recordingGain.gain.value = gainNode.gain.value;
         sourceNode.connect(recordingGain);
         recordingGain.connect(recordingDestination);
-        console.log(`Track ${trackId}: Connected audio source to recording destination (no filters)`);
       }
       
       return { sourceNode, gainNode };
     }
-  }, [audioContext, audioBuffer]);
+  }, [audioContext, audioBuffer, recordingDestination, trackId, mode]);
 
   // Optimized time update function using requestAnimationFrame
   const updatePlaybackTime = useCallback(() => {
