@@ -883,7 +883,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         };
                                         
                                         audio.onloadeddata = () => {
-                                          console.log('Audio loaded successfully:', { duration: audio.duration, format: performance.audioBlob?.type });
+                                          // Audio loaded successfully
                                         };
                                         
                                         audio.play().catch(error => {
