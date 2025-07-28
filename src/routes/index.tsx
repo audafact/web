@@ -2,7 +2,8 @@ import { createBrowserRouter } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Home from '../views/Home';
 import Studio from '../views/Studio';
-// import Login from '../views/Login';
+import { AuthPage } from '../auth/AuthPage';
+import { ProtectedRoute } from '../auth/ProtectedRoute';
 
 export const router = createBrowserRouter([
   {
@@ -17,10 +18,10 @@ export const router = createBrowserRouter([
         path: 'studio',
         element: <Studio />,
       },
-      {
-        // path: 'login',
-        // element: <Login />,
-      },
     ],
+  },
+  {
+    path: '/auth',
+    element: <AuthPage />,
   },
 ]); 

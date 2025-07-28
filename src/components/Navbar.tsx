@@ -1,10 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSidePanel } from '../context/SidePanelContext';
-import { supabase } from '../services/supabase';
 
 const Navbar = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const { toggleSidePanel } = useSidePanel();
   const location = useLocation();
   const isStudioPage = location.pathname === '/studio';
@@ -65,15 +64,20 @@ const Navbar = () => {
           <div className="flex items-center space-x-4 ml-auto">
             {!loading && (
               user ? (
-                <button
-                  onClick={() => supabase.auth.signOut()}
-                  className="text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
-                >
-                  Sign Out
-                </button>
+                <div className="flex items-center space-x-4">
+                  <span className="text-audafact-text-secondary text-sm">
+                    {user.email}
+                  </span>
+                  <button
+                    onClick={signOut}
+                    className="text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
+                  >
+                    Sign Out
+                  </button>
+                </div>
               ) : (
                 <Link
-                  to="/login"
+                  to="/auth"
                   className="audafact-button-primary"
                 >
                   Sign In

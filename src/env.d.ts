@@ -4,6 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_APP_ENV: string;
   readonly VITE_AUDIO_SAMPLE_RATE: string;
   readonly VITE_MAX_UPLOAD_SIZE: string;
+  readonly PROD: boolean;
 }
 
 interface ImportMeta {

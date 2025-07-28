@@ -1,8 +1,9 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const Home = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -66,7 +67,7 @@ const Home = () => {
           {/* TODO: Implement login functionality */}
           <button
             className="audafact-button-primary px-8 py-3 text-lg font-medium"
-            onClick={() => alert('Login functionality coming soon!')}
+            onClick={() => navigate('/auth')}
           >
             Sign Up Now
           </button>
