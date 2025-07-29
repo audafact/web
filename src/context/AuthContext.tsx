@@ -8,6 +8,7 @@ interface AuthContextType {
   loading: boolean;
   signUp: (email: string, password: string) => Promise<AuthResponse>;
   signIn: (email: string, password: string) => Promise<AuthResponse>;
+  signInWithGoogle: () => Promise<AuthResponse>;
   signOut: () => Promise<AuthResponse>;
   resetPassword: (email: string) => Promise<AuthResponse>;
   updatePassword: (password: string) => Promise<AuthResponse>;
@@ -18,6 +19,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signUp: async () => ({ success: false, error: 'Context not initialized' }),
   signIn: async () => ({ success: false, error: 'Context not initialized' }),
+  signInWithGoogle: async () => ({ success: false, error: 'Context not initialized' }),
   signOut: async () => ({ success: false, error: 'Context not initialized' }),
   resetPassword: async () => ({ success: false, error: 'Context not initialized' }),
   updatePassword: async () => ({ success: false, error: 'Context not initialized' }),
@@ -66,12 +68,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return await authService.updatePassword(password);
   };
 
+  const signInWithGoogle = async (): Promise<AuthResponse> => {
+    return await authService.signInWithGoogle();
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
       loading, 
       signUp, 
       signIn, 
+      signInWithGoogle,
       signOut, 
       resetPassword, 
       updatePassword 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface AuthFormProps {
   mode: 'signin' | 'signup';
@@ -135,6 +136,19 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
           {loading ? 'Loading...' : mode === 'signin' ? 'Sign In' : 'Sign Up'}
         </button>
       </form>
+
+      {/* Divider */}
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-audafact-divider"></div>
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-2 bg-audafact-surface-1-enhanced text-audafact-text-secondary">or</span>
+        </div>
+      </div>
+
+      {/* Google Sign In */}
+      <GoogleSignInButton onSuccess={onSuccess} />
     </div>
   );
 }; 

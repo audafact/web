@@ -140,4 +140,33 @@ export const authService = {
   async getSession() {
     return await supabase.auth.getSession();
   },
+
+  // Sign in with Google
+  async signInWithGoogle(): Promise<AuthResponse> {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+
+      // OAuth redirects to Google, so we return success to indicate the flow started
+      return {
+        success: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'An unexpected error occurred during Google sign in',
+      };
+    }
+  },
 }; 
