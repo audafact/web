@@ -87,15 +87,33 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
       try {
         const uploads = await DatabaseService.getUserUploads(user.id);
-        const userTracksData = uploads.map(upload => ({
-          id: upload.id,
-          name: upload.title,
-          file: null as File | null, // We'll need to fetch the actual file if needed
-          type: 'audio/mpeg', // Default type
-          size: '0MB', // We'll need to get this from storage metadata
-          url: upload.file_url,
-          uploadedAt: new Date(upload.created_at).getTime()
-        }));
+        const userTracksData = await Promise.all(
+          uploads.map(async (upload) => {
+            // Get file info from storage to get actual size and type
+            let fileSize = '0MB';
+            let fileType = 'audio/mpeg';
+            
+            try {
+              const fileInfo = await StorageService.getAudioFileInfo('user-uploads', upload.file_url);
+              if (fileInfo) {
+                fileSize = StorageService.formatFileSize(fileInfo.size);
+                fileType = fileInfo.type;
+              }
+            } catch (error) {
+              console.error('Error getting file info for:', upload.file_url, error);
+            }
+            
+            return {
+              id: upload.id,
+              name: upload.title,
+              file: null as File | null,
+              type: fileType,
+              size: fileSize,
+              url: upload.file_url, // This is now the file path
+              uploadedAt: new Date(upload.created_at).getTime()
+            };
+          })
+        );
         
         setUserTracks(userTracksData);
       } catch (error) {
@@ -227,12 +245,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
       }
 
       if (uploadResult.data) {
-        // Create database record
-        const fileUrl = StorageService.getPublicUrl('user-uploads', uploadResult.data.name);
-        
+        // Create database record - store the file path, not the URL
         const uploadRecord = await DatabaseService.createUpload({
           user_id: user.id,
-          file_url: fileUrl,
+          file_url: uploadResult.data.name, // Store the file path, not the URL
           title: file.name,
           duration: await getAudioDuration(file)
         });
@@ -245,7 +261,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
             file: file,
             type: file.type,
             size: `${(file.size / (1024 * 1024)).toFixed(1)}MB`,
-            url: fileUrl,
+            url: uploadResult.data.name, // Store the file path, not the URL
             uploadedAt: Date.now()
           };
 
@@ -293,7 +309,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
     });
   };
 
-  const handlePreviewPlay = (asset: AudioAsset | UserTrack, isUserTrack = false) => {
+  const handlePreviewPlay = async (asset: AudioAsset | UserTrack, isUserTrack = false) => {
     const assetId = asset.id;
     
     // Stop any currently playing audio
@@ -317,7 +333,19 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
 
     // Create new audio element
-    const audioSource = isUserTrack ? (asset as UserTrack).url : (asset as AudioAsset).file;
+    let audioSource: string;
+    if (isUserTrack) {
+      // Generate signed URL for user tracks
+      try {
+        audioSource = await StorageService.getSignedUrl('user-uploads', (asset as UserTrack).url);
+      } catch (error) {
+        console.error('Failed to generate signed URL:', error);
+        return;
+      }
+    } else {
+      audioSource = (asset as AudioAsset).file;
+    }
+    
     const audio = new Audio(audioSource);
     
     audio.addEventListener('ended', () => {
@@ -325,6 +353,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
     });
     audio.addEventListener('pause', () => {
       setPlayingAssets(prev => ({ ...prev, [assetId]: false }));
+    });
+    audio.addEventListener('error', (e) => {
+      console.error('Audio error:', e);
+      console.error('Audio error details:', audio.error);
     });
     
     audio.play().then(() => {
@@ -358,6 +390,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
 
     try {
+      // Delete from storage first
+      const storageResult = await StorageService.deleteFile('user-uploads', trackToRemove.url);
+      if (storageResult.error) {
+        console.error('Failed to delete file from storage:', storageResult.error);
+      }
+      
       // Delete from database
       const success = await DatabaseService.deleteUpload(trackId, user.id);
       
@@ -365,10 +403,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
         // Remove from local state
         const updatedTracks = userTracks.filter(track => track.id !== trackId);
         setUserTracks(updatedTracks);
-        
-                 // Revoke the object URL to free memory
-         URL.revokeObjectURL(trackToRemove.url);
-       } else {
+      } else {
         console.error('Failed to delete track from database');
       }
     } catch (error) {

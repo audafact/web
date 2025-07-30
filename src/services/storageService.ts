@@ -159,7 +159,24 @@ export class StorageService {
   }
 
   /**
-   * Get a public URL for a file
+   * Get a signed URL for a file (for private buckets)
+   */
+  static async getSignedUrl(bucket: string, filePath: string, expiresIn: number = 3600): Promise<string> {
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(filePath, expiresIn);
+      
+      if (error) throw error;
+      return data.signedUrl;
+    } catch (error) {
+      console.error('Error creating signed URL:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a public URL for a file (for public buckets)
    */
   static getPublicUrl(bucket: string, filePath: string): string {
     const { data } = supabase.storage
