@@ -14,16 +14,18 @@ const Navbar = () => {
         <div className="flex items-center h-16 relative">
           {/* Left side: Hamburger menu and Logo/Brand */}
           <div className="flex items-center gap-4">
-            {/* Hamburger Menu Button */}
-            <button
-              onClick={toggleSidePanel}
-              className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
-              aria-label="Toggle sidebar"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
+            {/* Hamburger Menu Button - Only show when logged in */}
+            {user && (
+              <button
+                onClick={toggleSidePanel}
+                className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
+                aria-label="Toggle sidebar"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
             
             <Link to="/" className="flex items-center gap-2">
               {/* Favicon */}

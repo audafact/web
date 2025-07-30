@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
+import { useAuth } from '../context/AuthContext';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
 import ModeSelector from '../components/ModeSelector';
@@ -89,10 +90,14 @@ const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
+  const { user, loading: authLoading } = useAuth();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
+  const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(false);
+  const [isInitializingAudio, setIsInitializingAudio] = useState<boolean>(false);
+  const [isManuallyAddingTrack, setIsManuallyAddingTrack] = useState<boolean>(false);
   const [loopPlayhead, setLoopPlayhead] = useState(0);
   const [samplePlayhead, setSamplePlayhead] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -230,7 +235,6 @@ const Studio = () => {
     const loadRandomTrack = async () => {
       try {
         setIsTrackLoading(true);
-
         setError(null);
         
         // Select a random asset
@@ -246,19 +250,25 @@ const Studio = () => {
             setIsAudioInitialized(true);
           } catch (initError) {
             console.error('Error initializing audio context:', initError);
-            throw new Error('Unable to initialize audio. Please try again or check your browser settings.');
+            setNeedsUserInteraction(true);
+            setIsTrackLoading(false);
+            return;
           }
         } else if (context.state === 'suspended') {
           try {
             await context.resume();
           } catch (resumeError) {
             console.error('Failed to resume audio context:', resumeError);
-            throw new Error('Browser blocked audio playback. Please try again.');
+            setNeedsUserInteraction(true);
+            setIsTrackLoading(false);
+            return;
           }
         }
 
         if (!context) {
-          throw new Error('Audio initialization failed. Please try again.');
+          setNeedsUserInteraction(true);
+          setIsTrackLoading(false);
+          return;
         }
         
         // Fetch the audio file from the asset
@@ -315,8 +325,11 @@ const Studio = () => {
       }
     };
 
-    loadRandomTrack();
-  }, [audioContext, initializeAudio]);
+    // Only load a random track if there are no tracks currently loaded
+    if (tracks.length === 0 && !isManuallyAddingTrack) {
+      loadRandomTrack();
+    }
+  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -1437,6 +1450,7 @@ const Studio = () => {
   // SidePanel handlers
   const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
     try {
+      setIsManuallyAddingTrack(true);
       setIsLoading(true);
       setError(null);
       
@@ -1504,12 +1518,14 @@ const Studio = () => {
       setError(error instanceof Error ? error.message : 'Failed to upload track');
     } finally {
       setIsLoading(false);
+      setIsManuallyAddingTrack(false);
       // setIsWaveformLoading(false); // This line was removed
     }
   };
 
   const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
     try {
+      setIsManuallyAddingTrack(true);
       setIsLoading(true);
       setError(null);
       
@@ -1582,6 +1598,7 @@ const Studio = () => {
       setError(error instanceof Error ? error.message : 'Failed to add track from library');
     } finally {
       setIsLoading(false);
+      setIsManuallyAddingTrack(false);
       // setIsWaveformLoading(false); // This line was removed
     }
   };
@@ -1593,6 +1610,7 @@ const Studio = () => {
     }
 
     try {
+      setIsManuallyAddingTrack(true);
       setIsLoading(true);
       setError(null);
       
@@ -1660,7 +1678,66 @@ const Studio = () => {
       setError(error instanceof Error ? error.message : 'Failed to add user track');
     } finally {
       setIsLoading(false);
+      setIsManuallyAddingTrack(false);
       // setIsWaveformLoading(false); // This line was removed
+    }
+  };
+
+  const handleInitializeAudio = async () => {
+    try {
+      setNeedsUserInteraction(false);
+      setIsInitializingAudio(true);
+      setError(null);
+      
+      const context = await initializeAudio();
+      setIsAudioInitialized(true);
+      
+      // Now load a random track
+      const randomIndex = Math.floor(Math.random() * audioAssets.length);
+      const asset = audioAssets[randomIndex];
+      
+      const response = await fetch(asset.file);
+      const blob = await response.blob();
+      const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
+      
+      const buffer = await loadAudioBuffer(file, context);
+      const trackId = asset.id;
+      const settings = loadTrackSettingsFromLocal(trackId) || {};
+      
+      const newTrack: Track = {
+        id: trackId,
+        file,
+        buffer,
+        mode: settings.mode || 'preview',
+        loopStart: settings.loopStart || 0,
+        loopEnd: settings.loopEnd || buffer.duration,
+        cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
+          buffer.duration * (i / 10)
+        ),
+        tempo: settings.tempo || 120,
+        timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
+        firstMeasureTime: settings.firstMeasureTime || 0,
+        showMeasures: settings.showMeasures || false
+      };
+      
+      setTracks([newTrack]);
+      setCurrentTrackIndex(randomIndex);
+      setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
+      setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
+      setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
+      const trackVolume = newTrack.mode === 'preview' 
+        ? lastUsedVolumeRef.current 
+        : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
+      setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
+      setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+      
+      setIsInitializingAudio(false);
+    } catch (error) {
+      console.error('Error initializing audio:', error);
+      setError('Failed to initialize audio. Please try again.');
+      setNeedsUserInteraction(true);
+      setIsInitializingAudio(false);
     }
   };
 
@@ -1703,104 +1780,243 @@ const Studio = () => {
     );
   }
 
+  // Audio context needs user interaction state
+  if (needsUserInteraction) {
+    return (
+      <>
+        <div 
+          className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
+            user && isSidePanelOpen 
+              ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
+              : 'max-w-6xl'
+          }`}
+        >
+          <div className="max-w-6xl mx-auto p-6">
+            <div className="audafact-card p-8 text-center">
+              <h1 className="text-2xl font-medium audafact-heading mb-4">
+                Audio Context Required
+              </h1>
+              <p className="audafact-text-secondary mb-6">
+                Your browser requires user interaction before allowing audio playback. 
+                Click the button below to initialize audio and load a random track.
+              </p>
+              {user ? (
+                <p className="audafact-text-secondary mb-6">
+                  You can also select a track from the side panel after audio is initialized.
+                </p>
+              ) : (
+                <p className="audafact-text-secondary mb-6">
+                  <a href="/auth" className="text-audafact-accent-cyan hover:underline">
+                    Login to Audafact
+                  </a> to access your library and select specific tracks.
+                </p>
+              )}
+              <button
+                onClick={handleInitializeAudio}
+                className="audafact-button-primary"
+                disabled={isInitializingAudio}
+              >
+                {isInitializingAudio ? 'Initializing...' : 'Initialize Audio & Load Track'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* SidePanel */}
+        {user && (
+          <SidePanel
+            isOpen={isSidePanelOpen}
+            onToggle={toggleSidePanel}
+            onUploadTrack={handleUploadTrack}
+            onAddFromLibrary={handleAddFromLibrary}
+            onAddUserTrack={handleAddUserTrack}
+            isLoading={isLoading}
+          />
+        )}
+      </>
+    );
+  }
+
   // No tracks state
   if (tracks.length === 0) {
     return (
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="audafact-card p-8 text-center">
-          <h1 className="text-2xl font-medium audafact-heading">
-            No Track Loaded
-          </h1>
-          <p className="audafact-text-secondary">
-            No track is currently loaded. Please refresh the page to load a random track.
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="audafact-button-primary mt-4"
-          >
-            Load Random Track
-          </button>
+      <>
+        <div 
+          className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
+            user && isSidePanelOpen 
+              ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
+              : 'max-w-6xl'
+          }`}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
+          {user && !isSidePanelOpen && isDragOver && (
+            <div
+              className="fixed inset-0 z-40 bg-transparent"
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            />
+          )}
+          
+          {/* Full-screen drag and drop overlay - only active when dragging and SidePanel is open */}
+          {user && isDragOver && isSidePanelOpen && (
+            <div
+              className="fixed inset-0 z-40 bg-transparent"
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            />
+          )}
+
+          {/* Drag and Drop Indicator */}
+          {isDragOver && (
+            <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+              <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <div className="text-center">
+                  <span className="text-lg font-medium block">
+                    {dragData?.type === 'file' ? 'Drop audio file to add to studio' : 'Drop track to add to studio'}
+                  </span>
+                  {dragData && (
+                    <span className="text-sm opacity-90 block mt-1">
+                      {dragData.name}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="max-w-6xl mx-auto p-6">
+            <div className="audafact-card p-8 text-center">
+              <h1 className="text-2xl font-medium audafact-heading mb-4">
+                No Track Loaded
+              </h1>
+              <p className="audafact-text-secondary mb-6">
+                No track is currently loaded. Click the button below to load a random track.
+              </p>
+              {user ? (
+                <p className="audafact-text-secondary mb-6">
+                  You can also select a track from the side panel.
+                </p>
+              ) : (
+                <p className="audafact-text-secondary mb-6">
+                  <a href="/auth" className="text-audafact-accent-cyan hover:underline">
+                    Login to Audafact
+                  </a> to access your library and select specific tracks.
+                </p>
+              )}
+              <button
+                onClick={handleInitializeAudio}
+                className="audafact-button-primary"
+                disabled={isInitializingAudio}
+              >
+                {isInitializingAudio ? 'Loading...' : 'Load Random Track'}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+
+        {/* SidePanel */}
+        {user && (
+          <SidePanel
+            isOpen={isSidePanelOpen}
+            onToggle={toggleSidePanel}
+            onUploadTrack={handleUploadTrack}
+            onAddFromLibrary={handleAddFromLibrary}
+            onAddUserTrack={handleAddUserTrack}
+            isLoading={isLoading}
+          />
+        )}
+      </>
     );
   }
 
   return (
-    <div 
-      className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
-        isSidePanelOpen 
-          ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
-          : 'max-w-6xl'
-      }`}
-      style={{ 
-        overscrollBehaviorX: 'none'
-      }}
-      onDragOver={handleDragOver}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
-      {!isSidePanelOpen && isDragOver && (
-        <div
-          className="fixed inset-0 z-40 bg-transparent"
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        />
-      )}
-      
-      {/* Full-screen drag and drop overlay - only active when dragging and SidePanel is open */}
-      {isDragOver && isSidePanelOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-transparent"
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        />
-      )}
-      
-      {/* Add Track Gesture Indicator */}
-      {showAddTrackGesture && (
-        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
-          <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span className="text-sm font-medium">Release to add track</span>
-          </div>
-        </div>
-      )}
-
-      {/* Drag and Drop Indicator */}
-      {isDragOver && (
-        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
-          <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <div className="text-center">
-              <span className="text-lg font-medium block">
-                {dragData?.type === 'file' ? 'Drop audio file to add to studio' : 'Drop track to add to studio'}
-              </span>
-              {dragData && (
-                <span className="text-sm opacity-90 block mt-1">
-                  {dragData.name}
-                </span>
-              )}
+    <>
+      <div 
+        className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
+          user && isSidePanelOpen 
+            ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
+            : 'max-w-6xl'
+        }`}
+        style={{ 
+          overscrollBehaviorX: 'none'
+        }}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
+        {user && !isSidePanelOpen && isDragOver && (
+          <div
+            className="fixed inset-0 z-40 bg-transparent"
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          />
+        )}
+        
+        {/* Full-screen drag and drop overlay - only active when dragging and SidePanel is open */}
+        {user && isDragOver && isSidePanelOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-transparent"
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          />
+        )}
+        
+        {/* Add Track Gesture Indicator */}
+        {showAddTrackGesture && (
+          <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
+            <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span className="text-sm font-medium">Release to add track</span>
             </div>
           </div>
+        )}
+
+        {/* Drag and Drop Indicator */}
+        {isDragOver && (
+          <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+            <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <div className="text-center">
+                <span className="text-lg font-medium block">
+                  {dragData?.type === 'file' ? 'Drop audio file to add to studio' : 'Drop track to add to studio'}
+                </span>
+                {dragData && (
+                  <span className="text-sm opacity-90 block mt-1">
+                    {dragData.name}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Global Recording Controls */}
+        <div className="flex justify-end mb-4">
+          <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
         </div>
-      )}
 
-      {/* Global Recording Controls */}
-      <div className="flex justify-end mb-4">
-        <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
-      </div>
-
-      {/* Render all tracks */}
+        {/* Render all tracks */}
         {tracks.map((track, index) => (
           <div 
             key={track.id} 
@@ -1821,267 +2037,135 @@ const Studio = () => {
               onTouchEnd: handleTouchEnd
             })}
           >
-
-          {/* Add Track and Navigation Controls - Only show on first track */}
-          {index === 0 && (
-          <div 
-            className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
-          >
-            <button
-              onClick={handlePreviousTrack}
-              disabled={isTrackLoading}
-              className={`p-2 rounded-full transition-all duration-200 ${
-                isTrackLoading
-                  ? 'text-audafact-text-secondary cursor-not-allowed'
-                  : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-              }`}
-              title="Previous Track (Left Arrow)"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-              
-              {/* Add Track Button */}
-              <button
-                onClick={addNewTrack}
-                disabled={!canAddTrack || isAddingTrack || isTrackLoading}
-                className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
-                  !canAddTrack || isAddingTrack || isTrackLoading
-                    ? 'text-audafact-text-secondary cursor-not-allowed'
-                    : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-                } ${addTrackAnimation ? 'animate-pulse' : ''}`}
-                title={canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks'}
+            {/* Add Track and Navigation Controls - Only show on first track */}
+            {index === 0 && (
+              <div 
+                className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
               >
-                <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
-                {isAddingTrack && (
-                  <span className="text-xs mt-1">Adding...</span>
-                )}
-              </button>
-              
-            <button
-              onClick={handleNextTrack}
-              disabled={isTrackLoading}
-              className={`p-2 rounded-full transition-all duration-200 ${
-                isTrackLoading
-                  ? 'text-audafact-text-secondary cursor-not-allowed'
-                  : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-              }`}
-              title="Next Track (Right Arrow)"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
-          )}
-          {/* Consolidated Track Header */}
-          <div className="p-4 border-b bg-audafact-surface-2">
-            <div className="flex flex-col gap-3">
-              {/* Top Row: Title, Mode Switch, and File Info */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                {/* Left side: Title and Mode Switch */}
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    {/* Track Position Indicator */}
-                    {tracks.length > 1 && (
-                      <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
-                        index === 0 
-                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary' 
-                          : 'bg-audafact-surface-1 text-audafact-text-secondary'
-                      }`}>
-                        {index + 1}
-                      </span>
-                    )}
-                    
-                  <h2 className={`text-lg font-medium truncate audafact-heading ${
-                    track.mode === 'loop' ? 'text-audafact-accent-cyan' : 
-                    track.mode === 'cue' ? 'text-audafact-alert-red' : 'text-audafact-accent-blue'
-                  }`}>
-                    {track.mode === 'loop' ? 'loop xtractor' : 
-                     track.mode === 'cue' ? 'xcuevator' : 'preview track'
-                  }
-                  </h2>
-                  </div>
-                
-                {/* Compact Mode Switch */}
-                <div className="flex items-center bg-audafact-surface-1 rounded-md p-0.5 border border-audafact-divider">
-                  {/* Only show Preview button for the top track */}
-                  {tracks.findIndex(t => t.id === track.id) === 0 ? (
-                  <button
-                    onClick={() => handleModeChange(track.id, 'preview')}
-                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                      track.mode === 'preview'
-                        ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
-                        : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                    }`}
-                  >
-                    Preview
-                  </button>
-                  ) : (
-                    <span 
-                      className="px-2 py-1 text-xs font-medium text-audafact-text-secondary cursor-not-allowed"
-                      title="Preview mode only available for top track"
-                    >
-                      Preview
-                    </span>
-                  )}
-                  <button
-                    onClick={() => handleModeChange(track.id, 'loop')}
-                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                      track.mode === 'loop'
-                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
-                        : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                    }`}
-                  >
-                    Loop
-                  </button>
-                  <button
-                    onClick={() => handleModeChange(track.id, 'cue')}
-                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                      track.mode === 'cue'
-                        ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                        : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                    }`}
-                  >
-                    Chop
-                  </button>
-                </div>
-
-                {/* Cue Track Selection Indicator */}
-                {track.mode === 'cue' && (
-                  <button
-                    onClick={() => handleTrackSelect(track.id)}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
-                      track.id === selectedCueTrackId
-                        ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                        : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 border border-audafact-divider'
-                    }`}
-                    title={track.id === selectedCueTrackId ? 'This track is selected for cue triggering' : 'Click to select this track for cue triggering'}
-                  >
-                    {track.id === selectedCueTrackId ? (
-                      <>
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Active for Cues
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                        </svg>
-                        Select for Cues
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-                
-                {/* Right side: File name and controls */}
-                <div className="flex items-center gap-2 text-xs audafact-text-secondary">
-                  <span className="truncate max-w-32 sm:max-w-48" title={track.file.name}>
-                    {track.file.name}
-                  </span>
-                  
-                  {/* Compact Zoom Controls */}
-                  <div className="flex items-center bg-audafact-surface-1 rounded border border-audafact-divider">
-                    <button
-                      onClick={() => handleZoomOut(track.id)}
-                      disabled={(zoomLevels[track.id] || 1) <= 1}
-                      className="p-1 hover:bg-audafact-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Zoom Out"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                      </svg>
-                    </button>
-                    
-                    <button
-                      onClick={() => handleResetZoom(track.id)}
-                      className="px-1.5 py-1 text-xs border-x border-audafact-divider hover:bg-audafact-surface-2"
-                      title="Reset Zoom"
-                    >
-                      {(zoomLevels[track.id] || 1) === 1 ? '1x' : `${(zoomLevels[track.id] || 1).toFixed(1)}x`}
-                    </button>
-                    
-                    <button
-                      onClick={() => handleZoomIn(track.id)}
-                      disabled={(zoomLevels[track.id] || 1) >= 8}
-                      className="p-1 hover:bg-audafact-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Zoom In"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Row: Display Options and Controls Toggle */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {/* Display Options */}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleToggleMeasures(track.id)}
-                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                      showMeasures[track.id]
-                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary border border-audafact-accent-cyan'
-                        : 'bg-audafact-surface-1 text-audafact-text-secondary border border-audafact-divider hover:bg-audafact-surface-2'
-                    }`}
-                  >
-                    {showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
-                  </button>
-                  
-                  {track.mode === 'cue' && (
-                    <button
-                      onClick={() => handleToggleCueThumbs(track.id)}
-                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        showCueThumbs[track.id]
-                          ? 'bg-audafact-alert-red text-audafact-text-primary border border-audafact-alert-red'
-                          : 'bg-audafact-surface-1 text-audafact-text-secondary border border-audafact-divider hover:bg-audafact-surface-2'
-                      }`}
-                    >
-                      {showCueThumbs[track.id] ? 'Hide Cue Thumbs' : 'Show Cue Thumbs'}
-                    </button>
-                  )}
-
-                  {showMeasures[track.id] && (
-                    <div className="px-2 py-1 text-xs audafact-text-secondary bg-audafact-surface-1 rounded border border-audafact-divider">
-                      First measure: {track.firstMeasureTime.toFixed(2)}s
-                    </div>
-                  )}
-                </div>
-
-                {/* Controls Toggle */}
                 <button
-                  onClick={() => handleToggleControls(track.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors"
+                  onClick={handlePreviousTrack}
+                  disabled={isTrackLoading}
+                  className={`p-2 rounded-full transition-all duration-200 ${
+                    isTrackLoading
+                      ? 'text-audafact-text-secondary cursor-not-allowed'
+                      : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                  }`}
+                  title="Previous Track (Left Arrow)"
                 >
-                  <span>Controls</span>
-                  <svg 
-                    className={`w-3 h-3 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`} 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
+                  
+                {/* Add Track Button */}
+                <button
+                  onClick={addNewTrack}
+                  disabled={!canAddTrack || isAddingTrack || isTrackLoading}
+                  className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
+                    !canAddTrack || isAddingTrack || isTrackLoading
+                      ? 'text-audafact-text-secondary cursor-not-allowed'
+                      : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                  } ${addTrackAnimation ? 'animate-pulse' : ''}`}
+                  title={canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks'}
+                >
+                  <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                  {isAddingTrack && (
+                    <span className="text-xs mt-1">Adding...</span>
+                  )}
+                </button>
+                  
+              <button
+                onClick={handleNextTrack}
+                disabled={isTrackLoading}
+                className={`p-2 rounded-full transition-all duration-200 ${
+                  isTrackLoading
+                    ? 'text-audafact-text-secondary cursor-not-allowed'
+                    : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                }`}
+                title="Next Track (Right Arrow)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+            )}
+
+            {/* Track Header */}
+            <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {/* Custom Mode Selector */}
+                  <div className="flex items-center bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider">
+                    <button
+                      onClick={() => handleModeChange(track.id, 'preview')}
+                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                        track.mode === 'preview'
+                          ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                    >
+                      Preview
+                    </button>
+                    <button
+                      onClick={() => handleModeChange(track.id, 'loop')}
+                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                        track.mode === 'loop'
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                    >
+                      Loop
+                    </button>
+                    <button
+                      onClick={() => handleModeChange(track.id, 'cue')}
+                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                        track.mode === 'cue'
+                          ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                    >
+                      Chop
+                    </button>
+                  </div>
+                  <div>
+                    <h3 className="font-medium audafact-heading">
+                      {track.file.name}
+                    </h3>
+                    <p className="text-sm audafact-text-secondary">
+                      {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleToggleControls(track.id)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
+                    title={expandedControls[track.id] ? 'Collapse Controls' : 'Expand Controls'}
+                  >
+                    <span>Time and Tempo</span>
+                    <svg 
+                      className={`w-3 h-3 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Collapsible Controls Row */}
-          {expandedControls[track.id] && (
-            <div className="p-4 border-b bg-audafact-surface-1">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Collapsible Controls */}
+            {expandedControls[track.id] && (
+              <div className="p-4 border-b border-audafact-divider bg-audafact-surface-2 space-y-4">
                 {/* Tempo Controls */}
                 <div className="space-y-2">
                   <TempoControls
@@ -2101,102 +2185,104 @@ const Studio = () => {
                   />
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Waveform Display */}
-          <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
-            <WaveformDisplay
-              audioFile={track.file}
-              mode={track.mode}
-              audioContext={audioContext}
-              loopStart={track.loopStart}
-              loopEnd={track.loopEnd}
-              cuePoints={track.cuePoints}
-              onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
-              onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
-              playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
-              playbackTime={playbackTimes[track.id] || 0}
-              zoomLevel={zoomLevels[track.id] || 1}
-              onZoomIn={() => handleZoomIn(track.id)}
-              onZoomOut={() => handleZoomOut(track.id)}
-              onResetZoom={() => handleResetZoom(track.id)}
-              trackId={track.id}
-              showMeasures={showMeasures[track.id]}
-              tempo={track.tempo}
-              timeSignature={track.timeSignature}
-              firstMeasureTime={track.firstMeasureTime}
-              onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
-              onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
-              showCueThumbs={showCueThumbs[track.id]}
-              volume={volume[track.id] || 1}
-              onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
-              isPlaying={playbackStates[track.id] || false}
-              onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
-              onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
-            />
-            
-
-          </div>
-
-          {/* Track Controls */}
-          <div className="p-4 relative z-10 bg-audafact-surface-1">
-            <TrackControls
-              key={`controls-${track.id}`}
-              mode={track.mode}
-              audioContext={audioContext}
-              audioBuffer={track.buffer}
-              loopStart={track.loopStart}
-              loopEnd={track.loopEnd}
-              cuePoints={track.cuePoints}
-              onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
-              onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
-              ensureAudio={ensureAudioBeforeAction}
-              trackColor={track.mode === 'loop' ? 'indigo' : track.mode === 'cue' ? 'red' : 'blue'}
-              setPlayhead={track.mode === 'loop' ? setLoopPlayhead : setSamplePlayhead}
-              isSelected={track.id === selectedCueTrackId}
-              onSelect={() => handleTrackSelect(track.id)}
-              onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}
-              onSpeedChange={(speed) => handleSpeedChange(track.id, speed)}
-              trackTempo={track.tempo}
-              volume={volume[track.id] || 1}
-              onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
-              playbackSpeed={playbackSpeeds[track.id] || 1}
-              onPlaybackStateChange={(isPlaying: boolean) => handlePlaybackStateChange(track.id, isPlaying)}
-              playbackTime={playbackTimes[track.id] || 0}
-              disabled={false}
-              lowpassFreq={lowpassFreqs[track.id] || 20000}
-              onLowpassFreqChange={(freq) => handleLowpassFreqChange(track.id, freq)}
-              highpassFreq={highpassFreqs[track.id] || 20}
-              onHighpassFreqChange={(freq) => handleHighpassFreqChange(track.id, freq)}
-              filterEnabled={filterEnabled[track.id] || false}
-              onFilterEnabledChange={(enabled) => handleFilterEnabledChange(track.id, enabled)}
-              showDeleteButton={tracks.length > 1 && track.mode !== 'preview'}
-              onDelete={() => removeTrack(track.id)}
-              trackId={track.id}
-              seekFunctionRef={getSeekFunctionRef(track.id)}
-              recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
-            />
-
-            {track.mode === 'cue' && track.id === selectedCueTrackId && (
-              <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
-                Press keyboard keys 1-0 to trigger cue points
-              </div>
             )}
+
+            {/* Waveform Display */}
+            <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
+              <WaveformDisplay
+                audioFile={track.file}
+                mode={track.mode}
+                audioContext={audioContext}
+                loopStart={track.loopStart}
+                loopEnd={track.loopEnd}
+                cuePoints={track.cuePoints}
+                onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+                onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
+                playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
+                playbackTime={playbackTimes[track.id] || 0}
+                zoomLevel={zoomLevels[track.id] || 1}
+                onZoomIn={() => handleZoomIn(track.id)}
+                onZoomOut={() => handleZoomOut(track.id)}
+                onResetZoom={() => handleResetZoom(track.id)}
+                trackId={track.id}
+                showMeasures={showMeasures[track.id]}
+                tempo={track.tempo}
+                timeSignature={track.timeSignature}
+                firstMeasureTime={track.firstMeasureTime}
+                onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
+                onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
+                showCueThumbs={showCueThumbs[track.id]}
+                volume={volume[track.id] || 1}
+                onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
+                isPlaying={playbackStates[track.id] || false}
+                onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
+                onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
+              />
+              
+
+            </div>
+
+            {/* Track Controls */}
+            <div className="p-4 relative z-10 bg-audafact-surface-1">
+              <TrackControls
+                key={`controls-${track.id}`}
+                mode={track.mode}
+                audioContext={audioContext}
+                audioBuffer={track.buffer}
+                loopStart={track.loopStart}
+                loopEnd={track.loopEnd}
+                cuePoints={track.cuePoints}
+                onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+                onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
+                ensureAudio={ensureAudioBeforeAction}
+                trackColor={track.mode === 'loop' ? 'indigo' : track.mode === 'cue' ? 'red' : 'blue'}
+                setPlayhead={track.mode === 'loop' ? setLoopPlayhead : setSamplePlayhead}
+                isSelected={track.id === selectedCueTrackId}
+                onSelect={() => handleTrackSelect(track.id)}
+                onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}
+                onSpeedChange={(speed) => handleSpeedChange(track.id, speed)}
+                trackTempo={track.tempo}
+                volume={volume[track.id] || 1}
+                onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
+                playbackSpeed={playbackSpeeds[track.id] || 1}
+                onPlaybackStateChange={(isPlaying: boolean) => handlePlaybackStateChange(track.id, isPlaying)}
+                playbackTime={playbackTimes[track.id] || 0}
+                disabled={false}
+                lowpassFreq={lowpassFreqs[track.id] || 20000}
+                onLowpassFreqChange={(freq) => handleLowpassFreqChange(track.id, freq)}
+                highpassFreq={highpassFreqs[track.id] || 20}
+                onHighpassFreqChange={(freq) => handleHighpassFreqChange(track.id, freq)}
+                filterEnabled={filterEnabled[track.id] || false}
+                onFilterEnabledChange={(enabled) => handleFilterEnabledChange(track.id, enabled)}
+                showDeleteButton={tracks.length > 1 && track.mode !== 'preview'}
+                onDelete={() => removeTrack(track.id)}
+                trackId={track.id}
+                seekFunctionRef={getSeekFunctionRef(track.id)}
+                recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
+              />
+
+              {track.mode === 'cue' && track.id === selectedCueTrackId && (
+                <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
+                  Press keyboard keys 1-0 to trigger cue points
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
 
       {/* SidePanel */}
-      <SidePanel
-        isOpen={isSidePanelOpen}
-        onToggle={toggleSidePanel}
-        onUploadTrack={handleUploadTrack}
-        onAddFromLibrary={handleAddFromLibrary}
-        onAddUserTrack={handleAddUserTrack}
-        isLoading={isLoading}
-      />
-    </div>
+      {user && (
+        <SidePanel
+          isOpen={isSidePanelOpen}
+          onToggle={toggleSidePanel}
+          onUploadTrack={handleUploadTrack}
+          onAddFromLibrary={handleAddFromLibrary}
+          onAddUserTrack={handleAddUserTrack}
+          isLoading={isLoading}
+        />
+      )}
+    </>
   );
 };
 
