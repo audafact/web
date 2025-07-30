@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useRecording } from '../context/RecordingContext';
+import { StorageService } from '../services/storageService';
+import { DatabaseService } from '../services/databaseService';
+import { useAuth } from '../context/AuthContext';
 
 // Import all available audio assets
 import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
@@ -19,7 +22,7 @@ interface AudioAsset {
 interface UserTrack {
   id: string;
   name: string;
-  file: File;
+  file: File | null;
   type: string;
   size: string;
   url: string;
@@ -46,6 +49,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   initialMode
 }) => {
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
+  const { user } = useAuth();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -73,42 +77,35 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load user tracks from localStorage on mount
+  // Load user tracks from database on mount
   useEffect(() => {
-    const savedTracks = localStorage.getItem('userTracks');
-    if (savedTracks) {
+    const loadUserTracks = async () => {
+      if (!user) {
+        setUserTracks([]);
+        return;
+      }
+
       try {
-        const tracks = JSON.parse(savedTracks);
-        // Restore tracks from base64 data
-        const restoredTracks = tracks.map((track: any) => {
-          if (track.fileData) {
-            // Convert base64 back to File object
-            const byteString = atob(track.fileData.split(',')[1]);
-            const mimeString = track.fileData.split(',')[0].split(':')[1].split(';')[0];
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            for (let i = 0; i < byteString.length; i++) {
-              ia[i] = byteString.charCodeAt(i);
-            }
-            const file = new File([ab], track.name, { type: mimeString });
-            const url = URL.createObjectURL(file);
-            
-            return {
-              ...track,
-              file: file,
-              url: url
-            };
-          }
-          return null;
-        }).filter(Boolean);
+        const uploads = await DatabaseService.getUserUploads(user.id);
+        const userTracksData = uploads.map(upload => ({
+          id: upload.id,
+          name: upload.title,
+          file: null as File | null, // We'll need to fetch the actual file if needed
+          type: 'audio/mpeg', // Default type
+          size: '0MB', // We'll need to get this from storage metadata
+          url: upload.file_url,
+          uploadedAt: new Date(upload.created_at).getTime()
+        }));
         
-        setUserTracks(restoredTracks);
+        setUserTracks(userTracksData);
       } catch (error) {
-        console.error('Error loading user tracks:', error);
+        console.error('Error loading user tracks from database:', error);
         setUserTracks([]);
       }
-    }
-  }, []);
+    };
+
+    loadUserTracks();
+  }, [user]);
 
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {
@@ -213,56 +210,87 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
   ];
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // Create a URL for the file
+    if (!file || !user) {
+      console.error('No file selected or user not authenticated');
+      return;
+    }
+
+    try {
+      // Upload file to Supabase storage
+      const uploadResult = await StorageService.uploadAudioFile(file, user.id, file.name);
+
+      if (uploadResult.error) {
+        console.error('Upload error:', uploadResult.error);
+        throw uploadResult.error;
+      }
+
+      if (uploadResult.data) {
+        // Create database record
+        const fileUrl = StorageService.getPublicUrl('user-uploads', uploadResult.data.name);
+        
+        const uploadRecord = await DatabaseService.createUpload({
+          user_id: user.id,
+          file_url: fileUrl,
+          title: file.name,
+          duration: await getAudioDuration(file)
+        });
+
+        if (uploadRecord) {
+          // Create user track object
+          const userTrack: UserTrack = {
+            id: uploadRecord.id,
+            name: file.name,
+            file: file,
+            type: file.type,
+            size: `${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+            url: fileUrl,
+            uploadedAt: Date.now()
+          };
+
+          // Add to user tracks
+          const updatedTracks = [...userTracks, userTrack];
+          setUserTracks(updatedTracks);
+
+          // Default to preview mode for uploaded files
+          onUploadTrack(file, 'preview');
+          
+          // Only close the sidebar on mobile and tablets (full-width mode)
+          // On desktop (lg and above), keep the sidebar open
+          if (window.innerWidth < 1024) {
+            onToggle();
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Upload failed:', error);
+      // You might want to show an error message to the user here
+    }
+
+    // Reset the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      const audio = new Audio();
       const url = URL.createObjectURL(file);
       
-      // Convert file to base64 for localStorage storage
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64Data = reader.result as string;
-        
-        // Create user track object
-        const userTrack: UserTrack = {
-          id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: file.name,
-          file: file,
-          type: file.type,
-          size: `${(file.size / (1024 * 1024)).toFixed(1)}MB`,
-          url: url,
-          uploadedAt: Date.now()
-        };
-
-        // Add to user tracks
-        const updatedTracks = [...userTracks, userTrack];
-        setUserTracks(updatedTracks);
-        
-        // Save to localStorage with base64 data
-        localStorage.setItem('userTracks', JSON.stringify(updatedTracks.map(track => ({
-          ...track,
-          fileData: track.id === userTrack.id ? base64Data : null,
-          file: null // Don't store File object in localStorage
-        }))));
-
-        // Default to preview mode for uploaded files
-        onUploadTrack(file, 'preview');
-        
-        // Only close the sidebar on mobile and tablets (full-width mode)
-        // On desktop (lg and above), keep the sidebar open
-        if (window.innerWidth < 1024) {
-          onToggle();
-        }
-      };
+      audio.addEventListener('loadedmetadata', () => {
+        resolve(audio.duration);
+        URL.revokeObjectURL(url);
+      });
       
-      reader.readAsDataURL(file);
+      audio.addEventListener('error', () => {
+        resolve(0);
+        URL.revokeObjectURL(url);
+      });
       
-      // Reset the input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
+      audio.src = url;
+    });
   };
 
   const handlePreviewPlay = (asset: AudioAsset | UserTrack, isUserTrack = false) => {
@@ -323,36 +351,32 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
   };
 
-  const handleRemoveUserTrack = (trackId: string) => {
+  const handleRemoveUserTrack = async (trackId: string) => {
     const trackToRemove = userTracks.find(track => track.id === trackId);
-    if (trackToRemove) {
-      // Revoke the object URL to free memory
-      URL.revokeObjectURL(trackToRemove.url);
+    if (!trackToRemove || !user) {
+      return;
     }
-    
-    const updatedTracks = userTracks.filter(track => track.id !== trackId);
-    setUserTracks(updatedTracks);
-    
-    // Update localStorage - we need to preserve the fileData for remaining tracks
-    const savedTracks = localStorage.getItem('userTracks');
-    if (savedTracks) {
-      try {
-        const allTracks = JSON.parse(savedTracks);
-        const remainingTracks = allTracks.filter((track: any) => track.id !== trackId);
-        localStorage.setItem('userTracks', JSON.stringify(remainingTracks));
-      } catch (error) {
-        console.error('Error updating localStorage:', error);
+
+    try {
+      // Delete from database
+      const success = await DatabaseService.deleteUpload(trackId, user.id);
+      
+      if (success) {
+        // Remove from local state
+        const updatedTracks = userTracks.filter(track => track.id !== trackId);
+        setUserTracks(updatedTracks);
+        
+                 // Revoke the object URL to free memory
+         URL.revokeObjectURL(trackToRemove.url);
+       } else {
+        console.error('Failed to delete track from database');
       }
+    } catch (error) {
+      console.error('Error deleting track:', error);
     }
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+
 
   return (
     <>

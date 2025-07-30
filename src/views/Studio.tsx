@@ -78,7 +78,7 @@ interface AudioAsset {
 interface UserTrack {
   id: string;
   name: string;
-  file: File;
+  file: File | null;
   type: string;
   size: string;
   url: string;
@@ -1334,31 +1334,8 @@ const Studio = () => {
       }
       
       // If not found in library, it might be a user track
-      // We need to get user tracks from localStorage
-      const savedTracks = localStorage.getItem('userTracks');
-      if (savedTracks) {
-        try {
-          const userTracks = JSON.parse(savedTracks);
-          const userTrack = userTracks.find((t: any) => t.id === trackId);
-          if (userTrack && userTrack.fileData) {
-            // Convert base64 back to File object
-            const byteString = atob(userTrack.fileData.split(',')[1]);
-            const mimeString = userTrack.fileData.split(',')[0].split(':')[1].split(';')[0];
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            for (let i = 0; i < byteString.length; i++) {
-              ia[i] = byteString.charCodeAt(i);
-            }
-            const file = new File([ab], userTrack.name, { type: mimeString });
-            
-            // Add as user track
-            await handleUploadTrack(file, 'preview');
-            return;
-          }
-        } catch (error) {
-          console.error('Error parsing user tracks:', error);
-        }
-      }
+      // User tracks are now managed through Supabase and the SidePanel
+      console.log('Track not found in library. User should re-add from SidePanel.');
       
       console.warn('Track not found for drop:', trackId);
     } catch (error) {
@@ -1610,6 +1587,11 @@ const Studio = () => {
   };
 
   const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
+    if (!userTrack.file) {
+      setError('File not available for this track');
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
