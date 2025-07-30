@@ -2026,21 +2026,18 @@ const Studio = () => {
                 : 'border-audafact-divider shadow-sm' // Lower tracks styling
             } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''}`}
             style={{
-              transform: isAddingTrack && index > 0 ? 'translateY(10px)' : 'translateY(0)',
-              ...(index === 0 && { touchAction: 'pan-y pinch-zoom' })
+              transform: isAddingTrack && index > 0 ? 'translateY(10px)' : 'translateY(0)'
             }}
-            // Only add gesture handlers to the first track
-            {...(index === 0 && {
-              onWheel: handleWheel,
-              onTouchStart: handleTouchStart,
-              onTouchMove: handleTouchMove,
-              onTouchEnd: handleTouchEnd
-            })}
           >
             {/* Add Track and Navigation Controls - Only show on first track */}
             {index === 0 && (
               <div 
                 className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
+                style={{ touchAction: 'pan-y pinch-zoom' }}
+                onWheel={handleWheel}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
               >
                 <button
                   onClick={handlePreviousTrack}
