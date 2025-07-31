@@ -60,6 +60,16 @@ const Navbar = () => {
             >
               Studio
             </Link>
+            <Link 
+              to="/pricing" 
+              className={`font-medium transition-colors duration-200 ${
+                location.pathname === '/pricing' 
+                  ? 'text-audafact-accent-cyan' 
+                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+              }`}
+            >
+              Pricing
+            </Link>
           </div>
 
           {/* Auth Section */}
@@ -67,6 +77,12 @@ const Navbar = () => {
             {!loading && (
               user ? (
                 <div className="flex items-center space-x-4">
+                  <Link
+                    to="/profile"
+                    className="text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200 text-sm"
+                  >
+                    Profile
+                  </Link>
                   <span className="text-audafact-text-secondary text-sm">
                     {user.email}
                   </span>
