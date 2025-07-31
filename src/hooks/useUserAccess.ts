@@ -39,18 +39,16 @@ export const useUserAccess = (): UserAccess => {
           .single();
 
         if (fetchError) {
-          console.error('Error fetching user access:', fetchError);
           setError(fetchError.message);
-          setAccessTier('free'); // Default to free tier on error
+          setAccessTier('free');
         } else {
           setAccessTier(data?.access_tier || 'free');
           setSubscriptionId(data?.subscription_id || null);
           setPlanInterval(data?.plan_interval || null);
         }
       } catch (err) {
-        console.error('Error in useUserAccess:', err);
         setError('Failed to fetch user access');
-        setAccessTier('free'); // Default to free tier on error
+        setAccessTier('free');
       } finally {
         setLoading(false);
       }
