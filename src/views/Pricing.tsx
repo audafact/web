@@ -25,12 +25,14 @@ const plans: PricingPlan[] = [
     price: '$8',
     interval: 'monthly',
     features: [
-      'Unlimited tracks and recordings',
-      'Advanced audio analysis',
-      'Export in multiple formats',
-      'Priority support',
-      'Cloud storage (10GB)',
-      'Collaborative features'
+      'Unlimited track uploads',
+      'Unlimited saved sessions',
+      'Access to curated audio library',
+      'Download your recordings',
+      'AI-powered tagging (coming soon)',
+      'Advanced loop detection (coming soon)',
+      'Audio export tools (coming soon)',
+      'Priority support & early features'
     ],
     priceId: import.meta.env.VITE_STRIPE_MODE === 'live' 
       ? import.meta.env.VITE_STRIPE_LIVE_PRICE_MONTHLY 
@@ -48,8 +50,8 @@ const plans: PricingPlan[] = [
       'Everything in Monthly plan',
       '25% discount vs monthly',
       'Early access to new features',
-      'Extended cloud storage (20GB)',
-      'Advanced analytics dashboard'
+      'Creator dashboard (coming soon)',
+      'Monetization tools (coming soon)'
     ],
     popular: true,
     priceId: import.meta.env.VITE_STRIPE_MODE === 'live' 
@@ -65,11 +67,11 @@ const plans: PricingPlan[] = [
     originalPrice: '$96',
     interval: 'yearly',
     features: [
-      'Everything in Yearly plan',
-      'Limited time offer',
-      'Lifetime access to beta features',
-      'Exclusive community access',
-      'Direct feedback channel'
+      'Full Pro Creator access',
+      'Limited time pricing',
+      'Lifetime early access to new features',
+      'Direct input on product roadmap',
+      'Special early adopter badge'
     ],
     earlyAdopter: true,
     priceId: import.meta.env.VITE_STRIPE_MODE === 'live' 
@@ -151,11 +153,11 @@ export const Pricing: React.FC = () => {
       {/* Header */}
       <div className="text-center mb-12">
         <h1 className="text-5xl font-bold audafact-heading mb-6">
-          Choose Your Plan
+          Unlock Pro Creator Features
         </h1>
         <p className="text-xl audafact-text-secondary max-w-2xl mx-auto">
-          Unlock your creative potential with our Pro Creator plans. 
-          Start creating professional music today.
+          Break free from upload limits and access our curated audio library. 
+          Take your music creation to the next level.
         </p>
       </div>
 
