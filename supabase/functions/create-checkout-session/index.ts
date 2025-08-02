@@ -70,7 +70,15 @@ serve(async (req) => {
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      payment_method_types: ['card'],
+      payment_method_types: [
+        'card', 
+        'link', 
+        'apple_pay', 
+        'google_pay',
+        'cashapp',
+        'us_bank_account',
+        'paypal'
+      ],
       line_items: [
         {
           price: priceId,
@@ -86,6 +94,20 @@ serve(async (req) => {
       subscription_data: {
         metadata: {
           supabase_user_id: userId,
+        },
+      },
+      // Customization options
+      billing_address_collection: 'required',
+      customer_update: {
+        address: 'auto',
+        name: 'auto',
+      },
+      allow_promotion_codes: true,
+      payment_method_collection: 'always',
+      // Custom branding
+      custom_text: {
+        submit: {
+          message: 'You will be charged monthly/yearly until you cancel.',
         },
       },
     })

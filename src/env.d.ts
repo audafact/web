@@ -4,6 +4,19 @@ interface ImportMetaEnv {
   readonly VITE_APP_ENV: string;
   readonly VITE_AUDIO_SAMPLE_RATE: string;
   readonly VITE_MAX_UPLOAD_SIZE: string;
+  readonly VITE_STRIPE_MODE: string;
+  readonly VITE_STRIPE_TEST_PRODUCT_MONTHLY: string;
+  readonly VITE_STRIPE_TEST_PRODUCT_YEARLY: string;
+  readonly VITE_STRIPE_TEST_PRODUCT_EARLY_ADOPTER: string;
+  readonly VITE_STRIPE_TEST_PRICE_MONTHLY: string;
+  readonly VITE_STRIPE_TEST_PRICE_YEARLY: string;
+  readonly VITE_STRIPE_TEST_PRICE_EARLY_ADOPTER: string;
+  readonly VITE_STRIPE_LIVE_PRODUCT_MONTHLY: string;
+  readonly VITE_STRIPE_LIVE_PRODUCT_YEARLY: string;
+  readonly VITE_STRIPE_LIVE_PRODUCT_EARLY_ADOPTER: string;
+  readonly VITE_STRIPE_LIVE_PRICE_MONTHLY: string;
+  readonly VITE_STRIPE_LIVE_PRICE_YEARLY: string;
+  readonly VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER: string;
   readonly PROD: boolean;
 }
 

@@ -18,8 +18,10 @@ interface PricingPlan {
 
 const plans: PricingPlan[] = [
   {
-    id: 'monthly',
-    name: 'Pro Creator',
+    id: import.meta.env.VITE_STRIPE_MODE === 'live' 
+      ? import.meta.env.VITE_STRIPE_LIVE_PRODUCT_MONTHLY 
+      : import.meta.env.VITE_STRIPE_TEST_PRODUCT_MONTHLY,
+    name: 'Pro Creator Monthly',
     price: '$8',
     interval: 'monthly',
     features: [
@@ -30,11 +32,15 @@ const plans: PricingPlan[] = [
       'Cloud storage (10GB)',
       'Collaborative features'
     ],
-    priceId: 'price_monthly' // You'll replace this with actual Stripe price IDs
+    priceId: import.meta.env.VITE_STRIPE_MODE === 'live' 
+      ? import.meta.env.VITE_STRIPE_LIVE_PRICE_MONTHLY 
+      : import.meta.env.VITE_STRIPE_TEST_PRICE_MONTHLY
   },
   {
-    id: 'yearly',
-    name: 'Pro Creator',
+    id: import.meta.env.VITE_STRIPE_MODE === 'live' 
+      ? import.meta.env.VITE_STRIPE_LIVE_PRODUCT_YEARLY 
+      : import.meta.env.VITE_STRIPE_TEST_PRODUCT_YEARLY,
+    name: 'Pro Creator Yearly',
     price: '$72',
     originalPrice: '$96',
     interval: 'yearly',
@@ -46,11 +52,15 @@ const plans: PricingPlan[] = [
       'Advanced analytics dashboard'
     ],
     popular: true,
-    priceId: 'price_yearly'
+    priceId: import.meta.env.VITE_STRIPE_MODE === 'live' 
+      ? import.meta.env.VITE_STRIPE_LIVE_PRICE_YEARLY 
+      : import.meta.env.VITE_STRIPE_TEST_PRICE_YEARLY
   },
   {
-    id: 'early-adopter',
-    name: 'Early Adopter',
+    id: import.meta.env.VITE_STRIPE_MODE === 'live' 
+      ? import.meta.env.VITE_STRIPE_LIVE_PRODUCT_EARLY_ADOPTER 
+      : import.meta.env.VITE_STRIPE_TEST_PRODUCT_EARLY_ADOPTER,
+    name: 'Early Adopter Promo',
     price: '$64',
     originalPrice: '$96',
     interval: 'yearly',
@@ -62,7 +72,9 @@ const plans: PricingPlan[] = [
       'Direct feedback channel'
     ],
     earlyAdopter: true,
-    priceId: 'price_early_adopter'
+    priceId: import.meta.env.VITE_STRIPE_MODE === 'live' 
+      ? import.meta.env.VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER 
+      : import.meta.env.VITE_STRIPE_TEST_PRICE_EARLY_ADOPTER
   }
 ];
 
