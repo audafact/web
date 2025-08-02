@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Save, Check } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
+import { useAccessControl } from '../hooks/useAccessControl';
+import { UpgradePrompt } from './UpgradePrompt';
 
 interface RecordingControlsProps {
   className?: string;
@@ -15,8 +17,10 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     startPerformanceRecording, 
     stopPerformanceRecording
   } = useRecording();
+  const { canPerformAction, getUpgradeMessage } = useAccessControl();
   
-  const [saveSuccess, setSaveSuccess] = React.useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
   const formatDuration = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
@@ -71,7 +75,14 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
 
           {!isRecordingPerformance ? (
             <button
-              onClick={() => startPerformanceRecording(audioContext)}
+              onClick={async () => {
+                const canRecord = await canPerformAction('record');
+                if (!canRecord) {
+                  setShowUpgradePrompt(true);
+                  return;
+                }
+                startPerformanceRecording(audioContext);
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
             >
               <div className="w-3 h-3 bg-current rounded-full"></div>
@@ -87,6 +98,15 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
             </button>
           )}
         </div>
+        
+        {/* Upgrade Prompt Modal */}
+        {showUpgradePrompt && (
+          <UpgradePrompt
+            message={getUpgradeMessage('record')}
+            feature="Recording"
+            onClose={() => setShowUpgradePrompt(false)}
+          />
+        )}
     </div>
   );
 };

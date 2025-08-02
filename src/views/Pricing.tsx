@@ -27,7 +27,7 @@ const plans: PricingPlan[] = [
     features: [
       'Unlimited track uploads',
       'Unlimited saved sessions',
-      'Access to curated audio library',
+      'Unlimited curated library tracks',
       'Download your recordings',
       'AI-powered tagging (coming soon)',
       'Advanced loop detection (coming soon)',
@@ -156,7 +156,7 @@ export const Pricing: React.FC = () => {
           Unlock Pro Creator Features
         </h1>
         <p className="text-xl audafact-text-secondary max-w-2xl mx-auto">
-          Break free from upload limits and access our curated audio library. 
+          Break free from upload limits and get unlimited access to our curated audio library. 
           Take your music creation to the next level.
         </p>
       </div>

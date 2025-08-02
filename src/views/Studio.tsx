@@ -3,6 +3,8 @@ import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
+import { useAccessControl } from '../hooks/useAccessControl';
+import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
 import ModeSelector from '../components/ModeSelector';
@@ -91,6 +93,7 @@ const Studio = () => {
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { user, loading: authLoading } = useAuth();
+  const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +168,11 @@ const Studio = () => {
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   const [dragData, setDragData] = useState<{ type: string; name: string; id: string } | null>(null);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState<{
+    show: boolean;
+    message: string;
+    feature: string;
+  }>({ show: false, message: '', feature: '' });
 
   // --- Utility functions for localStorage ---
   const saveCuePointsToLocal = (trackId: string, cuePoints: number[]) => {
@@ -1411,7 +1419,18 @@ const Studio = () => {
   };
 
   // Handle save current studio state
-  const handleSaveCurrentState = () => {
+  const handleSaveCurrentState = async () => {
+    // Check session save limits
+    const canSaveSession = await canPerformAction('save_session');
+    if (!canSaveSession) {
+      setShowUpgradePrompt({
+        show: true,
+        message: getUpgradeMessage('save_session'),
+        feature: 'Session Save'
+      });
+      return;
+    }
+
     const studioState = {
       tracks: tracks.map(track => ({
         id: track.id,
@@ -2277,6 +2296,15 @@ const Studio = () => {
           onAddFromLibrary={handleAddFromLibrary}
           onAddUserTrack={handleAddUserTrack}
           isLoading={isLoading}
+        />
+      )}
+      
+      {/* Upgrade Prompt Modal */}
+      {showUpgradePrompt.show && (
+        <UpgradePrompt
+          message={showUpgradePrompt.message}
+          feature={showUpgradePrompt.feature}
+          onClose={() => setShowUpgradePrompt({ show: false, message: '', feature: '' })}
         />
       )}
     </>

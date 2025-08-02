@@ -3,6 +3,8 @@ import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
 import { useAuth } from '../context/AuthContext';
+import { useAccessControl } from '../hooks/useAccessControl';
+import { UpgradePrompt } from './UpgradePrompt';
 
 // Import all available audio assets
 import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
@@ -50,6 +52,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 }) => {
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
+  const { canPerformAction, getUpgradeMessage, isProUser } = useAccessControl();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -75,6 +78,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
   const [playingAssets, setPlayingAssets] = useState<{ [key: string]: boolean }>({});
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState<{
+    show: boolean;
+    message: string;
+    feature: string;
+  }>({ show: false, message: '', feature: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load user tracks from database on mount
@@ -235,6 +243,21 @@ const SidePanel: React.FC<SidePanelProps> = ({
       return;
     }
 
+    // Check upload limits
+    const canUpload = await canPerformAction('upload');
+    if (!canUpload) {
+      setShowUpgradePrompt({
+        show: true,
+        message: getUpgradeMessage('upload'),
+        feature: 'Track Upload'
+      });
+      // Reset the input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
     try {
       // Upload file to Supabase storage
       const uploadResult = await StorageService.uploadAudioFile(file, user.id, file.name);
@@ -367,11 +390,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
     });
   };
 
-  const handleAddTrack = (asset: AudioAsset | UserTrack, isUserTrack = false) => {
+  const handleAddTrack = async (asset: AudioAsset | UserTrack, isUserTrack = false) => {
     if (isUserTrack) {
       const userTrack = asset as UserTrack;
       onAddUserTrack(userTrack, 'preview');
     } else {
+      // Check library track limit for free users
+      const canAddLibraryTrack = await canPerformAction('add_library_track');
+      if (!canAddLibraryTrack) {
+        setShowUpgradePrompt({
+          show: true,
+          message: getUpgradeMessage('add_library_track'),
+          feature: 'Library Track'
+        });
+        return;
+      }
+      
       const libraryAsset = asset as AudioAsset;
       onAddFromLibrary(libraryAsset, 'preview');
     }
@@ -489,11 +523,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         <div className="text-sm audafact-text-secondary bg-audafact-surface-2 p-2 rounded">
                           Click the play button to preview, or drag tracks to the drop zone. Click the + icon to add tracks (defaults to preview mode).
                         </div>
-                        {audioAssets.map((asset) => (
+                        {audioAssets.map((asset, index) => {
+                          const isLocked = !isProUser && index >= 10;
+                          return (
                           <div
                             key={asset.id}
-                            draggable
-                            onDragStart={(e) => {
+                            draggable={!isLocked}
+                            onDragStart={!isLocked ? (e) => {
                               e.dataTransfer.setData('text/plain', asset.id);
                               e.dataTransfer.setData('application/json', JSON.stringify({
                                 type: 'library-track',
@@ -501,19 +537,28 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 id: asset.id
                               }));
                               e.dataTransfer.effectAllowed = 'copy';
-                            }}
-                            className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
+                            } : undefined}
+                            className={`p-3 border border-audafact-divider rounded-lg transition-colors duration-200 audafact-card ${
+                              isLocked 
+                                ? 'opacity-50 cursor-not-allowed' 
+                                : 'hover:bg-audafact-surface-2'
+                            }`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3 flex-1 min-w-0">
                                 {/* Play/Pause Button */}
                                 <button
-                                  onClick={(e) => {
+                                  onClick={!isLocked ? (e) => {
                                     e.stopPropagation();
                                     handlePreviewPlay(asset, false);
-                                  }}
-                                  className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                  title={playingAssets[asset.id] ? 'Pause Preview' : 'Play Preview'}
+                                  } : undefined}
+                                  disabled={isLocked}
+                                  className={`flex-shrink-0 p-2 rounded transition-colors duration-200 ${
+                                    isLocked 
+                                      ? 'text-audafact-text-secondary opacity-50 cursor-not-allowed' 
+                                      : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2'
+                                  }`}
+                                  title={isLocked ? 'Upgrade to Pro to unlock' : (playingAssets[asset.id] ? 'Pause Preview' : 'Play Preview')}
                                 >
                                   {playingAssets[asset.id] ? (
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -533,22 +578,30 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 </div>
                               </div>
 
-                              {/* Add Track Button */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAddTrack(asset, false);
-                                }}
-                                className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                title="Add to Studio (Preview Mode)"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                              </button>
+                              {/* Add Track Button or Lock Icon */}
+                              {isLocked ? (
+                                <div className="flex-shrink-0 p-2 text-audafact-text-secondary opacity-50">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                  </svg>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddTrack(asset, false);
+                                  }}
+                                  className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                  title="Add to Studio (Preview Mode)"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                  </svg>
+                                </button>
+                              )}
                             </div>
                           </div>
-                        ))}
+                        )})}
                       </div>
                     </div>
                   </div>
@@ -766,7 +819,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   </div>
                                   <div className="flex items-center gap-1 ml-2">
                                     <button
-                                      onClick={() => exportSession(session.id)}
+                                      onClick={async () => {
+                                        const canDownload = await canPerformAction('download');
+                                        if (!canDownload) {
+                                          setShowUpgradePrompt({
+                                            show: true,
+                                            message: getUpgradeMessage('download'),
+                                            feature: 'Download'
+                                          });
+                                          return;
+                                        }
+                                        exportSession(session.id);
+                                      }}
                                       className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                       title="Export Session"
                                     >
@@ -963,7 +1027,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   </button>
                                 )}
                                 <button
-                                  onClick={() => exportPerformance(performance.id)}
+                                  onClick={async () => {
+                                    const canDownload = await canPerformAction('download');
+                                    if (!canDownload) {
+                                      setShowUpgradePrompt({
+                                        show: true,
+                                        message: getUpgradeMessage('download'),
+                                        feature: 'Download'
+                                      });
+                                      return;
+                                    }
+                                    exportPerformance(performance.id);
+                                  }}
                                   className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                   title="Export Performance"
                                 >
@@ -1003,6 +1078,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
           className="hidden"
         />
       </div>
+      
+      {/* Upgrade Prompt Modal */}
+      {showUpgradePrompt.show && (
+        <UpgradePrompt
+          message={showUpgradePrompt.message}
+          feature={showUpgradePrompt.feature}
+          onClose={() => setShowUpgradePrompt({ show: false, message: '', feature: '' })}
+        />
+      )}
     </>
   );
 };
