@@ -40,16 +40,18 @@ const Navbar = () => {
 
           {/* Navigation Links - Absolutely Centered */}
           <div className="hidden md:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
-            <Link 
-              to="/" 
-              className={`font-medium transition-colors duration-200 ${
-                location.pathname === '/' 
-                  ? 'text-audafact-accent-cyan' 
-                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-              }`}
-            >
-              Home
-            </Link>
+            {!user && (
+              <Link 
+                to="/" 
+                className={`font-medium transition-colors duration-200 ${
+                  location.pathname === '/' 
+                    ? 'text-audafact-accent-cyan' 
+                    : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                }`}
+              >
+                Home
+              </Link>
+            )}
             <Link 
               to="/studio" 
               className={`font-medium transition-colors duration-200 ${
