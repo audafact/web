@@ -3,6 +3,8 @@ import { useUserTier } from '../hooks/useUserTier';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { FeatureGateProps } from '../types/music';
 import { EnhancedAccessService } from '../services/accessService';
+import { showSignupModal } from '../hooks/useSignupModal';
+import { trackEvent } from '../services/analyticsService';
 
 // Modal Gate Component
 const ModalGate: React.FC<{ 
@@ -71,10 +73,16 @@ const FeatureGate: React.FC<FeatureGateProps> = ({
   const handleGateTrigger = () => {
     onGateTrigger?.(feature);
     
+    // Track feature gate click
+    trackEvent('feature_gate_clicked', {
+      feature,
+      userTier: tier,
+      gateType
+    });
+    
     switch (gateType) {
       case 'modal':
-        // TODO: Implement showSignupModal function
-        console.log('Show signup modal for feature:', feature);
+        showSignupModal(feature);
         break;
       case 'tooltip':
         // Tooltip is handled by CSS hover

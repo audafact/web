@@ -4,7 +4,12 @@ import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
 import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
+import { useUserTier } from '../hooks/useUserTier';
+import { usePreviewAudio } from '../hooks/usePreviewAudio';
+import { trackEvent } from '../services/analyticsService';
 import { UpgradePrompt } from './UpgradePrompt';
+import { LIBRARY_TRACKS } from '../data/libraryTracks';
+import LibraryTrackItem from './LibraryTrackItem';
 
 // Import all available audio assets
 import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
@@ -52,12 +57,21 @@ const SidePanel: React.FC<SidePanelProps> = ({
 }) => {
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
-  const { canPerformAction, getUpgradeMessage, isProUser } = useAccessControl();
+  const { canPerformAction, getUpgradeMessage } = useAccessControl();
+  const { tier } = useUserTier();
+  const { togglePreview, isPreviewing } = usePreviewAudio();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
     const saved = localStorage.getItem('sidePanelExpandedMenus');
-    return saved ? JSON.parse(saved) : { 'audio-library': true, 'sessions': false };
+    const defaultState = { 'audio-library': true, 'sessions': false };
+    
+    // In demo mode (no user), always ensure audio library is open
+    if (!user) {
+      return { ...defaultState, 'audio-library': true };
+    }
+    
+    return saved ? JSON.parse(saved) : defaultState;
   });
   
   // Active submenu items (null means no submenu item is selected)
@@ -84,6 +98,17 @@ const SidePanel: React.FC<SidePanelProps> = ({
     feature: string;
   }>({ show: false, message: '', feature: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Ensure audio library is open in demo mode
+  useEffect(() => {
+    if (!user && isOpen && !expandedMenus['audio-library']) {
+      setExpandedMenus(prev => {
+        const newState = { ...prev, 'audio-library': true };
+        localStorage.setItem('sidePanelExpandedMenus', JSON.stringify(newState));
+        return newState;
+      });
+    }
+  }, [user, isOpen, expandedMenus['audio-library']]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -481,7 +506,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
         {/* Collapsible Menu Navigation */}
         <div className="flex-1 overflow-y-auto">
-          {/* Audio Library Menu */}
+          {/* Audio Library Menu - Show for all users */}
           <div className="border-b border-audafact-divider">
             <button
               onClick={() => toggleMenu('audio-library')}
@@ -511,115 +536,69 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   Audafact Library
                 </button>
                 
-                {/* Audafact Library Content */}
+                {/* Enhanced Library Content */}
                 {activeAudioTab === 'library' && (
                   <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-md font-medium audafact-heading">Available Tracks</h3>
+                        <h3 className="text-md font-medium audafact-heading">Track Library</h3>
                       </div>
 
+                      {/* Search and Filter */}
                       <div className="space-y-3">
+                        <input
+                          type="text"
+                          placeholder="Search tracks..."
+                          className="w-full px-3 py-2 bg-audafact-surface-2 border border-audafact-divider rounded-lg text-audafact-text-primary placeholder-audafact-text-secondary focus:outline-none focus:border-audafact-accent-cyan"
+                        />
+                        
                         <div className="text-sm audafact-text-secondary bg-audafact-surface-2 p-2 rounded">
-                          Click the play button to preview, or drag tracks to the drop zone. Click the + icon to add tracks (defaults to preview mode).
+                          Preview tracks and add them to your studio. Guest users can preview but need to sign up to add tracks.
                         </div>
-                        {audioAssets.map((asset, index) => {
-                          const isLocked = !isProUser && index >= 10;
-                          return (
-                          <div
-                            key={asset.id}
-                            draggable={!isLocked}
-                            onDragStart={!isLocked ? (e) => {
-                              e.dataTransfer.setData('text/plain', asset.id);
-                              e.dataTransfer.setData('application/json', JSON.stringify({
-                                type: 'library-track',
-                                name: asset.name,
-                                id: asset.id
-                              }));
-                              e.dataTransfer.effectAllowed = 'copy';
-                            } : undefined}
-                            className={`p-3 border border-audafact-divider rounded-lg transition-colors duration-200 audafact-card ${
-                              isLocked 
-                                ? 'opacity-50 cursor-not-allowed' 
-                                : 'hover:bg-audafact-surface-2'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                {/* Play/Pause Button */}
-                                <button
-                                  onClick={!isLocked ? (e) => {
-                                    e.stopPropagation();
-                                    handlePreviewPlay(asset, false);
-                                  } : undefined}
-                                  disabled={isLocked}
-                                  className={`flex-shrink-0 p-2 rounded transition-colors duration-200 ${
-                                    isLocked 
-                                      ? 'text-audafact-text-secondary opacity-50 cursor-not-allowed' 
-                                      : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2'
-                                  }`}
-                                  title={isLocked ? 'Upgrade to Pro to unlock' : (playingAssets[asset.id] ? 'Pause Preview' : 'Play Preview')}
-                                >
-                                  {playingAssets[asset.id] ? (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                  ) : (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653Z" />
-                                    </svg>
-                                  )}
-                                </button>
-
-                                {/* Track Info */}
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium audafact-text-primary truncate max-w-[200px]" title={asset.name}>{asset.name}</h4>
-                                  <p className="text-sm audafact-text-secondary truncate max-w-[200px]">{asset.type.toUpperCase()} • {asset.size}</p>
-                                </div>
-                              </div>
-
-                              {/* Add Track Button or Lock Icon */}
-                              {isLocked ? (
-                                <div className="flex-shrink-0 p-2 text-audafact-text-secondary opacity-50">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                  </svg>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAddTrack(asset, false);
-                                  }}
-                                  className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                  title="Add to Studio (Preview Mode)"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )})}
+                        
+                        {/* Enhanced Library Tracks */}
+                        <div className="space-y-3">
+                          {LIBRARY_TRACKS.filter(track => 
+                            tier.id === 'pro' || !track.isProOnly
+                          ).map((track) => (
+                            <LibraryTrackItem
+                              key={track.id}
+                              track={track}
+                              isPreviewing={isPreviewing(track.id)}
+                              onPreview={() => togglePreview(track)}
+                              onAddToStudio={() => handleAddTrack({
+                                id: track.id,
+                                name: track.name,
+                                file: track.file,
+                                type: track.type,
+                                size: track.size
+                              }, false)}
+                              canAddToStudio={tier.id !== 'guest'}
+                              isProOnly={track.isProOnly || false}
+                            />
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
                 
-                <button
-                        onClick={() => handleAudioTabSelect('my-tracks')}
-                        className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                          activeAudioTab === 'my-tracks'
-                            ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                            : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
-                >
-                  My Tracks
-                </button>
+                {/* My Tracks - Only show for authenticated users */}
+                {user && (
+                  <button
+                    onClick={() => handleAudioTabSelect('my-tracks')}
+                    className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                      activeAudioTab === 'my-tracks'
+                        ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                        : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                    }`}
+                  >
+                    My Tracks
+                  </button>
+                )}
                 
-                {/* My Tracks Content */}
-                {activeAudioTab === 'my-tracks' && (
+                {/* My Tracks Content - Only show for authenticated users */}
+                {activeAudioTab === 'my-tracks' && user && (
                   <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
                       <div className="flex items-center justify-center">
@@ -731,24 +710,27 @@ const SidePanel: React.FC<SidePanelProps> = ({
             )}
           </div>
 
-          {/* Sessions Menu */}
-          <div className="border-b border-audafact-divider">
-            <button
-              onClick={() => toggleMenu('sessions')}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
-            >
-              <span>Sessions</span>
-              <svg 
-                className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['sessions'] ? 'rotate-90' : ''}`} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
+          {/* Sessions Menu - Only show for authenticated users */}
+          {user && (
+            <div className="border-b border-audafact-divider">
+              <button
+                onClick={() => toggleMenu('sessions')}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+                <span>Sessions</span>
+                <svg 
+                  className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['sessions'] ? 'rotate-90' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          )}
             
-            {expandedMenus['sessions'] && (
+            {expandedMenus['sessions'] && user && (
               <div className="bg-audafact-surface-2">
                 <button
                   onClick={() => handleSessionsTabSelect('saved')}
@@ -920,154 +902,155 @@ const SidePanel: React.FC<SidePanelProps> = ({
               </div>
             )}
           </div>
-          {/* Repo Menu */}
-          <div className="border-b border-audafact-divider">
-            <button
-              onClick={() => toggleMenu('repo')}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
-            >
-              <span>Repo</span>
-              <svg 
-                className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['repo'] ? 'rotate-90' : ''}`} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
+          {/* Repo Menu - Only show for authenticated users */}
+          {user && (
+            <div className="border-b border-audafact-divider">
+              <button
+                onClick={() => toggleMenu('repo')}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-            {expandedMenus['repo'] && (
-              <div className="bg-audafact-surface-2">
-                
-                
-                <button
-                  onClick={() => handleRepoTabSelect('performances')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeRepoTab === 'performances'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
+                <span>Repo</span>
+                <svg 
+                  className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['repo'] ? 'rotate-90' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
                 >
-                  Performances
-                </button>
-                {activeRepoTab === 'performances' && (
-                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-md font-medium audafact-heading">Performance Recordings</h3>
-                      <span className="text-xs audafact-text-secondary">{performances.length} performances</span>
-                    </div>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {expandedMenus['repo'] && (
+                  <div className="bg-audafact-surface-2">
                     
-                    {performances.length === 0 ? (
-                      <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                        <div className="text-audafact-text-secondary mb-4">
-                          <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                          </svg>
+                    
+                    <button
+                      onClick={() => handleRepoTabSelect('performances')}
+                      className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                        activeRepoTab === 'performances'
+                          ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                      }`}
+                    >
+                      Performances
+                    </button>
+                    {activeRepoTab === 'performances' && (
+                      <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-md font-medium audafact-heading">Performance Recordings</h3>
+                          <span className="text-xs audafact-text-secondary">{performances.length} performances</span>
                         </div>
-                        <p className="audafact-text-secondary mb-4">No performances recorded yet</p>
-                        <p className="text-xs audafact-text-secondary">Use "Record" to capture your studio performances</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {performances.map((performance) => (
-                          <div
-                            key={performance.id}
-                            className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
-                          >
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <h4 className="font-medium audafact-text-primary text-sm">
-                                    {new Date(performance.startTime).toLocaleDateString()} at {new Date(performance.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </h4>
-                                  <span className="px-2 py-0.5 text-xs bg-audafact-alert-red text-audafact-text-primary rounded-full">
-                                    Performance
-                                  </span>
-                                </div>
-                                <p className="text-xs audafact-text-secondary">
-                                  Duration: {Math.floor(performance.duration / 60000)}:{((performance.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}
-                                </p>
-                                <p className="text-xs audafact-text-secondary">
-                                  {performance.events.length} events • {performance.tracks.length} tracks
-                                  {performance.audioBlob && ' • Audio recorded'}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-1 ml-2">
-                                {performance.audioBlob && (
-                                  <button
-                                    onClick={() => {
-                                      try {
-                                        const url = URL.createObjectURL(performance.audioBlob!);
-                                        const audio = new Audio(url);
-                                        
-                                        audio.onerror = (e) => {
-                                          console.error('Audio playback error:', e);
-                                          alert('Failed to play audio. The format may not be supported.');
-                                        };
-                                        
-                                        audio.onloadeddata = () => {
-                                          // Audio loaded successfully
-                                        };
-                                        
-                                        audio.play().catch(error => {
-                                          console.error('Audio play failed:', error);
-                                          alert('Failed to play audio. Please check browser audio permissions.');
-                                        });
-                                      } catch (error) {
-                                        console.error('Audio playback setup failed:', error);
-                                        alert('Failed to setup audio playback.');
-                                      }
-                                    }}
-                                    className="p-1 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                    title="Play Audio"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
-                                    </svg>
-                                  </button>
-                                )}
-                                <button
-                                  onClick={async () => {
-                                    const canDownload = await canPerformAction('download');
-                                    if (!canDownload) {
-                                      setShowUpgradePrompt({
-                                        show: true,
-                                        message: getUpgradeMessage('download'),
-                                        feature: 'Download'
-                                      });
-                                      return;
-                                    }
-                                    exportPerformance(performance.id);
-                                  }}
-                                  className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                  title="Export Performance"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => deletePerformance(performance.id)}
-                                  className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                  title="Delete Performance"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                </button>
-                              </div>
+                        
+                        {performances.length === 0 ? (
+                          <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                            <div className="text-audafact-text-secondary mb-4">
+                              <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                              </svg>
                             </div>
+                            <p className="audafact-text-secondary mb-4">No performances recorded yet</p>
+                            <p className="text-xs audafact-text-secondary">Use "Record" to capture your studio performances</p>
                           </div>
-                        ))}
+                        ) : (
+                          <div className="space-y-3">
+                            {performances.map((performance) => (
+                              <div
+                                key={performance.id}
+                                className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
+                              >
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <h4 className="font-medium audafact-text-primary text-sm">
+                                        {new Date(performance.startTime).toLocaleDateString()} at {new Date(performance.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </h4>
+                                      <span className="px-2 py-0.5 text-xs bg-audafact-alert-red text-audafact-text-primary rounded-full">
+                                        Performance
+                                      </span>
+                                    </div>
+                                    <p className="text-xs audafact-text-secondary">
+                                      Duration: {Math.floor(performance.duration / 60000)}:{((performance.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}
+                                    </p>
+                                    <p className="text-xs audafact-text-secondary">
+                                      {performance.events.length} events • {performance.tracks.length} tracks
+                                      {performance.audioBlob && ' • Audio recorded'}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1 ml-2">
+                                    {performance.audioBlob && (
+                                      <button
+                                        onClick={() => {
+                                          try {
+                                            const url = URL.createObjectURL(performance.audioBlob!);
+                                            const audio = new Audio(url);
+                                            
+                                            audio.onerror = (e) => {
+                                              console.error('Audio playback error:', e);
+                                              alert('Failed to play audio. The format may not be supported.');
+                                            };
+                                            
+                                            audio.onloadeddata = () => {
+                                              // Audio loaded successfully
+                                            };
+                                            
+                                            audio.play().catch(error => {
+                                              console.error('Audio play failed:', error);
+                                              alert('Failed to play audio. Please check browser audio permissions.');
+                                            });
+                                          } catch (error) {
+                                            console.error('Audio playback setup failed:', error);
+                                            alert('Failed to setup audio playback.');
+                                          }
+                                        }}
+                                        className="p-1 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                        title="Play Audio"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={async () => {
+                                        const canDownload = await canPerformAction('download');
+                                        if (!canDownload) {
+                                          setShowUpgradePrompt({
+                                            show: true,
+                                            message: getUpgradeMessage('download'),
+                                            feature: 'Download'
+                                          });
+                                          return;
+                                        }
+                                        exportPerformance(performance.id);
+                                      }}
+                                      className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title="Export Performance"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => deletePerformance(performance.id)}
+                                      className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title="Delete Performance"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 )}
               </div>
             )}
-          </div>
         </div>
-      </div>
       <div>
         {/* Hidden file input for upload functionality */}
         <input

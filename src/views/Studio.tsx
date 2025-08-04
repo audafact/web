@@ -5,6 +5,7 @@ import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
 import { useDemo } from '../context/DemoContext';
 import { useAccessControl } from '../hooks/useAccessControl';
+import { useSignupModal } from '../hooks/useSignupModal';
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
@@ -13,6 +14,7 @@ import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
 import RecordingControls from '../components/RecordingControls';
 import SidePanel from '../components/SidePanel';
+import SignupModal from '../components/SignupModal';
 import DemoModeIndicator from '../components/DemoModeIndicator';
 import DemoTrackInfo from '../components/DemoTrackInfo';
 import NextTrackButton from '../components/NextTrackButton';
@@ -98,6 +100,7 @@ const Studio = () => {
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { user, loading: authLoading } = useAuth();
   const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
+  const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -178,6 +181,8 @@ const Studio = () => {
     message: string;
     feature: string;
   }>({ show: false, message: '', feature: '' });
+  
+
 
   // --- Utility functions for localStorage ---
   const saveCuePointsToLocal = (trackId: string, cuePoints: number[]) => {
@@ -1795,6 +1800,10 @@ const Studio = () => {
     }
   };
 
+
+
+
+
   const handleInitializeAudio = async () => {
     try {
       setNeedsUserInteraction(false);
@@ -2458,17 +2467,25 @@ const Studio = () => {
         ))}
       </div>
 
-      {/* SidePanel */}
-      {user && (
-        <SidePanel
-          isOpen={isSidePanelOpen}
-          onToggle={toggleSidePanel}
-          onUploadTrack={handleUploadTrack}
-          onAddFromLibrary={handleAddFromLibrary}
-          onAddUserTrack={handleAddUserTrack}
-          isLoading={isLoading}
-        />
-      )}
+      {/* SidePanel - Show for all users on studio page */}
+      <SidePanel
+        isOpen={isSidePanelOpen}
+        onToggle={toggleSidePanel}
+        onUploadTrack={handleUploadTrack}
+        onAddFromLibrary={handleAddFromLibrary}
+        onAddUserTrack={handleAddUserTrack}
+        isLoading={isLoading}
+      />
+      
+
+      
+      {/* Signup Modal */}
+      <SignupModal
+        isOpen={modalState.isOpen}
+        onClose={closeSignupModal}
+        trigger={modalState.trigger}
+        action={modalState.action}
+      />
       
       {/* Upgrade Prompt Modal */}
       {showUpgradePrompt.show && (

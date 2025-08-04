@@ -123,3 +123,37 @@ export interface FeatureGateProps {
   gateType?: 'modal' | 'tooltip' | 'disabled' | 'hidden';
   onGateTrigger?: (feature: string) => void;
 }
+
+// Library Panel Types for PRD 04
+export interface LibraryTrack {
+  id: string;
+  name: string;
+  artist?: string;
+  genre: string;
+  bpm: number;
+  key?: string;
+  duration: number;
+  file: string;
+  type: 'wav' | 'mp3';
+  size: string;
+  tags: string[];
+  isProOnly?: boolean;
+  previewUrl?: string;
+}
+
+export interface LibraryPanelProps {
+  isOpen: boolean;
+  onToggle: () => void;
+  onAddToStudio: (track: LibraryTrack) => void;
+  onPreviewTrack: (track: LibraryTrack) => void;
+  isLoading: boolean;
+}
+
+export interface LibraryTrackItemProps {
+  track: LibraryTrack;
+  isPreviewing: boolean;
+  onPreview: () => void;
+  onAddToStudio: () => void;
+  canAddToStudio: boolean;
+  isProOnly: boolean;
+}

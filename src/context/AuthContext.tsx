@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import { authService, AuthResponse } from '../auth/authService';
+import { analytics } from '../services/analyticsService';
 
 interface AuthContextType {
   user: User | null;
@@ -34,11 +35,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
+      
+      // Set analytics user
+      if (session?.user) {
+        analytics.setUser(session.user.id, 'free'); // Default to free tier
+      }
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      
+      // Update analytics user
+      if (session?.user) {
+        analytics.setUser(session.user.id, 'free'); // Default to free tier
+      } else {
+        analytics.setUser('', 'guest');
+      }
     });
 
     return () => subscription.unsubscribe();

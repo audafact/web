@@ -14,8 +14,8 @@ const Navbar = () => {
         <div className="flex items-center h-16 relative">
           {/* Left side: Hamburger menu and Logo/Brand */}
           <div className="flex items-center gap-4">
-            {/* Hamburger Menu Button - Only show when logged in */}
-            {user && (
+            {/* Hamburger Menu Button - Show on studio page for all users */}
+            {isStudioPage && (
               <button
                 onClick={toggleSidePanel}
                 className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
@@ -26,6 +26,8 @@ const Navbar = () => {
                 </svg>
               </button>
             )}
+            
+
             
             <Link to="/" className="flex items-center gap-2">
               {/* Favicon */}
