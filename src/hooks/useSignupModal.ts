@@ -14,29 +14,7 @@ export const useSignupModal = () => {
     action: undefined
   });
 
-  useEffect(() => {
-    const handleShowSignupModal = (event: CustomEvent) => {
-      const { trigger, action } = event.detail;
-      
-      setModalState({
-        isOpen: true,
-        trigger,
-        action
-      });
-      
-      trackEvent('signup_modal_shown', {
-        trigger,
-        userTier: 'guest'
-      });
-    };
-
-    // Add event listener for custom signup modal events
-    window.addEventListener('showSignupModal', handleShowSignupModal as EventListener);
-
-    return () => {
-      window.removeEventListener('showSignupModal', handleShowSignupModal as EventListener);
-    };
-  }, []);
+  // Remove the event listener from the hook since GlobalModalManager handles it
 
   const showSignupModal = (trigger: string, action?: string) => {
     setModalState({
@@ -68,4 +46,11 @@ export const useSignupModal = () => {
     showSignupModal,
     closeSignupModal
   };
+};
+
+// Global function for triggering signup modal from anywhere
+export const showSignupModal = (trigger: string, action?: string) => {
+  window.dispatchEvent(new CustomEvent('showSignupModal', {
+    detail: { trigger, action }
+  }));
 }; 

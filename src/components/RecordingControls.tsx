@@ -3,6 +3,9 @@ import { Save, Check } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { UpgradePrompt } from './UpgradePrompt';
+import { useUserTier } from '../hooks/useUserTier';
+import { showSignupModal } from '../hooks/useSignupModal';
+import FeatureGate from './FeatureGate';
 
 interface RecordingControlsProps {
   className?: string;
@@ -17,10 +20,12 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     startPerformanceRecording, 
     stopPerformanceRecording
   } = useRecording();
-  const { canPerformAction, getUpgradeMessage } = useAccessControl();
+  const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
+  const { tier } = useUserTier();
   
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const formatDuration = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
@@ -29,11 +34,32 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  const handleSave = () => {
-    if (onSave) {
-      onSave();
+  const handleSave = async () => {
+    if (!onSave) return;
+
+    // Check if user is authenticated
+    if (!tier || tier.id === 'guest') {
+      showSignupModal('save_session');
+      return;
+    }
+
+    // Check save limits for authenticated users
+    const canSave = await canPerformAction('save_session');
+    if (!canSave) {
+      setShowUpgradePrompt(true);
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      await onSave();
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error('Save failed:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -42,7 +68,7 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
       {/* Save Button - Left Side */}
       <button
         onClick={handleSave}
-        disabled={!onSave}
+        disabled={!onSave || isSaving}
         className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
           saveSuccess 
             ? 'bg-green-500 text-white' 
@@ -53,6 +79,11 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
           <>
             <Check size={12} />
             Saved!
+          </>
+        ) : isSaving ? (
+          <>
+            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+            Saving...
           </>
         ) : (
           <>
@@ -76,6 +107,13 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
           {!isRecordingPerformance ? (
             <button
               onClick={async () => {
+                // Check if user is authenticated
+                if (!tier || tier.id === 'guest') {
+                  showSignupModal('record');
+                  return;
+                }
+
+                // Check record limits for authenticated users
                 const canRecord = await canPerformAction('record');
                 if (!canRecord) {
                   setShowUpgradePrompt(true);
@@ -102,8 +140,8 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
         {/* Upgrade Prompt Modal */}
         {showUpgradePrompt && (
           <UpgradePrompt
-            message={getUpgradeMessage('record')}
-            feature="Recording"
+            message={getUpgradeMessage('save_session')}
+            feature="Session Save"
             onClose={() => setShowUpgradePrompt(false)}
           />
         )}

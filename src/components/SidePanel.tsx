@@ -10,6 +10,8 @@ import { trackEvent } from '../services/analyticsService';
 import { UpgradePrompt } from './UpgradePrompt';
 import { LIBRARY_TRACKS } from '../data/libraryTracks';
 import LibraryTrackItem from './LibraryTrackItem';
+import FeatureGate from './FeatureGate';
+import { showSignupModal } from '../hooks/useSignupModal';
 
 // Import all available audio assets
 import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
@@ -57,19 +59,14 @@ const SidePanel: React.FC<SidePanelProps> = ({
 }) => {
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
-  const { canPerformAction, getUpgradeMessage } = useAccessControl();
+  const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier } = useUserTier();
   const { togglePreview, isPreviewing } = usePreviewAudio();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
     const saved = localStorage.getItem('sidePanelExpandedMenus');
-    const defaultState = { 'audio-library': true, 'sessions': false };
-    
-    // In demo mode (no user), always ensure audio library is open
-    if (!user) {
-      return { ...defaultState, 'audio-library': true };
-    }
+    const defaultState = { 'audio-library': false, 'sessions': false };
     
     return saved ? JSON.parse(saved) : defaultState;
   });
@@ -99,16 +96,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   }>({ show: false, message: '', feature: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Ensure audio library is open in demo mode
-  useEffect(() => {
-    if (!user && isOpen && !expandedMenus['audio-library']) {
-      setExpandedMenus(prev => {
-        const newState = { ...prev, 'audio-library': true };
-        localStorage.setItem('sidePanelExpandedMenus', JSON.stringify(newState));
-        return newState;
-      });
-    }
-  }, [user, isOpen, expandedMenus['audio-library']]);
+  // No longer need to force audio library open for demo mode
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -263,12 +251,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !user) {
-      console.error('No file selected or user not authenticated');
+    if (!file) {
+      console.error('No file selected');
       return;
     }
 
-    // Check upload limits
+    // Check if user is authenticated
+    if (!user) {
+      showSignupModal('upload');
+      // Reset the input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
+    // Check upload limits for authenticated users
     const canUpload = await canPerformAction('upload');
     if (!canUpload) {
       setShowUpgradePrompt({
@@ -583,29 +581,55 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   </div>
                 )}
                 
-                {/* My Tracks - Only show for authenticated users */}
-                {user && (
-                  <button
-                    onClick={() => handleAudioTabSelect('my-tracks')}
-                    className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                      activeAudioTab === 'my-tracks'
-                        ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                        : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                    }`}
-                  >
-                    My Tracks
-                  </button>
-                )}
+                {/* My Tracks - Show for all users */}
+                <button
+                  onClick={() => handleAudioTabSelect('my-tracks')}
+                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
+                    activeAudioTab === 'my-tracks'
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
+                  }`}
+                >
+                  My Tracks
+                </button>
                 
-                {/* My Tracks Content - Only show for authenticated users */}
-                {activeAudioTab === 'my-tracks' && user && (
+                {/* My Tracks Content - Show for all users */}
+                {activeAudioTab === 'my-tracks' && (
                   <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
                       <div className="flex items-center justify-center">
-                        <h3 className="text-md font-medium audafact-heading">My Uploaded Tracks</h3>
+                        <h3 className="text-md font-medium audafact-heading">
+                          {user ? 'My Uploaded Tracks' : 'Upload Tracks'}
+                        </h3>
                       </div>
 
-                      {userTracks.length === 0 ? (
+                      {!user ? (
+                        // Guest user view
+                        <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                          <div className="text-audafact-text-secondary mb-4">
+                            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                          </div>
+                          <p className="audafact-text-secondary mb-4">Upload your own tracks</p>
+                          <p className="text-sm audafact-text-secondary mb-4">Sign up to upload and manage your audio files</p>
+                            <button
+                              onClick={() => {
+                                // Check if user is authenticated
+                                if (!user) {
+                                  showSignupModal('upload');
+                                  return;
+                                }
+                                // For authenticated users, open file browser
+                                fileInputRef.current?.click();
+                              }}
+                              className="audafact-button-primary"
+                            >
+                              Upload Track
+                            </button>
+                        </div>
+                      ) : userTracks.length === 0 ? (
+                        // Authenticated user with no tracks
                         <div className="text-center py-8 flex-1 flex flex-col justify-center">
                           <div className="text-audafact-text-secondary mb-4">
                             <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -613,14 +637,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             </svg>
                           </div>
                           <p className="audafact-text-secondary mb-4">No tracks uploaded yet</p>
-                          <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="audafact-button-primary"
-                          >
-                            Upload Your First Track
-                          </button>
+                            <button
+                              onClick={() => {
+                                // Check if user is authenticated
+                                if (!user) {
+                                  showSignupModal('upload');
+                                  return;
+                                }
+                                // For authenticated users, open file browser
+                                fileInputRef.current?.click();
+                              }}
+                              className="audafact-button-primary"
+                            >
+                              Upload Your First Track
+                            </button>
                         </div>
-                      ) : (
+                      ) : user ? (
                         <div className="space-y-3">
                           {userTracks.map((track) => (
                             <div
@@ -702,7 +734,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             </div>
                           ))}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 )}
@@ -800,26 +832,28 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-1 ml-2">
-                                    <button
-                                      onClick={async () => {
-                                        const canDownload = await canPerformAction('download');
-                                        if (!canDownload) {
-                                          setShowUpgradePrompt({
-                                            show: true,
-                                            message: getUpgradeMessage('download'),
-                                            feature: 'Download'
-                                          });
-                                          return;
-                                        }
-                                        exportSession(session.id);
-                                      }}
-                                      className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                      title="Export Session"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
-                                    </button>
+                                    {canAccessFeature('download') && (
+                                      <button
+                                        onClick={async () => {
+                                          const canDownload = await canPerformAction('download');
+                                          if (!canDownload) {
+                                            setShowUpgradePrompt({
+                                              show: true,
+                                              message: getUpgradeMessage('download'),
+                                              feature: 'Download'
+                                            });
+                                            return;
+                                          }
+                                          exportSession(session.id);
+                                        }}
+                                        className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                        title="Export Session"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => deleteSession(session.id)}
                                       className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
@@ -1009,26 +1043,28 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         </svg>
                                       </button>
                                     )}
-                                    <button
-                                      onClick={async () => {
-                                        const canDownload = await canPerformAction('download');
-                                        if (!canDownload) {
-                                          setShowUpgradePrompt({
-                                            show: true,
-                                            message: getUpgradeMessage('download'),
-                                            feature: 'Download'
-                                          });
-                                          return;
-                                        }
-                                        exportPerformance(performance.id);
-                                      }}
-                                      className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                      title="Export Performance"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
-                                    </button>
+                                    {canAccessFeature('download') && (
+                                      <button
+                                        onClick={async () => {
+                                          const canDownload = await canPerformAction('download');
+                                          if (!canDownload) {
+                                            setShowUpgradePrompt({
+                                              show: true,
+                                              message: getUpgradeMessage('download'),
+                                              feature: 'Download'
+                                            });
+                                            return;
+                                          }
+                                          exportPerformance(performance.id);
+                                        }}
+                                        className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                        title="Export Performance"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => deletePerformance(performance.id)}
                                       className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
