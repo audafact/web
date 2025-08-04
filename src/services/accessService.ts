@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { DatabaseService } from './databaseService';
+import { UserTier, FeatureGateConfig } from '../types/music';
 
 export interface AccessLimits {
   maxUploads: number;
@@ -168,5 +169,117 @@ export class AccessService {
       default:
         return baseMessage;
     }
+  }
+}
+
+export class EnhancedAccessService extends AccessService {
+  static canAccessFeature(feature: string, tier: UserTier): boolean {
+    const featureAccess = {
+      upload: tier.features.canUpload,
+      save_session: tier.features.canSaveSession,
+      record: tier.features.canRecord,
+      download: tier.features.canDownload,
+      edit_cues: tier.features.canEditCues,
+      edit_loops: tier.features.canEditLoops,
+      browse_library: tier.features.canBrowseLibrary,
+      access_pro_tracks: tier.features.canAccessProTracks
+    };
+    
+    return featureAccess[feature] || false;
+  }
+  
+  static getFeatureGateConfig(feature: string): FeatureGateConfig {
+    const configs = {
+      upload: {
+        gateType: 'modal',
+        message: "🎧 Ready to remix your own sounds?",
+        ctaText: "Sign up to upload tracks",
+        upgradeRequired: false
+      },
+      save_session: {
+        gateType: 'modal',
+        message: "💾 Don't lose your work",
+        ctaText: "Sign up to save session",
+        upgradeRequired: false
+      },
+      record: {
+        gateType: 'modal',
+        message: "🎙 Record and export your performances",
+        ctaText: "Upgrade to Pro Creator",
+        upgradeRequired: true
+      },
+      download: {
+        gateType: 'modal',
+        message: "💿 Download your recordings",
+        ctaText: "Upgrade to Pro Creator",
+        upgradeRequired: true
+      },
+      edit_cues: {
+        gateType: 'tooltip',
+        message: "Sign up to customize cue points",
+        ctaText: "Sign up now",
+        upgradeRequired: false
+      },
+      edit_loops: {
+        gateType: 'tooltip',
+        message: "Sign up to set custom loops",
+        ctaText: "Sign up now",
+        upgradeRequired: false
+      }
+    };
+    
+    return configs[feature] || {
+      gateType: 'modal',
+      message: "Upgrade to unlock this feature",
+      ctaText: "Upgrade now",
+      upgradeRequired: true
+    };
+  }
+  
+  static async checkUsageLimits(userId: string, tier: UserTier, action: string): Promise<boolean> {
+    if (tier.id === 'pro') return true; // No limits for pro users
+    
+    const limits = tier.limits;
+    
+    switch (action) {
+      case 'upload':
+        const uploadCount = await this.getUserUploadCount(userId);
+        return uploadCount < limits.maxUploads;
+      
+      case 'save_session':
+        const sessionCount = await this.getUserSessionCount(userId);
+        return sessionCount < limits.maxSessions;
+      
+      case 'record':
+        const recordingCount = await this.getUserRecordingCount(userId);
+        return recordingCount < limits.maxRecordings;
+      
+      default:
+        return true;
+    }
+  }
+
+  private static async getUserUploadCount(userId: string): Promise<number> {
+    const { count } = await supabase
+      .from('uploads')
+      .select('id', { count: 'exact' })
+      .eq('user_id', userId);
+    return count || 0;
+  }
+
+  private static async getUserSessionCount(userId: string): Promise<number> {
+    const { count } = await supabase
+      .from('sessions')
+      .select('id', { count: 'exact' })
+      .eq('user_id', userId);
+    return count || 0;
+  }
+
+  private static async getUserRecordingCount(userId: string): Promise<number> {
+    const { count } = await supabase
+      .from('recordings')
+      .select('id', { count: 'exact' })
+      .eq('user_id', userId);
+    return count || 0;
   }
 }

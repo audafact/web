@@ -3,6 +3,7 @@ import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
+import { useDemo } from '../context/DemoContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
@@ -12,6 +13,9 @@ import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
 import RecordingControls from '../components/RecordingControls';
 import SidePanel from '../components/SidePanel';
+import DemoModeIndicator from '../components/DemoModeIndicator';
+import DemoTrackInfo from '../components/DemoTrackInfo';
+import NextTrackButton from '../components/NextTrackButton';
 import { TimeSignature } from '../types/music';
 
 // Import preloaded audio files
@@ -93,6 +97,7 @@ const Studio = () => {
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { user, loading: authLoading } = useAuth();
+  const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -245,9 +250,19 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-        // Select a random asset
-        const randomIndex = Math.floor(Math.random() * audioAssets.length);
-        const asset = audioAssets[randomIndex];
+        // Use demo track if in demo mode, otherwise select a random asset
+        let asset;
+        if (isDemoMode && currentDemoTrack) {
+          asset = {
+            id: currentDemoTrack.id,
+            name: currentDemoTrack.name,
+            file: currentDemoTrack.file,
+            type: currentDemoTrack.type
+          };
+        } else {
+          const randomIndex = Math.floor(Math.random() * audioAssets.length);
+          asset = audioAssets[randomIndex];
+        }
         
         // Use existing audio context if available
         let context = audioContext;
@@ -297,7 +312,7 @@ const Studio = () => {
           id: trackId,
           file,
           buffer,
-          mode: settings.mode || 'preview', // Default to preview mode
+          mode: isDemoMode ? 'preview' : (settings.mode || 'preview'), // Force preview mode in demo
           loopStart: settings.loopStart || 0,
           loopEnd: settings.loopEnd || buffer.duration,
           cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -310,7 +325,7 @@ const Studio = () => {
         };
         
         setTracks([newTrack]);
-        setCurrentTrackIndex(randomIndex);
+        setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
         setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
         setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
@@ -322,6 +337,14 @@ const Studio = () => {
           : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
         setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+        
+        // Track demo event if in demo mode
+        if (isDemoMode) {
+          trackDemoEvent('session_started', { 
+            trackId: asset.id,
+            timestamp: Date.now()
+          });
+        }
         
         // Track loading is complete
         setIsTrackLoading(false);
@@ -337,7 +360,7 @@ const Studio = () => {
     if (tracks.length === 0 && !isManuallyAddingTrack) {
       loadRandomTrack();
     }
-  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack]);
+  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -354,6 +377,64 @@ const Studio = () => {
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [tracks, currentTrackIndex]);
+
+  // Handle demo track changes
+  useEffect(() => {
+    if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
+      // Update the current track with the new demo track
+      const updateTrackWithDemoTrack = async () => {
+        try {
+          const response = await fetch(currentDemoTrack.file);
+          const blob = await response.blob();
+          const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
+            type: `audio/${currentDemoTrack.type}` 
+          });
+          
+          const buffer = await loadAudioBuffer(file, audioContext);
+          const trackId = currentDemoTrack.id;
+          const settings = loadTrackSettingsFromLocal(trackId) || {};
+          
+          const updatedTrack: Track = {
+            id: trackId,
+            file,
+            buffer,
+            mode: isDemoMode ? 'preview' : (settings.mode || 'preview'),
+            loopStart: settings.loopStart || 0,
+            loopEnd: settings.loopEnd || buffer.duration,
+            cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
+              buffer.duration * (i / 10)
+            ),
+            tempo: settings.tempo || 120,
+            timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
+            firstMeasureTime: settings.firstMeasureTime || 0,
+            showMeasures: settings.showMeasures || false
+          };
+          
+          setTracks([updatedTrack]);
+          setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
+          setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
+          setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
+          setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
+          const trackVolume = updatedTrack.mode === 'preview' 
+            ? lastUsedVolumeRef.current 
+            : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
+          setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
+          setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+          
+          // Track demo event
+          trackDemoEvent('next_track', { 
+            fromTrackId: tracks[0]?.id,
+            toTrackId: trackId
+          });
+          
+        } catch (error) {
+          console.error('Error updating demo track:', error);
+        }
+      };
+      
+      updateTrackWithDemoTrack();
+    }
+  }, [isDemoMode, currentDemoTrack, audioContext, tracks.length, trackDemoEvent]);
 
   // Touch/swipe handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -428,8 +509,8 @@ const Studio = () => {
       e.preventDefault();
     }
     
-    // Show add track gesture indicator if valid gesture and can add track
-    if (isVerticalSwipeDown && canAddTrack && !isAddingTrack) {
+    // Show add track gesture indicator if valid gesture and can add track - disabled in demo mode
+    if (isVerticalSwipeDown && canAddTrack && !isAddingTrack && !isDemoMode) {
       setShowAddTrackGesture(true);
       e.preventDefault(); // Prevent browser pulldown gestures
     } else {
@@ -550,8 +631,8 @@ const Studio = () => {
         lastProcessedGestureRef.current = '';
       }, 1000);
     } else if (isValidVerticalSwipe && deltaY < 0) {
-      // Swiped down (finger moved down) - add track
-      if (canAddTrack && !isAddingTrack) {
+      // Swiped down (finger moved down) - add track - disabled in demo mode
+      if (canAddTrack && !isAddingTrack && !isDemoMode) {
         const gestureKey = `swipe-down-${now}`;
         
         // Prevent duplicate gestures
@@ -647,8 +728,8 @@ const Studio = () => {
       
       // Reset gesture processing flag after a delay
       setTimeout(() => setIsGestureProcessing(false), 1000);
-    } else if (isVerticalGesture && e.deltaY < 0 && canAddTrack && !isAddingTrack) {
-      // Scrolling down - add track (negative deltaY = down)
+    } else if (isVerticalGesture && e.deltaY < 0 && canAddTrack && !isAddingTrack && !isDemoMode) {
+      // Scrolling down - add track (negative deltaY = down) - disabled in demo mode
       e.preventDefault();
       setLastGestureTime(now);
       setIsGestureProcessing(true);
@@ -661,20 +742,32 @@ const Studio = () => {
 
   // Track navigation functions
   const handleNextTrack = useCallback(async () => {
-    if (isTrackLoading) return; // Disable during loading
+    if (isTrackLoading || isDemoLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
-    const nextIndex = (currentTrackIndex + 1) % audioAssets.length;
-    await loadTrackByIndex(nextIndex, true); // true = only update first track
-  }, [tracks.length, currentTrackIndex, isTrackLoading]);
+    if (isDemoMode) {
+      // In demo mode, load next demo track
+      loadRandomDemoTrack();
+    } else {
+      // Normal mode - cycle through audio assets
+      const nextIndex = (currentTrackIndex + 1) % audioAssets.length;
+      await loadTrackByIndex(nextIndex, true); // true = only update first track
+    }
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack]);
 
   const handlePreviousTrack = useCallback(async () => {
-    if (isTrackLoading) return; // Disable during loading
+    if (isTrackLoading || isDemoLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
-    const prevIndex = currentTrackIndex === 0 ? audioAssets.length - 1 : currentTrackIndex -1;
-    await loadTrackByIndex(prevIndex, true); // true = only update first track
-  }, [tracks.length, currentTrackIndex, isTrackLoading]);
+    if (isDemoMode) {
+      // In demo mode, load next demo track (since we don't have previous demo track concept)
+      loadRandomDemoTrack();
+    } else {
+      // Normal mode - cycle through audio assets
+      const prevIndex = currentTrackIndex === 0 ? audioAssets.length - 1 : currentTrackIndex -1;
+      await loadTrackByIndex(prevIndex, true); // true = only update first track
+    }
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack]);
 
   const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
     try {
@@ -1711,9 +1804,19 @@ const Studio = () => {
       const context = await initializeAudio();
       setIsAudioInitialized(true);
       
-      // Now load a random track
-      const randomIndex = Math.floor(Math.random() * audioAssets.length);
-      const asset = audioAssets[randomIndex];
+      // Load demo track if in demo mode, otherwise load random track
+      let asset;
+      if (isDemoMode && currentDemoTrack) {
+        asset = {
+          id: currentDemoTrack.id,
+          name: currentDemoTrack.name,
+          file: currentDemoTrack.file,
+          type: currentDemoTrack.type
+        };
+      } else {
+        const randomIndex = Math.floor(Math.random() * audioAssets.length);
+        asset = audioAssets[randomIndex];
+      }
       
       const response = await fetch(asset.file);
       const blob = await response.blob();
@@ -1723,24 +1826,24 @@ const Studio = () => {
       const trackId = asset.id;
       const settings = loadTrackSettingsFromLocal(trackId) || {};
       
-      const newTrack: Track = {
-        id: trackId,
-        file,
-        buffer,
-        mode: settings.mode || 'preview',
-        loopStart: settings.loopStart || 0,
-        loopEnd: settings.loopEnd || buffer.duration,
-        cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
-          buffer.duration * (i / 10)
-        ),
-        tempo: settings.tempo || 120,
-        timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
-        firstMeasureTime: settings.firstMeasureTime || 0,
-        showMeasures: settings.showMeasures || false
-      };
+              const newTrack: Track = {
+          id: trackId,
+          file,
+          buffer,
+          mode: isDemoMode ? 'preview' : (settings.mode || 'preview'),
+          loopStart: settings.loopStart || 0,
+          loopEnd: settings.loopEnd || buffer.duration,
+          cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
+            buffer.duration * (i / 10)
+          ),
+          tempo: settings.tempo || 120,
+          timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
+          firstMeasureTime: settings.firstMeasureTime || 0,
+          showMeasures: settings.showMeasures || false
+        };
       
       setTracks([newTrack]);
-      setCurrentTrackIndex(randomIndex);
+      setCurrentTrackIndex(0);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
       setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
@@ -1750,6 +1853,14 @@ const Studio = () => {
         : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
       setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+      
+      // Track demo event if in demo mode
+      if (isDemoMode) {
+        trackDemoEvent('session_started', { 
+          trackId: asset.id,
+          timestamp: Date.now()
+        });
+      }
       
       setIsInitializingAudio(false);
     } catch (error) {
@@ -1961,6 +2072,9 @@ const Studio = () => {
 
   return (
     <>
+      {/* Demo Mode Indicator */}
+      {isDemoMode && <DemoModeIndicator />}
+      
       <div 
         className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
           user && isSidePanelOpen 
@@ -1975,6 +2089,8 @@ const Studio = () => {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {/* Demo Track Info */}
+        {isDemoMode && <DemoTrackInfo track={currentDemoTrack} />}
         {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
         {user && !isSidePanelOpen && isDragOver && (
           <div
@@ -2076,13 +2192,13 @@ const Studio = () => {
                 {/* Add Track Button */}
                 <button
                   onClick={addNewTrack}
-                  disabled={!canAddTrack || isAddingTrack || isTrackLoading}
+                  disabled={!canAddTrack || isAddingTrack || isTrackLoading || isDemoMode}
                   className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
-                    !canAddTrack || isAddingTrack || isTrackLoading
+                    !canAddTrack || isAddingTrack || isTrackLoading || isDemoMode
                       ? 'text-audafact-text-secondary cursor-not-allowed'
                       : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                   } ${addTrackAnimation ? 'animate-pulse' : ''}`}
-                  title={canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks'}
+                  title={isDemoMode ? 'Add tracks not available in demo mode' : (canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks')}
                 >
                   <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -2094,6 +2210,8 @@ const Studio = () => {
                     <span className="text-xs mt-1">Adding...</span>
                   )}
                 </button>
+                
+
                   
               <button
                 onClick={handleNextTrack}

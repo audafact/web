@@ -98,6 +98,65 @@
     @apply text-audafact-text-secondary;
   }
 
+  /* Demo mode styles */
+  .demo-mode-indicator {
+    position: fixed;
+    top: 80px;
+    right: 16px;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: #3b82f6;
+    z-index: 1000;
+    font-weight: 500;
+  }
+
+  .demo-track-info {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .demo-track-info h3 {
+    margin: 0 0 4px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .demo-track-info p {
+    margin: 0;
+    font-size: 14px;
+    color: #9ca3af;
+  }
+
+  .next-track-button {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 14px;
+    color: #3b82f6;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+  }
+
+  .next-track-button:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+
+  .next-track-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
   .audafact-accent-cyan {
     @apply text-audafact-accent-cyan;
   }
@@ -111,9 +170,98 @@
       linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px);
     background-size: 20px 20px;
   }
-}
+
 
 /* Keep only the hidden class as it might be used elsewhere */
 .hidden {
   display: none;
+}
+
+/* Feature Gate Styles (PRD 2) */
+.locked-feature {
+  opacity: 0.6;
+  cursor: not-allowed;
+  position: relative;
+}
+
+.locked-feature::after {
+  content: "🔒";
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.disabled-button {
+  background: #f3f4f6;
+  color: #9ca3af;
+  border: 1px solid #d1d5db;
+  cursor: not-allowed;
+}
+
+.disabled-button:hover {
+  background: #f3f4f6;
+  transform: none;
+}
+
+.feature-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  z-index: 1000;
+  pointer-events: none;
+  white-space: nowrap;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+}
+
+.feature-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 4px solid rgba(0, 0, 0, 0.9);
+}
+
+.modal-gate {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.modal-gate:hover {
+  opacity: 0.8;
+}
+
+.feature-gate-disabled {
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.feature-gate-disabled:hover {
+  opacity: 0.8;
+}
+
+.tooltip-gate {
+  position: relative;
+  cursor: pointer;
+}
+
+.tooltip-gate:hover {
+  opacity: 0.8;
 }

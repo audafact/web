@@ -82,3 +82,44 @@ export interface AudioFile {
   type: string;
   uploaded_at: string;
 }
+
+// Feature Gating Types (PRD 2)
+export interface FeatureAccess {
+  canUpload: boolean;
+  canSaveSession: boolean;
+  canRecord: boolean;
+  canDownload: boolean;
+  canEditCues: boolean;
+  canEditLoops: boolean;
+  canBrowseLibrary: boolean;
+  canAccessProTracks: boolean;
+}
+
+export interface UsageLimits {
+  maxUploads: number;
+  maxSessions: number;
+  maxRecordings: number;
+  maxLibraryTracks: number;
+}
+
+export interface UserTier {
+  id: 'guest' | 'free' | 'pro';
+  name: string;
+  features: FeatureAccess;
+  limits: UsageLimits;
+}
+
+export interface FeatureGateConfig {
+  gateType: 'modal' | 'tooltip' | 'disabled' | 'hidden';
+  message: string;
+  ctaText: string;
+  upgradeRequired: boolean;
+}
+
+export interface FeatureGateProps {
+  feature: string;
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+  gateType?: 'modal' | 'tooltip' | 'disabled' | 'hidden';
+  onGateTrigger?: (feature: string) => void;
+}

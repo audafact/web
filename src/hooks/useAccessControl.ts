@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useUserAccess } from './useUserAccess';
-import { AccessService, AccessStatus } from '../services/accessService';
+import { useUserTier } from './useUserTier';
+import { AccessService, AccessStatus, EnhancedAccessService } from '../services/accessService';
 
 export const useAccessControl = () => {
   const { user } = useAuth();
-  const { accessTier } = useUserAccess();
+  const { tier } = useUserTier();
   const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshAccessStatus = async () => {
-    if (!user?.id || !accessTier) return;
+    if (!user?.id) return;
     
     setLoading(true);
     try {
-      const status = await AccessService.getUserAccessStatus(user.id, accessTier);
+      const status = await AccessService.getUserAccessStatus(user.id, tier.id);
       setAccessStatus(status);
     } catch (error) {
       console.error('Error fetching access status:', error);
@@ -25,25 +25,33 @@ export const useAccessControl = () => {
 
   useEffect(() => {
     refreshAccessStatus();
-  }, [user?.id, accessTier]);
+  }, [user?.id, tier.id]);
+
+  const canAccessFeature = (feature: string): boolean => {
+    return EnhancedAccessService.canAccessFeature(feature, tier);
+  };
 
   const canPerformAction = async (action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download'): Promise<boolean> => {
-    if (!user?.id || !accessTier) return false;
-    return AccessService.canPerformAction(user.id, accessTier, action);
+    if (!user?.id) return false;
+    
+    const hasFeatureAccess = canAccessFeature(action);
+    if (!hasFeatureAccess) return false;
+    
+    return EnhancedAccessService.checkUsageLimits(user.id, tier, action);
   };
 
-  const getUpgradeMessage = (action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download'): string => {
-    return AccessService.getUpgradeMessage(action);
+  const getUpgradeMessage = (action: string): string => {
+    const config = EnhancedAccessService.getFeatureGateConfig(action);
+    return config.message;
   };
-
-  const isProUser = accessTier === 'pro';
 
   return {
     accessStatus,
     loading,
     refreshAccessStatus,
+    canAccessFeature,
     canPerformAction,
     getUpgradeMessage,
-    isProUser
+    tier
   };
 };
