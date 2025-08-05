@@ -22,7 +22,7 @@ export const AuthCallback = () => {
 
         if (data.session) {
           // Successfully authenticated, redirect to studio
-          navigate('/studio', { replace: true });
+          navigate('/', { replace: true });
         } else {
           // No session found, redirect back to auth page
           navigate('/auth', { replace: true });

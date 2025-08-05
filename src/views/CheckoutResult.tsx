@@ -19,7 +19,7 @@ export const CheckoutResult: React.FC = () => {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     } else if (success && countdown === 0) {
-      navigate('/studio');
+      navigate('/');
     }
   }, [success, countdown, navigate]);
 
@@ -58,7 +58,7 @@ export const CheckoutResult: React.FC = () => {
 
             <div className="space-y-4">
               <button
-                onClick={() => navigate('/studio')}
+                onClick={() => navigate('/')}
                 className="audafact-button-primary w-full flex items-center justify-center px-6 py-3 text-base font-medium"
               >
                 <ArrowRight className="h-5 w-5 mr-2" />
@@ -105,7 +105,7 @@ export const CheckoutResult: React.FC = () => {
                 className="audafact-button-secondary w-full flex items-center justify-center px-6 py-3 text-base font-medium"
               >
                 <Home className="h-5 w-5 mr-2" />
-                Back to Home
+                Back to Studio
               </button>
             </div>
           </div>
@@ -114,7 +114,7 @@ export const CheckoutResult: React.FC = () => {
     );
   }
 
-  // Default case - redirect to home
+  // Default case - redirect to studio
   useEffect(() => {
     navigate('/');
   }, [navigate]);

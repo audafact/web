@@ -8,7 +8,7 @@ export const AuthPage = () => {
   const [mode, setMode] = useState<AuthMode>('signin');
 
   const handleAuthSuccess = () => {
-    // Redirect to home page or dashboard
+    // Redirect to studio page
     window.location.href = '/';
   };
 

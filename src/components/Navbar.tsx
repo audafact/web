@@ -8,7 +8,7 @@ const Navbar = () => {
   const { user, loading, signOut } = useAuth();
   const { toggleSidePanel } = useSidePanel();
   const location = useLocation();
-  const isStudioPage = location.pathname === '/studio';
+  const isStudioPage = location.pathname === '/studio' || location.pathname === '/';
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
 
   return (
@@ -45,22 +45,10 @@ const Navbar = () => {
 
           {/* Navigation Links - Absolutely Centered */}
           <div className="hidden md:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
-            {!user && (
-              <Link 
-                to="/" 
-                className={`font-medium transition-colors duration-200 ${
-                  location.pathname === '/' 
-                    ? 'text-audafact-accent-cyan' 
-                    : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                }`}
-              >
-                Home
-              </Link>
-            )}
             <Link 
-              to="/studio" 
+              to="/" 
               className={`font-medium transition-colors duration-200 ${
-                location.pathname === '/studio' 
+                location.pathname === '/' 
                   ? 'text-audafact-accent-cyan' 
                   : 'text-audafact-text-secondary hover:text-audafact-text-primary'
               }`}
