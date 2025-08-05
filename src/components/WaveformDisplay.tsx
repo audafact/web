@@ -4,6 +4,7 @@ import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
 import MeasureDisplay from './MeasureDisplay';
 import GridLines from './GridLines';
 import { TimeSignature } from '../types/music';
+import { showSignupModal } from '../hooks/useSignupModal';
 
 interface WaveformDisplayProps {
   audioFile: File;
@@ -39,6 +40,8 @@ interface WaveformDisplayProps {
   onPlayheadChange?: (time: number) => void;
   // Scroll state callback
   onScrollStateChange?: (isScrolling: boolean) => void;
+  // Demo mode
+  isDemoMode?: boolean;
 }
 
 const WaveformDisplay = ({
@@ -75,6 +78,8 @@ const WaveformDisplay = ({
   onPlayheadChange,
   // Scroll state callback
   onScrollStateChange,
+  // Demo mode
+  isDemoMode = false,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -415,8 +420,8 @@ const WaveformDisplay = ({
         start: loopStart,
         end: loopEnd,
         color: 'rgba(0, 245, 195, 0.2)',
-        drag: true,
-        resize: true,
+        drag: true, // Always allow dragging for loop regions
+        resize: true, // Always allow resizing for loop regions
         id: `loop-region-${trackId || 'default'}`,
         // Add visual styling for better interaction
         handleStyle: {
@@ -446,6 +451,8 @@ const WaveformDisplay = ({
         });
       });
 
+
+
       currentRegionsRef.current = [region];
     } else if (mode === 'cue') {
       const duration = wavesurfer.getDuration();
@@ -459,7 +466,7 @@ const WaveformDisplay = ({
           start: clampedStart,
           end: regionEnd,
           color: 'rgba(255, 77, 79, 0.3)',
-          drag: true,
+          drag: !isDemoMode, // Disable dragging in demo mode
           resize: false,
           id: `cue-${trackId || 'default'}-${index}`,
           // Add visual styling for better interaction
@@ -497,12 +504,33 @@ const WaveformDisplay = ({
           }, 100);
         }
 
+        // Add demo mode event listeners to the region itself (cue points only)
+        if (isDemoMode) {
+          region.on('mousedown', (e: any) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showSignupModal('custom_cue_points');
+          });
+          
+          region.on('touchstart', (e: any) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showSignupModal('custom_cue_points');
+          });
+
+          region.on('click', (e: any) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showSignupModal('custom_cue_points');
+          });
+        }
+
         return region;
       });
 
       currentRegionsRef.current = newRegions;
     }
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isDemoMode]);
 
   // Improved function to add thumb element to a region
   // Alternative approach: Use WaveSurfer's internal region management
@@ -528,16 +556,21 @@ const WaveformDisplay = ({
 
     // Create the hitbox
     const hitbox = document.createElement('div');
+    
+    // Set cursor and pointer events based on demo mode
+    const cursor = isDemoMode ? 'pointer' : 'grab';
+    const pointerEvents = 'auto';
+    
     hitbox.style.cssText = `
       position: absolute;
-      bottom: -6px;
+      bottom: -4px;
       left: 50%;
       transform: translateX(-50%);
       width: 40px;
       height: 40px;
-      cursor: grab;
+      cursor: ${cursor};
       z-index: 31;
-      pointer-events: auto;
+      pointer-events: ${pointerEvents};
       background: transparent;
       display: flex;
       align-items: center;
@@ -560,16 +593,67 @@ const WaveformDisplay = ({
       font-size: 12px;
       font-weight: bold;
       pointer-events: none;
+      position: relative;
     `;
 
     thumb.textContent = index === 9 ? '0' : (index + 1).toString();
 
+    // Add lock icon in demo mode
+    if (isDemoMode) {
+      const lockIcon = document.createElement('div');
+      lockIcon.style.cssText = `
+        position: absolute;
+        bottom: -3px;
+        right: -3px;
+        width: 16px;
+        height: 16px;
+        background-color: transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: #FFD700;
+        font-weight: bold;
+        z-index: 32;
+        pointer-events: none;
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+      `;
+      lockIcon.innerHTML = '🔒';
+      thumb.appendChild(lockIcon);
+    }
+
     hitbox.appendChild(thumb);
     regionElement.appendChild(hitbox);
 
+    // Add event listeners based on demo mode
+    if (isDemoMode) {
+      // In demo mode, prevent dragging and show signup modal on click
+      hitbox.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showSignupModal('custom_cue_points');
+      });
+      
+      hitbox.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showSignupModal('custom_cue_points');
+      });
+
+      // Also add click event for better user experience
+      hitbox.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showSignupModal('custom_cue_points');
+      });
+    } else {
+      // In normal mode, allow dragging by not preventing default behavior
+      // The region's built-in drag functionality will work
+    }
+
     // Store reference to the hitbox (which contains the thumb) for cleanup
     region.thumbElement = hitbox;
-  }, [trackId]);
+  }, [trackId, isDemoMode]);
 
   // Function to remove thumbs from regions
   const removeThumbsFromRegions = useCallback(() => {

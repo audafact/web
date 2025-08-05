@@ -130,6 +130,8 @@ const SignupModal: React.FC<SignupModalProps> = ({
         return 'Record your performance';
       case 'download':
         return 'Download your tracks';
+      case 'custom_cue_points':
+        return 'Set custom cue points';
       default:
         return 'Access premium features';
     }

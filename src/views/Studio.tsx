@@ -2471,6 +2471,7 @@ const Studio = () => {
                 isPlaying={playbackStates[track.id] || false}
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
+                isDemoMode={isDemoMode}
               />
               
 
