@@ -5,20 +5,14 @@ import { AnalyticsService } from './analyticsService';
 
 export class EnhancedAnalyticsService {
   private static instance: EnhancedAnalyticsService;
-  private reliabilityService: AnalyticsReliabilityService;
-  private performanceMonitor: PerformanceMonitor;
-  private errorMonitor: ErrorMonitor;
-  private analyticsService: AnalyticsService;
+  private reliabilityService: AnalyticsReliabilityService | null = null;
+  private performanceMonitor: PerformanceMonitor | null = null;
+  private errorMonitor: ErrorMonitor | null = null;
+  private analyticsService: AnalyticsService | null = null;
+  private isInitialized: boolean = false;
   
   private constructor() {
-    this.reliabilityService = AnalyticsReliabilityService.getInstance();
-    this.performanceMonitor = PerformanceMonitor.getInstance();
-    this.errorMonitor = ErrorMonitor.getInstance();
-    this.analyticsService = AnalyticsService.getInstance();
-    
-    // Set up cross-service references
-    this.performanceMonitor.setAnalyticsService(this);
-    this.errorMonitor.setAnalyticsService(this);
+    // Don't initialize services immediately
   }
   
   static getInstance(): EnhancedAnalyticsService {
@@ -28,7 +22,34 @@ export class EnhancedAnalyticsService {
     return EnhancedAnalyticsService.instance;
   }
   
-  track(event: string, properties: Record<string, any> = {}): void {
+  private async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    
+    // Lazy load services
+    this.reliabilityService = AnalyticsReliabilityService.getInstance();
+    this.performanceMonitor = PerformanceMonitor.getInstance();
+    this.errorMonitor = ErrorMonitor.getInstance();
+    this.analyticsService = AnalyticsService.getInstance();
+    
+    // Only enable performance monitoring in development or when explicitly requested
+    if (process.env.NODE_ENV === 'development') {
+      this.performanceMonitor.enable();
+    }
+    
+    // Set up cross-service references
+    if (this.performanceMonitor) {
+      this.performanceMonitor.setAnalyticsService(this);
+    }
+    if (this.errorMonitor) {
+      this.errorMonitor.setAnalyticsService(this);
+    }
+    
+    this.isInitialized = true;
+  }
+  
+  async track(event: string, properties: Record<string, any> = {}): Promise<void> {
+    await this.initialize();
+    
     // Add common properties
     const enhancedProperties = {
       ...properties,
@@ -44,26 +65,43 @@ export class EnhancedAnalyticsService {
     };
     
     // Queue event for reliable delivery
-    this.reliabilityService.queueEvent(event, enhancedProperties);
+    if (this.reliabilityService) {
+      this.reliabilityService.queueEvent(event, enhancedProperties);
+    }
     
     // Track performance impact
-    this.performanceMonitor.trackMetric('analytics_event_sent', 1, { event });
+    if (this.performanceMonitor) {
+      this.performanceMonitor.trackMetric('analytics_event_sent', 1, { event });
+    }
   }
   
-  trackPerformance(metric: string, value: number, context: Record<string, any> = {}): void {
-    this.performanceMonitor.trackMetric(metric, value, context);
+  async trackPerformance(metric: string, value: number, context: Record<string, any> = {}): Promise<void> {
+    await this.initialize();
+    if (this.performanceMonitor) {
+      this.performanceMonitor.trackMetric(metric, value, context);
+    }
   }
   
-  trackError(error: Error, context: string, additionalContext: Record<string, any> = {}): void {
-    this.errorMonitor.captureError(error, context, additionalContext);
+  async trackError(error: Error, context: string, additionalContext: Record<string, any> = {}): Promise<void> {
+    await this.initialize();
+    if (this.errorMonitor) {
+      this.errorMonitor.captureError(error, context, additionalContext);
+    }
   }
   
-  trackCustomError(message: string, context: string, severity: 'low' | 'medium' | 'high' | 'critical' = 'medium'): void {
-    this.errorMonitor.captureCustomError(message, context, severity);
+  async trackCustomError(message: string, context: string, severity: 'low' | 'medium' | 'high' | 'critical' = 'medium'): Promise<void> {
+    await this.initialize();
+    if (this.errorMonitor) {
+      this.errorMonitor.captureCustomError(message, context, severity);
+    }
   }
   
-  startPerformanceTimer(metric: string): () => void {
-    return this.performanceMonitor.startTimer(metric);
+  async startPerformanceTimer(metric: string): Promise<() => void> {
+    await this.initialize();
+    if (this.performanceMonitor) {
+      return this.performanceMonitor.startTimer(metric);
+    }
+    return () => {}; // No-op if not initialized
   }
   
   getSessionId(): string {
@@ -87,38 +125,38 @@ export class EnhancedAnalyticsService {
     performanceMetrics: any[];
   } {
     return {
-      pendingEvents: this.reliabilityService.getPendingEventCount(),
-      errorRate: this.errorMonitor.getErrorRate(),
+      pendingEvents: this.reliabilityService?.getPendingEventCount() || 0,
+      errorRate: this.errorMonitor?.getErrorRate() || 0,
       isOnline: navigator.onLine,
-      lastError: this.errorMonitor.getErrors()[this.errorMonitor.getErrors().length - 1],
-      performanceMetrics: this.performanceMonitor.getMetrics()
+      lastError: this.errorMonitor?.getErrors()[this.errorMonitor?.getErrors().length - 1],
+      performanceMetrics: this.performanceMonitor?.getMetrics() || []
     };
   }
   
   // Get monitoring data
   getPerformanceMetrics() {
-    return this.performanceMonitor.getMetrics();
+    return this.performanceMonitor?.getMetrics() || [];
   }
   
   getErrors() {
-    return this.errorMonitor.getErrors();
+    return this.errorMonitor?.getErrors() || [];
   }
   
   // Clear monitoring data
   clearPerformanceMetrics() {
-    this.performanceMonitor.clearMetrics();
+    this.performanceMonitor?.clearMetrics();
   }
   
   clearErrors() {
-    this.errorMonitor.clearErrors();
+    this.errorMonitor?.clearErrors();
   }
   
   clearPendingEvents() {
-    this.reliabilityService.clearPendingEvents();
+    this.reliabilityService?.clearPendingEvents();
   }
   
   // Cleanup
   destroy(): void {
-    this.reliabilityService.destroy();
+    this.reliabilityService?.destroy();
   }
 } 

@@ -129,7 +129,7 @@ const Navbar = () => {
       
       {/* Performance Dashboard Modal */}
       <PerformanceDashboard 
-        isVisible={showPerformanceDashboard}
+        isOpen={showPerformanceDashboard}
         onClose={() => setShowPerformanceDashboard(false)}
       />
     </nav>

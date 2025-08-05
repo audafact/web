@@ -20,39 +20,33 @@ import DemoTrackInfo from '../components/DemoTrackInfo';
 import NextTrackButton from '../components/NextTrackButton';
 import { TimeSignature } from '../types/music';
 
-// Import preloaded audio files
-import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
-import ronDrums from '../assets/audio/RON-drums.wav';
-import rhythmRevealed from '../assets/audio/The Rhythm Revealed(Drums).wav';
-import unveiledDesires from '../assets/audio/Unveiled Desires.wav';
-
-// Define available audio assets
+// Define available audio assets - lazy load audio files
 const audioAssets: AudioAsset[] = [
   {
     id: 'ron-drums',
     name: 'RON Drums',
-    file: ronDrums,
+    file: '/src/assets/audio/RON-drums.wav',
     type: 'wav',
     size: '5.5MB'
   },
   {
     id: 'secrets-of-the-heart',
     name: 'Secrets of the Heart',
-    file: secretsOfTheHeart,
+    file: '/src/assets/audio/Secrets of the Heart.mp3',
     type: 'mp3',
     size: '775KB'
   },
   {
     id: 'rhythm-revealed',
     name: 'The Rhythm Revealed (Drums)',
-    file: rhythmRevealed,
+    file: '/src/assets/audio/The Rhythm Revealed(Drums).wav',
     type: 'wav',
     size: '5.5MB'
   },
   {
     id: 'unveiled-desires',
     name: 'Unveiled Desires',
-    file: unveiledDesires,
+    file: '/src/assets/audio/Unveiled Desires.wav',
     type: 'wav',
     size: '6.0MB'
   }

@@ -1,24 +1,28 @@
 import { useCallback } from 'react';
-import { EnhancedAnalyticsService } from '../services/enhancedAnalyticsService';
 
 export const useErrorTracking = () => {
-  const analytics = EnhancedAnalyticsService.getInstance();
-  
-  const trackError = useCallback((
-    error: Error, 
-    context: string, 
-    additionalContext: Record<string, any> = {}
-  ) => {
-    analytics.trackError(error, context, additionalContext);
-  }, [analytics]);
-  
-  const trackCustomError = useCallback((
-    message: string,
-    context: string,
-    severity: 'low' | 'medium' | 'high' | 'critical' = 'medium'
-  ) => {
-    analytics.trackCustomError(message, context, severity);
-  }, [analytics]);
-  
-  return { trackError, trackCustomError };
+  const trackError = useCallback(async (error: Error, context: string, additionalContext: Record<string, any> = {}) => {
+    try {
+      const { EnhancedAnalyticsService } = await import('../services/enhancedAnalyticsService');
+      const analytics = EnhancedAnalyticsService.getInstance();
+      await analytics.trackError(error, context, additionalContext);
+    } catch (trackingError) {
+      console.warn('Failed to track error:', trackingError);
+    }
+  }, []);
+
+  const trackCustomError = useCallback(async (message: string, context: string, severity: 'low' | 'medium' | 'high' | 'critical' = 'medium') => {
+    try {
+      const { EnhancedAnalyticsService } = await import('../services/enhancedAnalyticsService');
+      const analytics = EnhancedAnalyticsService.getInstance();
+      await analytics.trackCustomError(message, context, severity);
+    } catch (trackingError) {
+      console.warn('Failed to track custom error:', trackingError);
+    }
+  }, []);
+
+  return {
+    trackError,
+    trackCustomError
+  };
 }; 

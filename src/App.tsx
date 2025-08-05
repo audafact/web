@@ -7,12 +7,21 @@ import { DemoProvider } from './context/DemoContext';
 import { GlobalModalManager } from './components/GlobalModalManager';
 import SuccessMessageManager from './components/SuccessMessageManager';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { EnhancedAnalyticsService } from './services/enhancedAnalyticsService';
 import { router } from './routes';
+import React from 'react';
 
 function App() {
-  // Initialize the enhanced analytics service
-  const analytics = EnhancedAnalyticsService.getInstance();
+  // Lazy load analytics service after app is mounted
+  React.useEffect(() => {
+    const loadAnalytics = async () => {
+      const { EnhancedAnalyticsService } = await import('./services/enhancedAnalyticsService');
+      EnhancedAnalyticsService.getInstance();
+    };
+    
+    // Load analytics after a short delay to prioritize app rendering
+    const timer = setTimeout(loadAnalytics, 1000);
+    return () => clearTimeout(timer);
+  }, []);
   
   return (
     <ErrorBoundary>

@@ -39,9 +39,10 @@ export class PerformanceMonitor {
   private metrics: Map<string, PerformanceMetrics> = new Map();
   private observers: Map<string, PerformanceObserver> = new Map();
   private analytics: any; // Will be imported from analyticsService
+  private isEnabled: boolean = false;
   
   private constructor() {
-    this.initializeObservers();
+    // Don't initialize observers immediately - wait for enable()
   }
   
   static getInstance(): PerformanceMonitor {
@@ -51,9 +52,29 @@ export class PerformanceMonitor {
     return PerformanceMonitor.instance;
   }
   
+  enable(): void {
+    if (this.isEnabled) return;
+    this.isEnabled = true;
+    this.initializeObservers();
+  }
+  
+  disable(): void {
+    if (!this.isEnabled) return;
+    this.isEnabled = false;
+    this.disposeObservers();
+  }
+  
+  private disposeObservers(): void {
+    this.observers.forEach(observer => observer.disconnect());
+    this.observers.clear();
+  }
+  
   private initializeObservers(): void {
-    // Navigation timing
-    if ('PerformanceObserver' in window) {
+    // Only initialize if PerformanceObserver is supported and enabled
+    if (!('PerformanceObserver' in window) || !this.isEnabled) return;
+    
+    try {
+      // Navigation timing
       const navigationObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           if (entry.entryType === 'navigation') {
@@ -63,10 +84,12 @@ export class PerformanceMonitor {
       });
       navigationObserver.observe({ entryTypes: ['navigation'] });
       this.observers.set('navigation', navigationObserver);
+    } catch (error) {
+      console.warn('Failed to initialize navigation observer:', error);
     }
     
-    // Paint timing
-    if ('PerformanceObserver' in window) {
+    try {
+      // Paint timing
       const paintObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           if (entry.entryType === 'paint') {
@@ -76,10 +99,12 @@ export class PerformanceMonitor {
       });
       paintObserver.observe({ entryTypes: ['paint'] });
       this.observers.set('paint', paintObserver);
+    } catch (error) {
+      console.warn('Failed to initialize paint observer:', error);
     }
     
-    // Resource timing
-    if ('PerformanceObserver' in window) {
+    try {
+      // Resource timing - only for critical resources
       const resourceObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           if (entry.entryType === 'resource') {
@@ -89,6 +114,8 @@ export class PerformanceMonitor {
       });
       resourceObserver.observe({ entryTypes: ['resource'] });
       this.observers.set('resource', resourceObserver);
+    } catch (error) {
+      console.warn('Failed to initialize resource observer:', error);
     }
   }
   

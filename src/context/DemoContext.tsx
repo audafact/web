@@ -1,12 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 
-// Import preloaded audio files
-import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
-import ronDrums from '../assets/audio/RON-drums.wav';
-import rhythmRevealed from '../assets/audio/The Rhythm Revealed(Drums).wav';
-import unveiledDesires from '../assets/audio/Unveiled Desires.wav';
-
 // Define AudioAsset interface for demo tracks
 export interface AudioAsset {
   id: string;
@@ -19,14 +13,14 @@ export interface AudioAsset {
   duration?: number;
 }
 
-// Demo tracks configuration
+// Demo tracks configuration - lazy load audio files
 const demoTracks: AudioAsset[] = [
   { 
     id: 'ron-drums', 
     name: 'RON Drums',
     genre: 'drum-n-bass', 
     bpm: 140,
-    file: ronDrums,
+    file: '/src/assets/audio/RON-drums.wav',
     type: 'wav',
     size: '5.5MB'
   },
@@ -35,7 +29,7 @@ const demoTracks: AudioAsset[] = [
     name: 'Secrets of the Heart',
     genre: 'ambient', 
     bpm: 120,
-    file: secretsOfTheHeart,
+    file: '/src/assets/audio/Secrets of the Heart.mp3',
     type: 'mp3',
     size: '775KB'
   },
@@ -44,7 +38,7 @@ const demoTracks: AudioAsset[] = [
     name: 'The Rhythm Revealed (Drums)',
     genre: 'house', 
     bpm: 128,
-    file: rhythmRevealed,
+    file: '/src/assets/audio/The Rhythm Revealed(Drums).wav',
     type: 'wav',
     size: '5.5MB'
   },
@@ -53,7 +47,7 @@ const demoTracks: AudioAsset[] = [
     name: 'Unveiled Desires',
     genre: 'techno', 
     bpm: 135,
-    file: unveiledDesires,
+    file: '/src/assets/audio/Unveiled Desires.wav',
     type: 'wav',
     size: '6.0MB'
   }
