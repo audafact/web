@@ -8,16 +8,11 @@ import { useUserTier } from '../hooks/useUserTier';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { trackEvent } from '../services/analyticsService';
 import { UpgradePrompt } from './UpgradePrompt';
-import { LIBRARY_TRACKS } from '../data/libraryTracks';
+import { LibraryService } from '../services/libraryService';
+import { LibraryTrack } from '../types/music';
 import LibraryTrackItem from './LibraryTrackItem';
 import FeatureGate from './FeatureGate';
 import { showSignupModal } from '../hooks/useSignupModal';
-
-// Import all available audio assets
-import secretsOfTheHeart from '../assets/audio/Secrets of the Heart.mp3';
-import ronDrums from '../assets/audio/RON-drums.wav';
-import rhythmRevealed from '../assets/audio/The Rhythm Revealed(Drums).wav';
-import unveiledDesires from '../assets/audio/Unveiled Desires.wav';
 
 interface AudioAsset {
   id: string;
@@ -94,9 +89,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
     message: string;
     feature: string;
   }>({ show: false, message: '', feature: '' });
+  const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // No longer need to force audio library open for demo mode
+  // Load library tracks when library tab is opened
+  useEffect(() => {
+    if (activeAudioTab === 'library' && libraryTracks.length === 0) {
+      loadLibraryTracks();
+    }
+  }, [activeAudioTab]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -145,6 +147,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
     loadUserTracks();
   }, [user]);
+
+  const loadLibraryTracks = async () => {
+    setIsLoadingLibrary(true);
+    try {
+      const tracks = await LibraryService.getLibraryTracks(tier.id);
+      setLibraryTracks(tracks);
+    } catch (error) {
+      console.error('Error loading library tracks:', error);
+    } finally {
+      setIsLoadingLibrary(false);
+    }
+  };
 
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {
@@ -217,37 +231,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
     };
   }, [previewAudios]);
 
-  // Define available audio assets
-  const audioAssets: AudioAsset[] = [
-    {
-      id: 'ron-drums',
-      name: 'RON Drums',
-      file: ronDrums,
-      type: 'wav',
-      size: '5.5MB'
-    },
-    {
-      id: 'secrets-of-the-heart',
-      name: 'Secrets of the Heart',
-      file: secretsOfTheHeart,
-      type: 'mp3',
-      size: '775KB'
-    },
-    {
-      id: 'rhythm-revealed',
-      name: 'The Rhythm Revealed (Drums)',
-      file: rhythmRevealed,
-      type: 'wav',
-      size: '5.5MB'
-    },
-    {
-      id: 'unveiled-desires',
-      name: 'Unveiled Desires',
-      file: unveiledDesires,
-      type: 'wav',
-      size: '6.0MB'
-    }
-  ];
+  // Audio assets are now loaded from the library service
+  // The audioAssets array is no longer needed as we use libraryTracks from Supabase
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -557,25 +542,34 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         
                         {/* Enhanced Library Tracks */}
                         <div className="space-y-3">
-                          {LIBRARY_TRACKS.filter(track => 
-                            tier.id === 'pro' || !track.isProOnly
-                          ).map((track) => (
-                            <LibraryTrackItem
-                              key={track.id}
-                              track={track}
-                              isPreviewing={isPreviewing(track.id)}
-                              onPreview={() => togglePreview(track)}
-                              onAddToStudio={() => handleAddTrack({
-                                id: track.id,
-                                name: track.name,
-                                file: track.file,
-                                type: track.type,
-                                size: track.size
-                              }, false)}
-                              canAddToStudio={tier.id !== 'guest'}
-                              isProOnly={track.isProOnly || false}
-                            />
-                          ))}
+                          {isLoadingLibrary ? (
+                            <div className="text-center py-4">
+                              <div className="loading-spinner mx-auto"></div>
+                              <p className="text-sm audafact-text-secondary mt-2">Loading tracks...</p>
+                            </div>
+                          ) : libraryTracks.length === 0 ? (
+                            <div className="text-center py-4">
+                              <p className="text-sm audafact-text-secondary">No tracks available</p>
+                            </div>
+                          ) : (
+                            libraryTracks.map((track) => (
+                              <LibraryTrackItem
+                                key={track.id}
+                                track={track}
+                                isPreviewing={isPreviewing(track.id)}
+                                onPreview={() => togglePreview(track)}
+                                onAddToStudio={() => handleAddTrack({
+                                  id: track.id,
+                                  name: track.name,
+                                  file: track.file,
+                                  type: track.type,
+                                  size: track.size
+                                }, false)}
+                                canAddToStudio={tier.id !== 'guest'}
+                                isProOnly={track.isProOnly || false}
+                              />
+                            ))
+                          )}
                         </div>
                       </div>
                     </div>

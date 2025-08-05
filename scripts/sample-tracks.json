@@ -1,0 +1,62 @@
+[
+  {
+    "track_id": "summer-vibes",
+    "name": "Summer Vibes",
+    "artist": "Chill Collective",
+    "genre": "house",
+    "bpm": 125,
+    "key": "Fm",
+    "duration": 240,
+    "file_url": "/audio/summer-vibes.wav",
+    "type": "wav",
+    "size": "6.2MB",
+    "tags": [
+      "house",
+      "summer",
+      "chill"
+    ],
+    "is_pro_only": false,
+    "preview_url": "/previews/summer-vibes-preview.mp3",
+    "rotation_week": 5
+  },
+  {
+    "track_id": "deep-groove",
+    "name": "Deep Groove",
+    "artist": "Underground Masters",
+    "genre": "deep-house",
+    "bpm": 122,
+    "key": "Am",
+    "duration": 280,
+    "file_url": "/audio/deep-groove.wav",
+    "type": "wav",
+    "size": "7.1MB",
+    "tags": [
+      "deep-house",
+      "groove",
+      "underground"
+    ],
+    "is_pro_only": false,
+    "preview_url": "/previews/deep-groove-preview.mp3",
+    "rotation_week": 5
+  },
+  {
+    "track_id": "pro-exclusive-3",
+    "name": "Pro Exclusive Track 3",
+    "artist": "Premium Producer",
+    "genre": "progressive-house",
+    "bpm": 128,
+    "key": "Dm",
+    "duration": 320,
+    "file_url": "/audio/pro-3.wav",
+    "type": "wav",
+    "size": "9.5MB",
+    "tags": [
+      "progressive",
+      "house",
+      "premium"
+    ],
+    "is_pro_only": true,
+    "preview_url": "/previews/pro-3-preview.mp3",
+    "rotation_week": null
+  }
+]

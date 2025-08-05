@@ -66,7 +66,7 @@ const FeatureGate: React.FC<FeatureGateProps> = ({
   const { tier } = useUserTier();
   const { canAccessFeature } = useAccessControl();
   
-  const hasAccess = canAccessFeature(feature, tier);
+  const hasAccess = canAccessFeature(feature);
   
   if (hasAccess) {
     return <>{children}</>;
@@ -78,7 +78,7 @@ const FeatureGate: React.FC<FeatureGateProps> = ({
     // Track feature gate click
     trackEvent('feature_gate_clicked', {
       feature,
-      userTier: tier,
+      userTier: tier.id,
       gateType
     });
     

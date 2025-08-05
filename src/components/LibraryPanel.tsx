@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { LibraryPanelProps, LibraryTrack } from '../types/music';
-import { LIBRARY_TRACKS, getAvailableGenres } from '../data/libraryTracks';
 import { useUserTier } from '../hooks/useUserTier';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { trackEvent } from '../services/analyticsService';
+import { LibraryService } from '../services/libraryService';
 import LibraryTrackItem from './LibraryTrackItem';
 
 const LibraryPanel: React.FC<LibraryPanelProps> = ({
@@ -20,19 +20,44 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
+  const [tracks, setTracks] = useState<LibraryTrack[]>([]);
+  const [availableGenres, setAvailableGenres] = useState<string[]>(['all']);
+  const [rotationInfo, setRotationInfo] = useState<{ weekNumber: number; trackCount: number } | null>(null);
+  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
   
-  // Filter tracks based on user tier and search
-  const filteredTracks = useMemo(() => {
-    let tracks = LIBRARY_TRACKS;
+  // Load tracks from Supabase
+  useEffect(() => {
+    const loadTracks = async () => {
+      setIsLoadingTracks(true);
+      try {
+        const [tracksData, genresData, rotationData] = await Promise.all([
+          LibraryService.getLibraryTracks(tier.id),
+          LibraryService.getAvailableGenres(tier.id),
+          LibraryService.getCurrentRotationInfo()
+        ]);
+        
+        setTracks(tracksData);
+        setAvailableGenres(['all', ...genresData]);
+        setRotationInfo(rotationData);
+      } catch (error) {
+        console.error('Error loading library tracks:', error);
+      } finally {
+        setIsLoadingTracks(false);
+      }
+    };
     
-    // Filter by pro access
-    if (tier.id !== 'pro') {
-      tracks = tracks.filter(track => !track.isProOnly);
+    if (isOpen) {
+      loadTracks();
     }
+  }, [isOpen, tier.id]);
+  
+  // Filter tracks based on search and genre
+  const filteredTracks = useMemo(() => {
+    let filtered = tracks;
     
     // Filter by search term
     if (searchTerm) {
-      tracks = tracks.filter(track => 
+      filtered = filtered.filter(track => 
         track.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         track.artist?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         track.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -41,17 +66,11 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
     
     // Filter by genre
     if (selectedGenre !== 'all') {
-      tracks = tracks.filter(track => track.genre === selectedGenre);
+      filtered = filtered.filter(track => track.genre === selectedGenre);
     }
     
-    return tracks;
-  }, [searchTerm, selectedGenre, tier.id]);
-  
-  // Get unique genres for filter
-  const availableGenres = useMemo(() => {
-    const genres = getAvailableGenres();
-    return ['all', ...genres];
-  }, []);
+    return filtered;
+  }, [tracks, searchTerm, selectedGenre]);
   
   const handlePreviewTrack = async (track: LibraryTrack) => {
     await togglePreview(track);
@@ -102,6 +121,22 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
     }
   };
   
+  const formatRotationInfo = () => {
+    if (!rotationInfo) return null;
+    
+    if (tier.id === 'free') {
+      return (
+        <div className="rotation-info">
+          <span className="rotation-badge">
+            🔄 Week {Math.floor(rotationInfo.weekNumber)} • {rotationInfo.trackCount} tracks available
+          </span>
+        </div>
+      );
+    }
+    
+    return null;
+  };
+
   return (
     <div className={`library-panel ${isOpen ? 'open' : ''}`}>
       <div className="library-header">
@@ -110,6 +145,8 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
           ✕
         </button>
       </div>
+      
+      {formatRotationInfo()}
       
       <div className="library-filters">
         <div className="search-container">
@@ -138,7 +175,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
       </div>
       
       <div className="library-content">
-        {isLoading ? (
+        {isLoading || isLoadingTracks ? (
           <div className="loading-state">
             <div className="loading-spinner"></div>
             <p>Loading library...</p>
@@ -146,6 +183,11 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
         ) : filteredTracks.length === 0 ? (
           <div className="empty-state">
             <p>No tracks found matching your criteria.</p>
+            {tier.id === 'free' && (
+              <p className="rotation-note">
+                New tracks rotate weekly. Check back next week for fresh content!
+              </p>
+            )}
           </div>
         ) : (
           <div className="track-list">

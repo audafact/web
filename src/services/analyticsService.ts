@@ -37,6 +37,7 @@ export interface TrackingEvents {
   'library_track_previewed': { trackId: string; genre: string; bpm: number; userTier: string };
   'library_track_added': { trackId: string; genre: string; userTier: string };
   'library_search_performed': { searchTerm: string; resultsCount: number; userTier: string };
+  'library_genre_filtered': { genre: string; resultsCount: number; userTier: string };
   
   // Studio actions
   'track_uploaded': { fileName: string; fileSize: number; fileType: string; userTier: string };
