@@ -23,6 +23,7 @@ const Navbar = () => {
                 onClick={toggleSidePanel}
                 className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
                 aria-label="Toggle sidebar"
+                data-testid="side-panel-toggle"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

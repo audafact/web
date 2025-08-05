@@ -885,6 +885,7 @@ const TrackControls = ({
                 ? 'bg-audafact-text-secondary text-audafact-bg-primary cursor-not-allowed' 
                 : 'bg-audafact-accent-cyan text-audafact-bg-primary hover:bg-opacity-90'
             }`}
+            data-testid="play-button"
           >
             {isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </button>

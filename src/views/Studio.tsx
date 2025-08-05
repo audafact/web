@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import { useDemo } from '../context/DemoContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
+import { useOnboarding } from '../hooks/useOnboarding';
+import { createOnboardingSteps, createQuickOnboardingSteps } from '../config/onboardingConfig';
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
@@ -18,6 +20,9 @@ import SignupModal from '../components/SignupModal';
 import DemoModeIndicator from '../components/DemoModeIndicator';
 import DemoTrackInfo from '../components/DemoTrackInfo';
 import NextTrackButton from '../components/NextTrackButton';
+import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
+import HelpButton from '../components/HelpButton';
+import HelpModal from '../components/HelpModal';
 import { TimeSignature } from '../types/music';
 
 // Define available audio assets - lazy load audio files
@@ -98,8 +103,60 @@ const Studio = () => {
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
+
+  // Onboarding handlers
+  const onboardingHandlers = {
+    onPlayTrack: () => {
+      // Trigger play on the first track if available
+      if (tracks.length > 0) {
+        const firstTrack = tracks[0];
+        // This will be handled by the TrackControls component
+      }
+    },
+    onNextTrack: () => {
+      handleNextTrack();
+    },
+    onPreviousTrack: () => {
+      handlePreviousTrack();
+    },
+    onToggleSidePanel: () => {
+      toggleSidePanel();
+    },
+    onSwitchToLoopMode: () => {
+      if (tracks.length > 0) {
+        handleModeChange(tracks[0].id, 'loop');
+      }
+    },
+    onSwitchToCueMode: () => {
+      if (tracks.length > 0) {
+        handleModeChange(tracks[0].id, 'cue');
+      }
+    },
+    onToggleControls: () => {
+      if (tracks.length > 0) {
+        handleToggleControls(tracks[0].id);
+      }
+    },
+    onAdjustVolume: () => {
+      // Volume adjustment will be handled by the TrackControls component
+    },
+    onSetLoopPoints: () => {
+      // Loop point setting will be handled by the WaveformDisplay component
+    },
+    onTriggerCue: () => {
+      // Cue triggering will be handled by keyboard events
+    }
+  };
+
+  // Create onboarding steps
+  const onboardingSteps = createOnboardingSteps(onboardingHandlers);
+  const quickOnboardingSteps = createQuickOnboardingSteps(onboardingHandlers);
+
+  // Initialize onboarding
+  const onboarding = useOnboarding(onboardingSteps);
   const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(false);
   const [isInitializingAudio, setIsInitializingAudio] = useState<boolean>(false);
   const [isManuallyAddingTrack, setIsManuallyAddingTrack] = useState<boolean>(false);
@@ -364,6 +421,13 @@ const Studio = () => {
   // Keyboard navigation for track switching
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // Handle help modal
+      if (event.key === '?') {
+        event.preventDefault();
+        setShowHelpModal(true);
+        return;
+      }
+
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         handlePreviousTrack();
@@ -1865,6 +1929,14 @@ const Studio = () => {
         });
       }
       
+      // Start onboarding if this is the first time and user hasn't completed it
+      if (onboarding.shouldShowOnboarding()) {
+        // Small delay to ensure UI is fully rendered
+        setTimeout(() => {
+          onboarding.startOnboarding();
+        }, 1000);
+      }
+      
       setIsInitializingAudio(false);
     } catch (error) {
       console.error('Error initializing audio:', error);
@@ -2297,6 +2369,7 @@ const Studio = () => {
             style={{
               transform: isAddingTrack && index > 0 ? 'translateY(10px)' : 'translateY(0)'
             }}
+            data-testid={index === 0 ? 'main-track-card' : `track-card-${index}`}
           >
             {/* Add Track and Navigation Controls - Only show on first track */}
             {index === 0 && (
@@ -2317,6 +2390,7 @@ const Studio = () => {
                       : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                   }`}
                   title="Previous Track (Left Arrow)"
+                  data-testid="previous-track-button"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -2356,6 +2430,7 @@ const Studio = () => {
                     : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                 }`}
                 title="Next Track (Right Arrow)"
+                data-testid="next-track-button"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -2377,6 +2452,7 @@ const Studio = () => {
                           ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
                           : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                       }`}
+                      data-testid="preview-mode-button"
                     >
                       Preview
                     </button>
@@ -2387,6 +2463,7 @@ const Studio = () => {
                           ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
                           : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                       }`}
+                      data-testid="loop-mode-button"
                     >
                       Loop
                     </button>
@@ -2397,6 +2474,7 @@ const Studio = () => {
                           ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
                           : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                       }`}
+                      data-testid="chop-mode-button"
                     >
                       Chop
                     </button>
@@ -2421,6 +2499,7 @@ const Studio = () => {
                         : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
                     }`}
                     title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
+                    data-testid="measures-button"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -2469,6 +2548,7 @@ const Studio = () => {
                     onClick={() => handleToggleControls(track.id)}
                     className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
                     title={expandedControls[track.id] ? 'Collapse Controls' : 'Expand Controls'}
+                    data-testid="time-tempo-controls-button"
                   >
                     <span>Time and Tempo</span>
                     <svg 
@@ -2621,6 +2701,28 @@ const Studio = () => {
           onClose={() => setShowUpgradePrompt({ show: false, message: '', feature: '' })}
         />
       )}
+
+      {/* Onboarding Walkthrough */}
+      <OnboardingWalkthrough
+        isOpen={onboarding.isOpen}
+        onClose={onboarding.closeOnboarding}
+        onComplete={onboarding.completeOnboarding}
+        steps={onboardingSteps}
+        currentStep={onboarding.currentStep}
+        onStepChange={onboarding.setCurrentStep}
+      />
+
+      {/* Help Button */}
+      <HelpButton
+        onStartTutorial={onboarding.startOnboarding}
+        onShowHelp={() => setShowHelpModal(true)}
+      />
+
+      {/* Help Modal */}
+      <HelpModal
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+      />
     </>
   );
 };
