@@ -5,6 +5,8 @@ import { FeatureGateProps } from '../types/music';
 import { EnhancedAccessService } from '../services/accessService';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { trackEvent } from '../services/analyticsService';
+import VisualFeatureGate from './VisualFeatureGate';
+import { getGateConfigForScreen } from '../utils/gateConfigs';
 
 // Modal Gate Component
 const ModalGate: React.FC<{ 
@@ -93,30 +95,47 @@ const FeatureGate: React.FC<FeatureGateProps> = ({
     }
   };
   
+  // Use the new visual gating system for better UX
+  const config = getGateConfigForScreen(feature);
+  
   switch (gateType) {
     case 'hidden':
       return null;
       
     case 'disabled':
       return (
-        <div className="feature-gate-disabled" onClick={handleGateTrigger}>
+        <VisualFeatureGate
+          feature={feature}
+          gateType="disabled"
+          onClick={handleGateTrigger}
+        >
           {fallback || children}
-        </div>
+        </VisualFeatureGate>
       );
       
     case 'tooltip':
       return (
-        <TooltipGate feature={feature} onTrigger={handleGateTrigger}>
+        <VisualFeatureGate
+          feature={feature}
+          gateType="tooltip"
+          tooltipText={config.tooltip}
+          onClick={handleGateTrigger}
+        >
           {fallback || children}
-        </TooltipGate>
+        </VisualFeatureGate>
       );
       
     case 'modal':
     default:
       return (
-        <ModalGate feature={feature} onTrigger={handleGateTrigger}>
+        <VisualFeatureGate
+          feature={feature}
+          gateType={config.gateType}
+          tooltipText={config.tooltip}
+          onClick={handleGateTrigger}
+        >
           {fallback || children}
-        </ModalGate>
+        </VisualFeatureGate>
       );
   }
 };

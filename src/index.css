@@ -177,11 +177,43 @@
   display: none;
 }
 
-/* Feature Gate Styles (PRD 2) */
+/* Visual Gating Design System (PRD 08) */
+:root {
+  /* Lock colors */
+  --lock-bg: rgba(0, 0, 0, 0.8);
+  --lock-color: #ffffff;
+  --lock-hover: rgba(0, 0, 0, 0.9);
+  
+  /* Disabled colors */
+  --disabled-bg: #f3f4f6;
+  --disabled-color: #9ca3af;
+  --disabled-border: #d1d5db;
+  
+  /* Overlay colors */
+  --overlay-bg: rgba(255, 255, 255, 0.9);
+  --overlay-text: #6b7280;
+  
+  /* Mobile overlay colors */
+  --mobile-overlay-bg: rgba(0, 0, 0, 0.1);
+  --mobile-overlay-hover: rgba(0, 0, 0, 0.2);
+  --mobile-overlay-text: #374151;
+  
+  /* Tooltip colors */
+  --tooltip-bg: rgba(0, 0, 0, 0.9);
+  --tooltip-color: #ffffff;
+  --tooltip-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Base locked feature styling */
 .locked-feature {
   opacity: 0.6;
   cursor: not-allowed;
   position: relative;
+  transition: all 0.2s ease;
+}
+
+.locked-feature:hover {
+  opacity: 0.7;
 }
 
 .locked-feature::after {
@@ -190,52 +222,212 @@
   top: -8px;
   right: -8px;
   font-size: 12px;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--lock-bg);
   border-radius: 50%;
   width: 20px;
   height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--lock-color);
+  z-index: 10;
 }
 
+/* Lock position variants */
+.locked-feature.lock-center::after {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+}
+
+.locked-feature.lock-overlay::after {
+  display: none;
+}
+
+/* Disabled button styling */
 .disabled-button {
-  background: #f3f4f6;
-  color: #9ca3af;
-  border: 1px solid #d1d5db;
-  cursor: not-allowed;
+  background: var(--disabled-bg) !important;
+  color: var(--disabled-color) !important;
+  border: 1px solid var(--disabled-border) !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+  opacity: 0.6;
+  transition: all 0.2s ease;
 }
 
 .disabled-button:hover {
-  background: #f3f4f6;
-  transform: none;
+  background: var(--disabled-bg) !important;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
+/* Locked overlay for complex components */
+.locked-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  border-radius: inherit;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.locked-overlay:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.locked-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--overlay-text);
+  font-size: 14px;
+}
+
+.locked-overlay-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+/* Enhanced tooltip styling */
 .feature-tooltip {
   position: absolute;
-  background: rgba(0, 0, 0, 0.9);
-  color: white;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-color);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 14px;
   z-index: 1000;
   pointer-events: none;
   white-space: nowrap;
+  max-width: 200px;
+  box-shadow: var(--tooltip-shadow);
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.feature-tooltip::after {
+  content: '';
+  position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-top: 4px;
+  border: 4px solid transparent;
+  border-top-color: var(--tooltip-bg);
 }
 
-.feature-tooltip::before {
-  content: '';
+/* Tooltip position variants */
+.feature-tooltip.tooltip-bottom::after {
+  top: -8px;
+  border-top-color: transparent;
+  border-bottom-color: var(--tooltip-bg);
+}
+
+.feature-tooltip.tooltip-left::after {
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  border-top-color: transparent;
+  border-left-color: var(--tooltip-bg);
+}
+
+.feature-tooltip.tooltip-right::after {
+  top: 50%;
+  left: -8px;
+  transform: translateY(-50%);
+  border-top-color: transparent;
+  border-right-color: var(--tooltip-bg);
+}
+
+/* Mobile-specific gating */
+.mobile-gate {
+  position: relative;
+}
+
+.mobile-gate-overlay {
   position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-bottom: 4px solid rgba(0, 0, 0, 0.9);
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--mobile-overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  border-radius: inherit;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.mobile-gate-overlay:hover {
+  background: var(--mobile-overlay-hover);
+}
+
+.mobile-gate-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--mobile-overlay-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mobile-gate-icon {
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+
+/* Tooltip container and trigger */
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip-trigger {
+  cursor: pointer;
+}
+
+/* Focus styles for accessible gating */
+.visual-feature-gate:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.visual-feature-gate:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .locked-feature::after {
+    background: #000000;
+    border: 2px solid #ffffff;
+  }
+  
+  .feature-tooltip {
+    background: #000000;
+    border: 2px solid #ffffff;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .locked-feature,
+  .mobile-gate-overlay,
+  .feature-tooltip,
+  .locked-overlay {
+    transition: none;
+  }
 }
 
 .modal-gate {
@@ -561,6 +753,38 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
+  /* Visual gating responsive styles */
+  .locked-feature::after {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    top: -6px;
+    right: -6px;
+  }
+  
+  .feature-tooltip {
+    font-size: 12px;
+    padding: 6px 10px;
+    max-width: 150px;
+  }
+  
+  .mobile-gate-content {
+    font-size: 11px;
+  }
+  
+  .mobile-gate-icon {
+    font-size: 14px;
+  }
+  
+  .locked-overlay-content {
+    font-size: 12px;
+  }
+  
+  .locked-overlay-icon {
+    font-size: 20px;
+  }
+  
+  /* Library panel responsive styles */
   .library-panel {
     width: 100%;
     right: -100%;
@@ -574,6 +798,30 @@
   .track-actions {
     flex-direction: row;
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .locked-feature::after {
+    width: 14px;
+    height: 14px;
+    font-size: 8px;
+    top: -4px;
+    right: -4px;
+  }
+  
+  .mobile-gate-content {
+    font-size: 10px;
+  }
+  
+  .mobile-gate-icon {
+    font-size: 12px;
+  }
+  
+  .feature-tooltip {
+    font-size: 11px;
+    padding: 5px 8px;
+    max-width: 120px;
   }
 }
 
