@@ -1235,10 +1235,8 @@ const Studio = () => {
       // If switching to cue mode, show cue thumbs by default
       setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
       
-      // Auto-select this track if no cue track is currently selected
-      if (!selectedCueTrackId) {
-        setSelectedCueTrackId(trackId);
-      }
+      // Always auto-select this track when switching to Chop mode
+      setSelectedCueTrackId(trackId);
     } else if (mode === 'preview') {
       // If switching to preview mode, clear cue track selection and hide cue thumbs
       if (selectedCueTrackId === trackId) {
