@@ -1,12 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSidePanel } from '../context/SidePanelContext';
+import { useState } from 'react';
+import { PerformanceDashboard } from './PerformanceDashboard';
 
 const Navbar = () => {
   const { user, loading, signOut } = useAuth();
   const { toggleSidePanel } = useSidePanel();
   const location = useLocation();
   const isStudioPage = location.pathname === '/studio';
+  const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
 
   return (
     <nav className="sticky top-0 bg-audafact-surface-1 border-b border-audafact-divider shadow-card z-50">
@@ -78,6 +81,20 @@ const Navbar = () => {
 
           {/* Auth Section */}
           <div className="flex items-center space-x-4 ml-auto">
+            {/* Performance Dashboard Button - Only show in development */}
+            {process.env.NODE_ENV === 'development' && (
+              <button
+                onClick={() => setShowPerformanceDashboard(true)}
+                className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
+                aria-label="Performance Dashboard"
+                title="Performance Dashboard"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </button>
+            )}
+            
             {!loading && (
               user ? (
                 <div className="flex items-center space-x-4">
@@ -109,6 +126,12 @@ const Navbar = () => {
           </div>
         </div>
       </div>
+      
+      {/* Performance Dashboard Modal */}
+      <PerformanceDashboard 
+        isVisible={showPerformanceDashboard}
+        onClose={() => setShowPerformanceDashboard(false)}
+      />
     </nav>
   );
 };

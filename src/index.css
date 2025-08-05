@@ -1166,3 +1166,264 @@
     max-width: none;
   }
 }
+
+/* Performance Dashboard Styles */
+.performance-dashboard {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 800px;
+  width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.close-button:hover {
+  background: #e5e7eb;
+}
+
+.dashboard-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.health-status,
+.performance-metrics,
+.recent-errors {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.health-status h3,
+.performance-metrics h3,
+.recent-errors h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.health-grid,
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.health-item,
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.health-item .label,
+.metric-item .label {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.health-item .value,
+.metric-item .value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.value.online {
+  color: #059669;
+}
+
+.value.offline {
+  color: #dc2626;
+}
+
+.errors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.error-item {
+  background: white;
+  border-radius: 6px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.severity {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.severity.critical {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.severity.high {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.severity.medium {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.severity.low {
+  background: #f0fdf4;
+  color: #059669;
+}
+
+.timestamp {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.error-message {
+  font-size: 14px;
+  color: #374151;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.error-context {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.no-errors {
+  text-align: center;
+  color: #6b7280;
+  font-style: italic;
+  padding: 20px;
+}
+
+/* Error Boundary Styles */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 20px;
+  background: #f9fafb;
+}
+
+.error-boundary-content {
+  text-align: center;
+  max-width: 500px;
+  background: white;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.error-boundary-content h2 {
+  margin: 0 0 16px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.error-boundary-content p {
+  margin: 0 0 24px 0;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.error-boundary-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #3b82f6;
+  color: white;
+}
+
+.error-boundary-button:hover {
+  background: #2563eb;
+}
+
+.error-boundary-button.secondary {
+  background: #6b7280;
+}
+
+.error-boundary-button.secondary:hover {
+  background: #4b5563;
+}
+
+.error-details {
+  margin: 20px 0;
+  text-align: left;
+}
+
+.error-details summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.error-details pre {
+  background: #f3f4f6;
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-x: auto;
+  color: #dc2626;
+  margin: 8px 0;
+}
