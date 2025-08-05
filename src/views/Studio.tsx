@@ -2131,16 +2131,14 @@ const Studio = () => {
         </div>
 
         {/* SidePanel */}
-        {user && (
-          <SidePanel
-            isOpen={isSidePanelOpen}
-            onToggle={toggleSidePanel}
-            onUploadTrack={handleUploadTrack}
-            onAddFromLibrary={handleAddFromLibrary}
-            onAddUserTrack={handleAddUserTrack}
-            isLoading={isLoading}
-          />
-        )}
+        <SidePanel
+          isOpen={isSidePanelOpen}
+          onToggle={toggleSidePanel}
+          onUploadTrack={handleUploadTrack}
+          onAddFromLibrary={handleAddFromLibrary}
+          onAddUserTrack={handleAddUserTrack}
+          isLoading={isLoading}
+        />
       </>
     );
   }
@@ -2165,7 +2163,7 @@ const Studio = () => {
         onDrop={handleDrop}
       >
         {/* Demo Track Info */}
-        {isDemoMode && <DemoTrackInfo track={currentDemoTrack} />}
+        {/* {isDemoMode && <DemoTrackInfo track={currentDemoTrack} />} */}
         {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
         {(user || isDemoMode) && !isSidePanelOpen && isDragOver && (
           <div

@@ -7,7 +7,7 @@ interface DemoModeIndicatorProps {
 const DemoModeIndicator: React.FC<DemoModeIndicatorProps> = ({ className = '' }) => {
   return (
     <div className={`demo-mode-indicator ${className}`}>
-      🎮 Demo Mode
+      Demo Mode
     </div>
   );
 };
