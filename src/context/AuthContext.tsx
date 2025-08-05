@@ -3,6 +3,8 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import { authService, AuthResponse } from '../auth/authService';
 import { analytics } from '../services/analyticsService';
+import { IntentManagementService } from '../services/intentManagementService';
+import { PostSignupFlowHandler } from '../services/postSignupFlowHandler';
 
 interface AuthContextType {
   user: User | null;
@@ -43,14 +45,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
       
       // Update analytics user
       if (session?.user) {
         analytics.setUser(session.user.id, 'free'); // Default to free tier
+        
+        // Handle post-signup flow for new signups
+        if (event === 'SIGNED_IN') {
+          const handler = new PostSignupFlowHandler();
+          await handler.handleSignupSuccess(session.user);
+        }
+        
+        // Handle tier changes
+        if (event === 'USER_UPDATED' && session.user.user_metadata?.tier_changed) {
+          const handler = new PostSignupFlowHandler();
+          await handler.handleTierUpgrade(session.user, session.user.user_metadata.new_tier);
+        }
       } else {
         analytics.setUser('', 'guest');
+        
+        // Clear intent cache on signout
+        if (event === 'SIGNED_OUT') {
+          IntentManagementService.getInstance().clearIntentCache();
+        }
       }
     });
 

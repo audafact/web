@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useAuth } from '../context/AuthContext';
 import { trackEvent } from '../services/analyticsService';
+import { usePostSignupActions } from '../hooks/usePostSignupActions';
+import { IntentManagementService } from '../services/intentManagementService';
+import { INTENT_EXPIRY_HOURS } from '../types/postSignup';
 
 interface SignupModalProps {
   isOpen: boolean;
@@ -17,6 +20,7 @@ const SignupModal: React.FC<SignupModalProps> = ({
   action
 }) => {
   const { signInWithGoogle, signIn } = useAuth();
+  const { cacheIntent, handleSignupSuccess } = usePostSignupActions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,12 +48,26 @@ const SignupModal: React.FC<SignupModalProps> = ({
     setError(null);
     
     try {
+      // Cache the intent if there's a trigger
+      if (trigger) {
+        cacheIntent({
+          type: trigger as any,
+          context: {},
+          priority: 'high',
+          expiresAt: Date.now() + (INTENT_EXPIRY_HOURS * 60 * 60 * 1000)
+        });
+      }
+      
       await signInWithGoogle();
       trackEvent('signup_completed', {
         method: 'google',
         trigger,
         upgradeRequired: false
       });
+      
+      // Handle signup success
+      await handleSignupSuccess(trigger);
+      
       onClose();
     } catch (error) {
       setError('Failed to sign in with Google');
@@ -68,12 +86,26 @@ const SignupModal: React.FC<SignupModalProps> = ({
     setError(null);
     
     try {
+      // Cache the intent if there's a trigger
+      if (trigger) {
+        cacheIntent({
+          type: trigger as any,
+          context: {},
+          priority: 'high',
+          expiresAt: Date.now() + (INTENT_EXPIRY_HOURS * 60 * 60 * 1000)
+        });
+      }
+      
       await signIn(email, password);
       trackEvent('signup_completed', {
         method: 'email',
         trigger,
         upgradeRequired: false
       });
+      
+      // Handle signup success
+      await handleSignupSuccess(trigger);
+      
       onClose();
     } catch (error) {
       setError('Failed to sign in with email');

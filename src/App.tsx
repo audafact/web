@@ -5,6 +5,7 @@ import { SidePanelProvider } from './context/SidePanelContext';
 import { RecordingProvider } from './context/RecordingContext';
 import { DemoProvider } from './context/DemoContext';
 import { GlobalModalManager } from './components/GlobalModalManager';
+import SuccessMessageManager from './components/SuccessMessageManager';
 import { router } from './routes';
 
 function App() {
@@ -14,8 +15,9 @@ function App() {
         <AudioProvider>
           <SidePanelProvider>
             <RecordingProvider>
-              <RouterProvider router={router} />
-              <GlobalModalManager />
+                          <RouterProvider router={router} />
+            <GlobalModalManager />
+            <SuccessMessageManager />
             </RecordingProvider>
           </SidePanelProvider>
         </AudioProvider>
