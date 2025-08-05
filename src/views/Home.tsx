@@ -48,13 +48,17 @@ const Home = () => {
                 </div>
               </div>
 
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-3 tracking-tight">
                 Discover. Chop. Create.
               </h1>
               
+              <h2 className="text-lg font-medium text-slate-400 mb-6 tracking-wide">
+                Dig, dissect, and deploy audio artifacts with precision tools for cueing, looping, and sampling.
+              </h2>
+              
               <div className="max-w-2xl mx-auto">
                 <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                  Audafact empowers creators to dig, dissect, and deploy audio artifacts with precision tools for cueing, looping, and sampling. Whether you're building a beat, layering loops, or performing live edits, the possibilities are endless.
+                  Audafact is a real-time music sampling app built for looping tracks, chopping samples, and crafting remixes on the fly. Whether you're building a beat, layering loops, or performing live edits, the possibilities are endless.
                 </p>
                 
                 <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
