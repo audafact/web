@@ -24,7 +24,7 @@ export const ProtectedRoute = ({ children, requireAuth = true }: ProtectedRouteP
     return <AuthPage />;
   }
 
-  // If user is authenticated and trying to access auth page, redirect to studio
+  // If user is authenticated and trying to access auth page, redirect to home
   if (!requireAuth && user) {
     window.location.href = '/';
     return null;

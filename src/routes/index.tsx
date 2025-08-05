@@ -6,6 +6,7 @@ import { AuthCallback } from '../auth/AuthCallback';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 
 // Lazy load views for better performance
+const Home = lazy(() => import('../views/Home'));
 const Studio = lazy(() => import('../views/Studio'));
 const Pricing = lazy(() => import('../views/Pricing').then(module => ({ default: module.Pricing })));
 const CheckoutResult = lazy(() => import('../views/CheckoutResult').then(module => ({ default: module.CheckoutResult })));
@@ -27,7 +28,7 @@ export const router = createBrowserRouter([
         index: true,
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <Studio />
+            <Home />
           </Suspense>
         ),
       },
