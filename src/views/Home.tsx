@@ -12,9 +12,8 @@ const Home = () => {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Hero Section */}
-      <section className="py-20">
-        <div className="max-w-6xl mx-auto p-6">
-          <div className="relative overflow-hidden audafact-card p-12 text-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
+      <section className="py-5">
+        <div className="relative overflow-hidden audafact-card p-12 text-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
             {/* Vinyl record background element */}
             <div className="absolute inset-0 opacity-5">
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border-8 border-slate-600"></div>
@@ -96,11 +95,10 @@ const Home = () => {
               </button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
       {/* Features Section */}
-      <section className="py-16">
+      <section className="py-5">
         <div className="grid md:grid-cols-3 gap-8">
           {/* Loop Feature */}
           <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 hover:transform hover:scale-105">
@@ -148,7 +146,7 @@ const Home = () => {
 
       {/* Call to Action */}
       {!user && (
-        <section className="py-16">
+        <section className="py-5">
           <div className="relative overflow-hidden audafact-card p-12 text-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
             {/* Vinyl record background element */}
             <div className="absolute inset-0 opacity-5">
