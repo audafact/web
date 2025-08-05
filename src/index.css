@@ -576,3 +576,237 @@
     justify-content: flex-end;
   }
 }
+
+/* Analytics dashboard */
+.analytics-dashboard {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 800px;
+  width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.close-button:hover {
+  background: #e5e7eb;
+}
+
+/* Session info */
+.session-info {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-label {
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  font-family: monospace;
+}
+
+/* Funnel chart */
+.funnel-section {
+  margin-bottom: 32px;
+}
+
+.funnel-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.funnel-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.funnel-stage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 4px solid #3b82f6;
+}
+
+.stage-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.stage-rate {
+  font-size: 16px;
+  font-weight: 600;
+  color: #3b82f6;
+  min-width: 60px;
+  text-align: right;
+}
+
+.funnel-arrow {
+  color: #9ca3af;
+  font-size: 16px;
+  margin: 0 8px;
+}
+
+/* Metrics grid */
+.metrics-section {
+  margin-bottom: 32px;
+}
+
+.metrics-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  border: 1px solid #e5e7eb;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Events section */
+.events-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.event-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.event-time {
+  font-size: 12px;
+  color: #6b7280;
+  min-width: 80px;
+}
+
+.event-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  font-family: monospace;
+  flex: 1;
+  margin: 0 12px;
+}
+
+.event-user {
+  font-size: 12px;
+  color: #6b7280;
+  min-width: 80px;
+  text-align: right;
+}
+
+/* Loading state */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: #6b7280;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e5e7eb;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
