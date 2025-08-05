@@ -12,8 +12,45 @@ vi.mock('../../src/hooks/useAccessControl', () => ({
   useAccessControl: vi.fn()
 }));
 
+// Mock the signup modal hook
+vi.mock('../../src/hooks/useSignupModal', () => ({
+  showSignupModal: vi.fn()
+}));
+
+// Mock the analytics service
+vi.mock('../../src/services/analyticsService', () => ({
+  trackEvent: vi.fn()
+}));
+
+// Mock the VisualFeatureGate component
+vi.mock('../../src/components/VisualFeatureGate', () => ({
+  default: ({ children, onClick }: any) => (
+    <div className="visual-feature-gate" onClick={onClick}>
+      {children}
+    </div>
+  )
+}));
+
+// Mock the gate configs utility
+vi.mock('../../src/utils/gateConfigs', () => ({
+  getGateConfigForScreen: vi.fn(() => ({
+    gateType: 'modal',
+    tooltip: 'Upgrade to access this feature'
+  }))
+}));
+
+// Mock the access service
+vi.mock('../../src/services/accessService', () => ({
+  EnhancedAccessService: {
+    getFeatureGateConfig: vi.fn(() => ({
+      message: 'Upgrade to access this feature'
+    }))
+  }
+}));
+
 import { useUserTier } from '../../src/hooks/useUserTier';
 import { useAccessControl } from '../../src/hooks/useAccessControl';
+import { showSignupModal } from '../../src/hooks/useSignupModal';
 
 describe('FeatureGate Component', () => {
   const mockUseUserTier = useUserTier as ReturnType<typeof vi.fn>;
@@ -72,8 +109,6 @@ describe('FeatureGate Component', () => {
       tier: { id: 'guest', name: 'Guest', features: {}, limits: {} }
     });
 
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
     render(
       <FeatureGate feature="upload">
         <button>Upload</button>
@@ -81,9 +116,7 @@ describe('FeatureGate Component', () => {
     );
 
     fireEvent.click(screen.getByText('Upload'));
-    expect(consoleSpy).toHaveBeenCalledWith('Show signup modal for feature:', 'upload');
-
-    consoleSpy.mockRestore();
+    expect(showSignupModal).toHaveBeenCalledWith('upload');
   });
 
   it('should render hidden gate type correctly', () => {
@@ -141,7 +174,7 @@ describe('FeatureGate Component', () => {
       </FeatureGate>
     );
 
-    const disabledElement = screen.getByText('Upload').closest('.feature-gate-disabled');
+    const disabledElement = screen.getByText('Upload').closest('.visual-feature-gate');
     expect(disabledElement).toBeInTheDocument();
   });
 

@@ -97,10 +97,10 @@ export const usePostSignupActions = () => {
 
   // Auto-execute pending actions when user signs up
   useEffect(() => {
-    if (user && tier.id !== 'guest') {
+    if (user && tier.id !== 'guest' && !isProcessing) {
       executePendingActions();
     }
-  }, [user, tier.id, executePendingActions]);
+  }, [user, tier.id]);
 
   return {
     cacheIntent,
