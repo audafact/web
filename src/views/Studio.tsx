@@ -2064,61 +2064,128 @@ const Studio = () => {
                   </div>
                 </div>
 
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
-                  Explore, Sample, Create.
-                </h1>
-                
-                <div className="max-w-2xl mx-auto">
-                  <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                    Audafact is a real-time music sampling app built for looping tracks, chopping samples, and crafting remixes on the fly. Whether you're building a beat, layering loops, or performing live edits, the possibilities are endless.
-                  </p>
-                  
-                  <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
-                    <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Looping</span>
-                    <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">✂️ Chopping</span>
-                    <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Remixing</span>
-                    <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎧 Real-time</span>
-                  </div>
+                {user ? (
+                  // Registered Users Content
+                  <>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
+                      Welcome Back to Audafact Studio
+                    </h1>
+                    
+                    <div className="max-w-2xl mx-auto">
+                      <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                        Start creating by:
+                      </p>
+                      
+                      <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Looping segments</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Adjusting cue points</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Creating real-time remixes</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Adding tracks from your library</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📤 Uploading new samples</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎙️ Recording your live performances</span>
+                      </div>
+                    </div>
 
-                  <p className="text-slate-300 mb-8 font-medium">
-                    Click below to load a random track and try it out.
-                  </p>
-                  
-                  {user ? (
-                    <p className="text-slate-400 mb-8">
-                      You can also select a track from the side panel.
-                    </p>
-                  ) : (
-                    <p className="text-slate-400 mb-8">
-                      Want more control? <a href="/auth" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200 font-medium">
-                        Log in
-                      </a> to access a library of curated tracks to choose fromgit .
-                    </p>
-                  )}
-                </div>
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                      <button
+                        onClick={handleInitializeAudio}
+                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                        disabled={isInitializingAudio}
+                      >
+                        <span className="relative z-10 flex items-center gap-2">
+                          {isInitializingAudio ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Loading...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                              </svg>
+                              Load a Random Track
+                            </>
+                          )}
+                        </span>
+                        <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                      </button>
 
-                <button
-                  onClick={handleInitializeAudio}
-                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  disabled={isInitializingAudio}
-                >
-                  <span className="relative z-10 flex items-center gap-2">
-                    {isInitializingAudio ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                        </svg>
-                        Load Random Track
-                      </>
-                    )}
-                  </span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                </button>
+                      <button
+                        onClick={toggleSidePanel}
+                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
+                      >
+                        <span className="relative z-10 flex items-center gap-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                          </svg>
+                          Select from Your Library
+                        </span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  // Anonymous Users Content
+                  <>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
+                      Welcome to Audafact Studio
+                    </h1>
+                    
+                    <div className="max-w-2xl mx-auto">
+                      <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                        Explore the basics of Audafact in this interactive demo:
+                      </p>
+                      
+                      <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Preview curated tracks</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create loops from segments</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Trigger cues for playback</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">⬅️➡️ Navigate with buttons/swipe</span>
+                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Browse curated library</span>
+                      </div>
+
+                      <p className="text-slate-300 mb-8 font-medium">
+                        Ready for more? Sign up to unlock advanced tools and features.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                      <button
+                        onClick={handleInitializeAudio}
+                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                        disabled={isInitializingAudio}
+                      >
+                        <span className="relative z-10 flex items-center gap-2">
+                          {isInitializingAudio ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Loading...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                              </svg>
+                              Load a Random Track
+                            </>
+                          )}
+                        </span>
+                        <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                      </button>
+
+                      <button
+                        onClick={toggleSidePanel}
+                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
+                      >
+                        <span className="relative z-10 flex items-center gap-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                          </svg>
+                          Browse Curated Library
+                        </span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

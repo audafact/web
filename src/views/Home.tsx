@@ -58,7 +58,7 @@ const Home = () => {
               
               <div className="max-w-2xl mx-auto">
                 <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                  Audafact is a real-time music sampling app built for looping tracks, chopping samples, and crafting remixes on the fly. Whether you're building a beat, layering loops, or performing live edits, the possibilities are endless.
+                  Audafact is a real-time music sampling app built for looping tracks, chopping samples, and crafting remixes on the fly. Access our curated library of custom AI-generated tracks, specifically crafted for looping, slicing, and flipping into sample-based music.. Whether you're building a beat, layering loops, or performing live edits, the possibilities are endless.
                 </p>
                 
                 <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
@@ -66,6 +66,7 @@ const Home = () => {
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">✂️ Chopping</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Remixing</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎧 Real-time</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎼 Curated Library</span>
                 </div>
 
                 <p className="text-slate-300 mb-8 font-medium">
@@ -80,7 +81,7 @@ const Home = () => {
                   <p className="text-slate-400 mb-8">
                     Want more control? <a href="/auth" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200 font-medium">
                       Sign up
-                    </a> to access a library of curated tracks and save your work.
+                    </a> to access our curated library of custom AI-generated tracks designed for looping, slicing, and flipping, plus save your work.
                   </p>
                 )}
               </div>
@@ -103,7 +104,7 @@ const Home = () => {
 
       {/* Features Section */}
       <section className="py-5">
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Loop Feature */}
           <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 hover:transform hover:scale-105">
             <div className="absolute inset-0 opacity-5">
@@ -145,6 +146,20 @@ const Home = () => {
               </p>
             </div>
           </div>
+
+          {/* Library Feature */}
+          <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 hover:transform hover:scale-105">
+            <div className="absolute inset-0 opacity-5">
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
+            </div>
+            <div className="relative z-10">
+              <div className="text-audafact-accent-cyan text-3xl mb-4">🎼</div>
+              <h3 className="text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-3">curated library</h3>
+              <p className="text-slate-300 leading-relaxed">
+                Access our handpicked collection of custom AI-generated tracks, purpose-built for effortless looping, precise slicing, and creative flipping into sample-based music.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -163,7 +178,7 @@ const Home = () => {
                 Ready to Start?
               </h2>
               <p className="text-slate-300 mb-8 max-w-2xl mx-auto">
-                Sign up to save your work, access more features, and unlock the full potential of Audafact.
+                Sign up to save your work, access our curated AI music library, and unlock the full potential of Audafact with premium features and exclusive tracks.
               </p>
               <button
                 className="group relative inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
