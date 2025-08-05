@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserAccess } from '../hooks/useUserAccess';
 import { createCheckoutSession } from '../services/stripeService';
-import { Check, Star, Zap, Crown } from 'lucide-react';
+import { Check, Star, Zap, Crown, User } from 'lucide-react';
 
 interface PricingPlan {
   id: string;
@@ -17,6 +17,21 @@ interface PricingPlan {
 }
 
 const plans: PricingPlan[] = [
+  {
+    id: 'free',
+    name: 'Free Creator',
+    price: '$0',
+    interval: 'monthly',
+    features: [
+      '3 track uploads per month',
+      'Basic saved sessions',
+      'Access to 10 rotating curated library tracks',
+      'Community support',
+      'Basic measure detection',
+      'Standard audio tools'
+    ],
+    priceId: ''
+  },
   {
     id: import.meta.env.VITE_STRIPE_MODE === 'live' 
       ? import.meta.env.VITE_STRIPE_LIVE_PRODUCT_MONTHLY 
@@ -87,7 +102,13 @@ export const Pricing: React.FC = () => {
 
   const handleSubscribe = async (plan: PricingPlan) => {
     if (!user) {
-      // Redirect to auth or show auth modal
+      // For anonymous users, redirect to signup
+      window.location.href = '/auth?redirect=pricing';
+      return;
+    }
+
+    // Don't allow subscribing to free plan if already on it
+    if (plan.id === 'free' && accessTier === 'free') {
       return;
     }
 
@@ -111,6 +132,16 @@ export const Pricing: React.FC = () => {
     }
   };
 
+  const getCurrentPlan = () => {
+    if (!user) return null;
+    if (accessTier === 'pro') {
+      return plans.find(plan => plan.id !== 'free' && plan.interval === 'yearly') || plans[1]; // Default to yearly pro
+    }
+    return plans[0]; // Free plan
+  };
+
+  const currentPlan = getCurrentPlan();
+
   if (accessLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -120,7 +151,7 @@ export const Pricing: React.FC = () => {
   }
 
   // If user is already pro, show upgrade message
-  if (accessTier === 'pro') {
+  if (user && accessTier === 'pro') {
     return (
       <div className="max-w-3xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
         <div className="text-center">
@@ -153,98 +184,135 @@ export const Pricing: React.FC = () => {
       {/* Header */}
       <div className="text-center mb-12">
         <h1 className="text-5xl font-bold audafact-heading mb-6">
-          Unlock Pro Creator Features
+          Choose Your Creator Plan
         </h1>
         <p className="text-xl audafact-text-secondary max-w-2xl mx-auto">
-          Break free from upload limits and get unlimited access to our curated audio library. 
-          Take your music creation to the next level.
+          Start free and upgrade when you're ready. All plans include access to our curated audio library 
+          and powerful music creation tools.
         </p>
+        {!user && (
+          <div className="mt-6">
+            <p className="text-sm audafact-text-secondary mb-3">
+              Already have an account? 
+              <a href="/auth" className="text-audafact-accent-cyan hover:underline ml-1">
+                Sign in here
+              </a>
+            </p>
+          </div>
+        )}
       </div>
 
         {/* Plans Grid */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {plans.map((plan) => (
-            <div
-              key={plan.id}
-              className={`relative audafact-card-enhanced audafact-card-hover p-8 transition-all duration-200 ${
-                plan.popular ? 'ring-2 ring-audafact-accent-blue scale-105' : ''
-              }`}
-            >
-              {/* Popular Badge */}
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <span className="bg-audafact-accent-blue text-audafact-text-primary px-4 py-2 rounded-full text-sm font-semibold flex items-center">
-                    <Star className="h-4 w-4 mr-1" />
-                    Most Popular
-                  </span>
-                </div>
-              )}
-
-              {/* Early Adopter Badge */}
-              {plan.earlyAdopter && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <span className="bg-audafact-accent-cyan text-audafact-bg-primary px-4 py-2 rounded-full text-sm font-semibold flex items-center">
-                    <Zap className="h-4 w-4 mr-1" />
-                    Limited Time
-                  </span>
-                </div>
-              )}
-
-              {/* Plan Header */}
-              <div className="text-center mb-8">
-                <div className="flex items-center justify-center mb-4">
-                  {plan.popular && <Crown className="h-6 w-6 text-audafact-accent-cyan mr-2" />}
-                  <h3 className="text-2xl font-bold audafact-heading">{plan.name}</h3>
-                </div>
-                
-                <div className="mb-4">
-                  <span className="text-4xl font-bold audafact-heading">{plan.price}</span>
-                  <span className="audafact-text-secondary">/{plan.interval === 'monthly' ? 'month' : 'year'}</span>
-                </div>
-                
-                {plan.originalPrice && (
-                  <div className="text-sm audafact-text-secondary">
-                    <span className="line-through">{plan.originalPrice}</span>
-                    <span className="text-audafact-accent-green font-semibold ml-2">
-                      Save ${parseInt(plan.originalPrice.replace('$', '')) - parseInt(plan.price.replace('$', ''))}
+        <div className="grid md:grid-cols-4 gap-6 max-w-7xl mx-auto">
+          {plans.map((plan) => {
+            const isCurrentPlan = currentPlan?.id === plan.id;
+            const isFreePlan = plan.id === 'free';
+            
+            return (
+              <div
+                key={plan.id}
+                className={`relative audafact-card-enhanced audafact-card-hover p-6 transition-all duration-200 ${
+                  plan.popular ? 'ring-2 ring-audafact-accent-blue scale-105' : ''
+                } ${isCurrentPlan ? 'ring-2 ring-audafact-accent-green' : ''}`}
+              >
+                {/* Current Plan Badge */}
+                {isCurrentPlan && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                    <span className="bg-audafact-accent-green text-audafact-bg-primary px-3 py-1 rounded-full text-xs font-semibold flex items-center">
+                      <User className="h-3 w-3 mr-1" />
+                      Current Plan
                     </span>
                   </div>
                 )}
-              </div>
 
-              {/* Features */}
-              <ul className="space-y-4 mb-8">
-                {plan.features.map((feature, index) => (
-                  <li key={index} className="flex items-start">
-                    <Check className="h-5 w-5 text-audafact-accent-green mr-3 mt-0.5 flex-shrink-0" />
-                    <span className="audafact-text-secondary">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTA Button */}
-              <button
-                onClick={() => handleSubscribe(plan)}
-                disabled={loading === plan.id}
-                className={`w-full py-3 px-6 rounded-lg font-semibold transition-all duration-200 ${
-                  plan.popular
-                    ? 'audafact-button-primary'
-                    : plan.earlyAdopter
-                    ? 'bg-audafact-accent-cyan text-audafact-bg-primary hover:bg-opacity-90'
-                    : 'audafact-button-secondary'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {loading === plan.id ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Processing...
+                {/* Popular Badge */}
+                {plan.popular && !isCurrentPlan && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                    <span className="bg-audafact-accent-blue text-audafact-text-primary px-3 py-1 rounded-full text-xs font-semibold flex items-center">
+                      <Star className="h-3 w-3 mr-1" />
+                      Most Popular
+                    </span>
                   </div>
-                ) : (
-                  `Get ${plan.name}`
                 )}
-              </button>
-            </div>
-          ))}
+
+                {/* Early Adopter Badge */}
+                {plan.earlyAdopter && !isCurrentPlan && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                    <span className="bg-audafact-accent-cyan text-audafact-bg-primary px-3 py-1 rounded-full text-xs font-semibold flex items-center">
+                      <Zap className="h-3 w-3 mr-1" />
+                      Limited Time
+                    </span>
+                  </div>
+                )}
+
+                {/* Plan Header */}
+                <div className="text-center mb-6">
+                  <div className="flex items-center justify-center mb-3">
+                    {plan.popular && <Crown className="h-5 w-5 text-audafact-accent-cyan mr-2" />}
+                    <h3 className="text-xl font-bold audafact-heading">{plan.name}</h3>
+                  </div>
+                  
+                  <div className="mb-3">
+                    <span className="text-3xl font-bold audafact-heading">{plan.price}</span>
+                    {!isFreePlan && (
+                      <span className="audafact-text-secondary">/{plan.interval === 'monthly' ? 'month' : 'year'}</span>
+                    )}
+                  </div>
+                  
+                  {plan.originalPrice && (
+                    <div className="text-sm audafact-text-secondary">
+                      <span className="line-through">{plan.originalPrice}</span>
+                      <span className="text-audafact-accent-green font-semibold ml-2">
+                        Save ${parseInt(plan.originalPrice.replace('$', '')) - parseInt(plan.price.replace('$', ''))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Features */}
+                <ul className="space-y-3 mb-6">
+                  {plan.features.map((feature, index) => (
+                    <li key={index} className="flex items-start">
+                      <Check className="h-4 w-4 text-audafact-accent-green mr-2 mt-0.5 flex-shrink-0" />
+                      <span className="audafact-text-secondary text-sm">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* CTA Button */}
+                <button
+                  onClick={() => handleSubscribe(plan)}
+                  disabled={loading === plan.id || isCurrentPlan}
+                  className={`w-full py-2 px-4 rounded-lg font-semibold transition-all duration-200 text-sm ${
+                    isCurrentPlan
+                      ? 'bg-audafact-accent-green text-audafact-bg-primary cursor-default'
+                      : plan.popular
+                      ? 'audafact-button-primary'
+                      : plan.earlyAdopter
+                      ? 'bg-audafact-accent-cyan text-audafact-bg-primary hover:bg-opacity-90'
+                      : isFreePlan
+                      ? 'audafact-button-secondary'
+                      : 'audafact-button-secondary'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {loading === plan.id ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Processing...
+                    </div>
+                  ) : isCurrentPlan ? (
+                    'Current Plan'
+                  ) : !user ? (
+                    'Sign Up'
+                  ) : isFreePlan ? (
+                    'Get Started'
+                  ) : (
+                    `Get ${plan.name}`
+                  )}
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         {/* FAQ Section */}
@@ -271,10 +339,11 @@ export const Pricing: React.FC = () => {
             </div>
             <div className="audafact-card p-6">
               <h3 className="text-lg font-semibold audafact-heading mb-2">
-                Is there a free trial?
+                Is there a free plan?
               </h3>
               <p className="audafact-text-secondary">
-                We offer a free tier with basic features. Upgrade to Pro Creator to unlock all premium features.
+                Yes! We offer a free tier with 3 track uploads per month and basic features. 
+                Perfect for getting started with music creation.
               </p>
             </div>
             <div className="audafact-card p-6">
