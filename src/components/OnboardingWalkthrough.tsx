@@ -229,11 +229,66 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
-        onClick={step.required ? undefined : handleNext}
-      />
+      {/* Backdrop with cutout for highlighted element */}
+      {targetElement && (
+        <>
+          {/* Top backdrop */}
+          <div 
+            className="absolute bg-black bg-opacity-50 backdrop-blur-sm"
+            style={{
+              top: 0,
+              left: 0,
+              right: 0,
+              height: targetElement.getBoundingClientRect().top - 4,
+            }}
+            onClick={step.required ? undefined : handleNext}
+          />
+          
+          {/* Bottom backdrop */}
+          <div 
+            className="absolute bg-black bg-opacity-50 backdrop-blur-sm"
+            style={{
+              top: targetElement.getBoundingClientRect().bottom + 4,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }}
+            onClick={step.required ? undefined : handleNext}
+          />
+          
+          {/* Left backdrop */}
+          <div 
+            className="absolute bg-black bg-opacity-50 backdrop-blur-sm"
+            style={{
+              top: targetElement.getBoundingClientRect().top - 4,
+              left: 0,
+              width: targetElement.getBoundingClientRect().left - 4,
+              height: targetElement.getBoundingClientRect().height + 8,
+            }}
+            onClick={step.required ? undefined : handleNext}
+          />
+          
+          {/* Right backdrop */}
+          <div 
+            className="absolute bg-black bg-opacity-50 backdrop-blur-sm"
+            style={{
+              top: targetElement.getBoundingClientRect().top - 4,
+              left: targetElement.getBoundingClientRect().right + 4,
+              right: 0,
+              height: targetElement.getBoundingClientRect().height + 8,
+            }}
+            onClick={step.required ? undefined : handleNext}
+          />
+        </>
+      )}
+
+      {/* Fallback backdrop when no target element */}
+      {!targetElement && (
+        <div 
+          className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
+          onClick={step.required ? undefined : handleNext}
+        />
+      )}
 
       {/* Highlight overlay */}
       {targetElement && (

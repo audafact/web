@@ -10,7 +10,7 @@ interface OnboardingState {
 
 const ONBOARDING_STORAGE_KEY = 'audafact_onboarding_state';
 
-export const useOnboarding = (steps: OnboardingStep[]) => {
+export const useOnboarding = (steps: OnboardingStep[], isAnonymousUser: boolean = false) => {
   const [state, setState] = useState<OnboardingState>({
     isOpen: false,
     currentStep: 0,
@@ -91,8 +91,13 @@ export const useOnboarding = (steps: OnboardingStep[]) => {
   }, []);
 
   const shouldShowOnboarding = useCallback(() => {
+    // For anonymous users, always show onboarding if not completed
+    if (isAnonymousUser) {
+      return !state.hasCompleted;
+    }
+    // For authenticated users, show only if never seen before
     return !state.hasCompleted && !state.hasBeenShown;
-  }, [state.hasCompleted, state.hasBeenShown]);
+  }, [state.hasCompleted, state.hasBeenShown, isAnonymousUser]);
 
   return {
     ...state,

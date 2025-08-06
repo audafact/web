@@ -79,7 +79,7 @@ export const createOnboardingSteps = (
   {
     id: 'volume-controls',
     title: 'Volume & Effects',
-    description: 'Adjust the volume and apply filters to shape your sound. Try the low-pass and high-pass filters for different effects.',
+    description: 'Adjust the volume, playback speed, and apply filters to shape your sound. Try the low-pass and high-pass filters for different effects.',
     targetSelector: '[data-testid="volume-control"], input[type="range"]',
     position: 'bottom',
     action: handlers.onAdjustVolume
@@ -87,7 +87,7 @@ export const createOnboardingSteps = (
   {
     id: 'time-tempo-controls',
     title: 'Time & Tempo',
-    description: 'Expand this section to adjust tempo, playback speed, and time signature. Great for matching different tracks.',
+    description: 'Expand this section to adjust tempo and time signature. Great for matching different tracks and setting the musical grid.',
     targetSelector: '[data-testid="time-tempo-controls-button"]',
     position: 'bottom'
   },

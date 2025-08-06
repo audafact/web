@@ -156,7 +156,8 @@ const Studio = () => {
   const quickOnboardingSteps = createQuickOnboardingSteps(onboardingHandlers);
 
   // Initialize onboarding
-  const onboarding = useOnboarding(onboardingSteps);
+  const isAnonymousUser = !user && !authLoading;
+  const onboarding = useOnboarding(onboardingSteps, isAnonymousUser);
   const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(false);
   const [isInitializingAudio, setIsInitializingAudio] = useState<boolean>(false);
   const [isManuallyAddingTrack, setIsManuallyAddingTrack] = useState<boolean>(false);
@@ -402,6 +403,14 @@ const Studio = () => {
           });
         }
         
+        // Start onboarding for anonymous users when first track loads, or for new authenticated users
+        if (onboarding.shouldShowOnboarding()) {
+          // Small delay to ensure UI is fully rendered
+          setTimeout(() => {
+            onboarding.startOnboarding();
+          }, 1000);
+        }
+        
         // Track loading is complete
         setIsTrackLoading(false);
       } catch (error) {
@@ -416,7 +425,7 @@ const Studio = () => {
     if (tracks.length === 0 && !isManuallyAddingTrack) {
       loadRandomTrack();
     }
-  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack]);
+  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack, onboarding]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -1927,7 +1936,7 @@ const Studio = () => {
         });
       }
       
-      // Start onboarding if this is the first time and user hasn't completed it
+      // Start onboarding for anonymous users when first track loads, or for new authenticated users
       if (onboarding.shouldShowOnboarding()) {
         // Small delay to ensure UI is fully rendered
         setTimeout(() => {
