@@ -403,8 +403,9 @@ const Studio = () => {
           });
         }
         
-        // Start onboarding for anonymous users when first track loads, or for new authenticated users
-        if (onboarding.shouldShowOnboarding()) {
+        // Start onboarding only for anonymous users when first track loads
+        // Logged-in users should only get walkthrough when explicitly clicking "Load a random track"
+        if (isAnonymousUser && onboarding.shouldShowOnboarding()) {
           // Small delay to ensure UI is fully rendered
           setTimeout(() => {
             onboarding.startOnboarding();
@@ -936,6 +937,14 @@ const Studio = () => {
         : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
       setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+      
+      // Start onboarding when loading track via "Load Random Track" button for all users
+      if (onboarding.shouldShowOnboarding()) {
+        // Small delay to ensure UI is fully rendered
+        setTimeout(() => {
+          onboarding.startOnboarding();
+        }, 1000);
+      }
       
       // Track loading is complete
       setIsTrackLoading(false);
@@ -1936,8 +1945,9 @@ const Studio = () => {
         });
       }
       
-      // Start onboarding for anonymous users when first track loads, or for new authenticated users
-      if (onboarding.shouldShowOnboarding()) {
+      // Start onboarding only for anonymous users when first track loads
+      // Logged-in users should only get walkthrough when explicitly clicking "Load a random track"  
+      if (isAnonymousUser && onboarding.shouldShowOnboarding()) {
         // Small delay to ensure UI is fully rendered
         setTimeout(() => {
           onboarding.startOnboarding();
