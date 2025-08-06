@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useAuth } from '../context/AuthContext';
-import { trackEvent } from '../services/analyticsService';
 import { usePostSignupActions } from '../hooks/usePostSignupActions';
-import { IntentManagementService } from '../services/intentManagementService';
-import { INTENT_EXPIRY_HOURS } from '../types/postSignup';
+import { trackEvent } from '../services/analyticsService';
+import { GoogleSignInButton } from '../auth/GoogleSignInButton';
+
+const INTENT_EXPIRY_HOURS = 24;
 
 interface SignupModalProps {
   isOpen: boolean;
@@ -19,8 +20,8 @@ const SignupModal: React.FC<SignupModalProps> = ({
   trigger,
   action
 }) => {
-  const { signInWithGoogle, signIn } = useAuth();
-  const { cacheIntent, handleSignupSuccess } = usePostSignupActions();
+  const { signIn } = useAuth();
+  const { cacheIntent } = usePostSignupActions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,41 +44,22 @@ const SignupModal: React.FC<SignupModalProps> = ({
     onClose();
   };
 
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Cache the intent if there's a trigger
-      if (trigger) {
-        cacheIntent({
-          type: trigger as any,
-          context: {},
-          priority: 'high',
-          expiresAt: Date.now() + (INTENT_EXPIRY_HOURS * 60 * 60 * 1000)
-        });
-      }
-      
-      await signInWithGoogle();
-      trackEvent('signup_completed', {
-        method: 'google',
-        trigger,
-        upgradeRequired: false
+  const handleGoogleSignInStart = () => {
+    // Cache the intent if there's a trigger
+    if (trigger) {
+      cacheIntent({
+        type: trigger as any,
+        context: {},
+        priority: 'high',
+        expiresAt: Date.now() + (INTENT_EXPIRY_HOURS * 60 * 60 * 1000)
       });
-      
-      // Handle signup success
-      await handleSignupSuccess(trigger);
-      
-      onClose();
-    } catch (error) {
-      setError('Failed to sign in with Google');
-      trackEvent('signup_error', {
-        trigger,
-        error: 'google_signin_failed'
-      });
-    } finally {
-      setIsLoading(false);
     }
+    
+    trackEvent('signup_completed', {
+      method: 'google',
+      trigger,
+      upgradeRequired: false
+    });
   };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
@@ -102,9 +84,6 @@ const SignupModal: React.FC<SignupModalProps> = ({
         trigger,
         upgradeRequired: false
       });
-      
-      // Handle signup success
-      await handleSignupSuccess(trigger);
       
       onClose();
     } catch (error) {
@@ -156,13 +135,7 @@ const SignupModal: React.FC<SignupModalProps> = ({
         )}
 
         <div className="space-y-4">
-          <button
-            onClick={handleGoogleSignIn}
-            disabled={isLoading}
-            className="w-full bg-audafact-surface-2 text-audafact-text-primary py-3 px-4 rounded-lg font-medium hover:bg-audafact-divider transition-colors disabled:opacity-50 border border-audafact-divider"
-          >
-            {isLoading ? 'Signing in...' : 'Continue with Google'}
-          </button>
+          <GoogleSignInButton onClick={handleGoogleSignInStart} />
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">

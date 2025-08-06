@@ -1,41 +1,78 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
 export const AuthCallback = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // Get the session from the URL hash/fragment
-        const { data, error } = await supabase.auth.getSession();
+        // Check if we have authentication data in the hash
+        if (window.location.hash && window.location.hash.includes('access_token')) {
+          // Parse the hash to extract the access token
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          
+          if (accessToken) {
+            // Set the session manually with the tokens from the hash
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            });
+            
+            if (error) {
+              setError(error.message);
+              setLoading(false);
+              return;
+            }
+
+            if (data.session?.user) {
+              navigate('/studio', { replace: true });
+              return;
+            }
+          }
+        }
+        
+        // If no hash with access token, wait a moment and check for session
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Check if we have a session
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Auth callback error:', error);
           setError(error.message);
           setLoading(false);
           return;
         }
 
-        if (data.session) {
-          // Successfully authenticated, redirect to studio
+        if (session?.user) {
           navigate('/studio', { replace: true });
         } else {
-          // No session found, redirect back to auth page
+          // Check for error parameters in URL
+          const errorParam = searchParams.get('error');
+          const errorDescription = searchParams.get('error_description');
+          
+          if (errorParam) {
+            setError(`Authentication failed: ${errorDescription || errorParam}`);
+            setLoading(false);
+            return;
+          }
+          
           navigate('/auth', { replace: true });
         }
       } catch (err) {
-        console.error('Unexpected error during auth callback:', err);
         setError('An unexpected error occurred');
         setLoading(false);
       }
     };
 
     handleAuthCallback();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   if (loading) {
     return (

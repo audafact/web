@@ -47,6 +47,32 @@ Replace `your_project_url_here` and `your_anon_key_here` with the values from st
    - ✅ **Enable secure email change**: ON
    - ✅ **Enable double confirm changes**: ON
 
+### Google OAuth Setup
+
+1. **Create Google OAuth Credentials**:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select an existing one
+   - Enable the Google+ API
+   - Go to **Credentials** → **Create Credentials** → **OAuth 2.0 Client IDs**
+   - Choose **Web application**
+   - Add authorized redirect URIs:
+     - `https://your-project-ref.supabase.co/auth/v1/callback`
+     - `http://localhost:5173/auth/callback` (for development)
+   - Copy the **Client ID** and **Client Secret**
+
+2. **Configure Google OAuth in Supabase**:
+   - In your Supabase dashboard, go to **Authentication** → **Providers**
+   - Find **Google** and click **Enable**
+   - Enter your Google OAuth credentials:
+     - **Client ID**: Your Google OAuth Client ID
+     - **Client Secret**: Your Google OAuth Client Secret
+   - Save the configuration
+
+3. **Test Google OAuth**:
+   - Try signing in with Google from your application
+   - Check the Supabase logs for any errors
+   - Verify that users are created in the `auth.users` table
+
 ### Email Templates (Optional)
 
 1. Go to **Authentication** → **Email Templates**
@@ -64,6 +90,7 @@ Replace `your_project_url_here` and `your_anon_key_here` with the values from st
      - `http://localhost:5173/auth`
      - `http://localhost:5173/`
      - `http://localhost:5173/studio`
+     - `http://localhost:5173/auth/callback`
 
 ## 5. Database Schema (Optional)
 
