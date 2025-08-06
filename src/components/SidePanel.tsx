@@ -61,7 +61,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
     const saved = localStorage.getItem('sidePanelExpandedMenus');
-    const defaultState = { 'audio-library': false, 'sessions': false };
+    const defaultState = { 'audio-library': false, 'sessions': false, 'recordings': false };
     
     return saved ? JSON.parse(saved) : defaultState;
   });
@@ -69,18 +69,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
   // Active submenu items (null means no submenu item is selected)
   const [activeAudioTab, setActiveAudioTab] = useState<'my-tracks' | 'library' | null>(() => {
     const savedTab = localStorage.getItem('sidePanelActiveAudioTab');
-    return (savedTab as 'my-tracks' | 'library' | null) || null;
+    return (savedTab as 'my-tracks' | 'library' | null) || 'library'; // Default to library
   });
   
   const [activeSessionsTab, setActiveSessionsTab] = useState<'saved' | 'shared' | null>(() => {
     const savedTab = localStorage.getItem('sidePanelActiveSessionsTab');
-    return (savedTab as 'saved' | 'shared' | null) || null;
+    return (savedTab as 'saved' | 'shared' | null) || 'saved'; // Default to saved sessions
   });
   
-  const [activeRepoTab, setActiveRepoTab] = useState<'recordings' | 'performances' | null>(() => {
-    const savedTab = localStorage.getItem('sidePanelActiveRepoTab');
-    return (savedTab as 'recordings' | 'performances' | null) || null;
-  });
+
   const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
   const [playingAssets, setPlayingAssets] = useState<{ [key: string]: boolean }>({});
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
@@ -178,11 +175,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
     setActiveSessionsTab(prev => prev === tab ? null : tab);
   };
 
-  const handleRepoTabSelect = (tab: 'recordings' | 'performances') => {
-    setActiveRepoTab(prev => prev === tab ? null : tab);
-  };
 
-  // Auto-show library when opened in library mode
+
+  // Auto-show library when opened in library mode or when tracks menu is expanded
   useEffect(() => {
     if (initialMode === 'library' && activeAudioTab !== 'library') {
       setActiveAudioTab('library');
@@ -193,6 +188,20 @@ const SidePanel: React.FC<SidePanelProps> = ({
       });
     }
   }, [initialMode, activeAudioTab]);
+
+  // Auto-select library tab when tracks menu is expanded and no tab is selected
+  useEffect(() => {
+    if (expandedMenus['audio-library'] && !activeAudioTab) {
+      setActiveAudioTab('library');
+    }
+  }, [expandedMenus['audio-library'], activeAudioTab]);
+
+  // Auto-select saved sessions tab when sessions menu is expanded and no tab is selected
+  useEffect(() => {
+    if (expandedMenus['sessions'] && !activeSessionsTab) {
+      setActiveSessionsTab('saved');
+    }
+  }, [expandedMenus['sessions'], activeSessionsTab]);
 
   // Save tab preferences to localStorage whenever they change
   useEffect(() => {
@@ -211,13 +220,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
   }, [activeSessionsTab]);
   
-  useEffect(() => {
-    if (activeRepoTab) {
-      localStorage.setItem('sidePanelActiveRepoTab', activeRepoTab);
-    } else {
-      localStorage.removeItem('sidePanelActiveRepoTab');
-    }
-  }, [activeRepoTab]);
+
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -754,10 +757,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
-            </div>
-          )}
-            
-            {expandedMenus['sessions'] && user && (
+              
+              {expandedMenus['sessions'] && (
               <div className="bg-audafact-surface-2">
                 <button
                   onClick={() => handleSessionsTabSelect('saved')}
@@ -787,7 +788,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             </svg>
                           </div>
                           <p className="audafact-text-secondary mb-4">No sessions saved yet</p>
-                          <p className="text-xs audafact-text-secondary">Use "Record" to capture performances or "Save" to store current studio state</p>
+                          <p className="text-xs audafact-text-secondary">Use "Record" "Save" to store current studio state</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -930,17 +931,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 )}
               </div>
             )}
-          </div>
-          {/* Repo Menu - Only show for authenticated users */}
+            </div>
+          )}
+          {/* Recordings Menu - Only show for authenticated users */}
           {user && (
             <div className="border-b border-audafact-divider">
               <button
-                onClick={() => toggleMenu('repo')}
+                onClick={() => toggleMenu('recordings')}
                 className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
               >
-                <span>Repo</span>
+                <span>Recordings</span>
                 <svg 
-                  className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['repo'] ? 'rotate-90' : ''}`} 
+                  className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['recordings'] ? 'rotate-90' : ''}`} 
                   fill="none" 
                   stroke="currentColor" 
                   viewBox="0 0 24 24"
@@ -948,25 +950,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
-              {expandedMenus['repo'] && (
+              {expandedMenus['recordings'] && (
                   <div className="bg-audafact-surface-2">
-                    
-                    
-                    <button
-                      onClick={() => handleRepoTabSelect('performances')}
-                      className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                        activeRepoTab === 'performances'
-                          ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                      }`}
-                    >
-                      Performances
-                    </button>
-                    {activeRepoTab === 'performances' && (
-                      <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                    <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                         <div className="flex items-center justify-between">
-                          <h3 className="text-md font-medium audafact-heading">Performance Recordings</h3>
-                          <span className="text-xs audafact-text-secondary">{performances.length} performances</span>
+                          <h3 className="text-md font-medium audafact-heading">Recordings</h3>
+                          <span className="text-xs audafact-text-secondary">{performances.length} recordings</span>
                         </div>
                         
                         {performances.length === 0 ? (
@@ -976,8 +965,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                               </svg>
                             </div>
-                            <p className="audafact-text-secondary mb-4">No performances recorded yet</p>
-                            <p className="text-xs audafact-text-secondary">Use "Record" to capture your studio performances</p>
+                            <p className="audafact-text-secondary mb-4">No recordings captured yet</p>
+                            <p className="text-xs audafact-text-secondary">Use "Record" to capture your edits and flips</p>
                           </div>
                         ) : (
                           <div className="space-y-3">
@@ -1075,23 +1064,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             ))}
                           </div>
                         )}
-                      </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </div>
             )}
         </div>
-      <div>
-        {/* Hidden file input for upload functionality */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
       </div>
+      
+      {/* Hidden file input for upload functionality */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
       
       {/* Upgrade Prompt Modal */}
       {showUpgradePrompt.show && (
