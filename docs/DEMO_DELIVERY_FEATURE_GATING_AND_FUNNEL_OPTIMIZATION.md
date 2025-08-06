@@ -43,7 +43,7 @@
 | Uploads         | ❌                 | ✅ (3-track limit)   | ✅ Unlimited      |
 | Cue Adjustment  | ❌                 | ✅                   | ✅                |
 | Loop Editing    | ❌                 | ✅                   | ✅                |
-| Recording       | ❌                 | ❌                   | ✅                |
+| Recording       | ❌                 | ✅ (1 recording)     | ✅ Unlimited      |
 | Save Sessions   | ❌                 | ✅ (2 max)           | ✅ Unlimited      |
 | Export Audio    | ❌                 | ❌                   | ✅                |
 | Track Favorites | ❌                 | ✅                   | ✅                |

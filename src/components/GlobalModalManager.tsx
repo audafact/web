@@ -49,7 +49,7 @@ export const GlobalModalManager: React.FC = () => {
           break;
           
         case 'record':
-          showSuccessMessage('🎙️ Upgrade to Pro Creator to record your performances!');
+          showSuccessMessage('🎙️ You can now record your performances! (1 free recording available)');
           break;
           
         case 'download':

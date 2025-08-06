@@ -1,4 +1,8 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import { DatabaseService } from '../services/databaseService';
+import { StorageService } from '../services/storageService';
+import { useAuth } from './AuthContext';
+import { supabase } from '../services/supabase';
 
 interface RecordingEvent {
   timestamp: number;
@@ -121,6 +125,8 @@ const convertToWav = async (audioBuffer: AudioBuffer): Promise<Blob | null> => {
 const RecordingContextInstance = createContext<RecordingContextValue | null>(null);
 
 export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  
   // Performance recording state
   const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
   const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
@@ -240,8 +246,6 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const endTime = Date.now();
         const duration = endTime - startTime;
         
-
-        
         const completedPerformance: Performance = {
           id: performanceId,
           startTime,
@@ -255,6 +259,68 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setPerformances(prev => [completedPerformance, ...prev]);
         setCurrentPerformance(null);
         setIsRecordingPerformance(false);
+        
+        // Save recording to database if user is authenticated
+        if (user?.id && finalAudioBlob) {
+          try {
+            // First, ensure user record exists in the users table
+            const { data: existingUser, error: userError } = await supabase
+              .from('users')
+              .select('id')
+              .eq('id', user.id)
+              .single();
+            
+            if (userError && userError.code === 'PGRST116') {
+              // User doesn't exist, create them
+              const { error: createUserError } = await supabase
+                .from('users')
+                .insert({
+                  id: user.id,
+                  access_tier: 'free'
+                });
+              
+              if (createUserError) {
+                console.error('Failed to create user record:', createUserError);
+                return;
+              }
+            } else if (userError) {
+              console.error('Error checking user record:', userError);
+              return;
+            }
+            
+            // Create a session for the recording first
+            const sessionRecord = await DatabaseService.createSession({
+              user_id: user.id,
+              session_name: `Performance ${new Date().toLocaleString()}`,
+              track_ids: [], // Empty array for now - track_ids should be UUIDs, not track names
+              cuepoints: performanceEventsRef.current.filter(e => e.type === 'cue_trigger').map(e => e.data),
+              loop_regions: performanceEventsRef.current.filter(e => e.type === 'loop_play').map(e => e.data),
+              mode: 'loop'
+            });
+            
+            if (!sessionRecord) {
+              console.error('Failed to create session for recording');
+              return;
+            }
+            
+            // Create database record directly without storage upload for now
+            const recordingRecord = await DatabaseService.createRecording({
+              user_id: user.id,
+              session_id: sessionRecord.id,
+              recording_url: `local://recording_${Date.now()}.wav`, // Placeholder URL
+              length: duration / 1000, // Convert to seconds
+              notes: `Performance recording with ${performanceEventsRef.current.length} events`
+            });
+            
+            // Dispatch event to notify that recording was saved
+            window.dispatchEvent(new CustomEvent('recordingSaved', {
+              detail: { userId: user.id, recordingCount: 1 }
+            }));
+          } catch (error) {
+            console.error('Failed to save recording to database:', error);
+            // Don't fail the recording if database save fails
+          }
+        }
         
         // Clear refs and stop audio monitoring
         mediaRecorderRef.current = null;
@@ -316,7 +382,6 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const addRecordingEvent = useCallback((event: Omit<RecordingEvent, 'timestamp'>) => {
     if (!isRecordingPerformance || !currentPerformance) {
-      console.log('Recording event ignored - not recording or no current performance:', { isRecordingPerformance, hasCurrentPerformance: !!currentPerformance });
       return;
     }
     

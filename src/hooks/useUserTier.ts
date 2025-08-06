@@ -18,7 +18,7 @@ const GUEST_FEATURES: FeatureAccess = {
 const FREE_FEATURES: FeatureAccess = {
   canUpload: true,
   canSaveSession: true,
-  canRecord: false,
+  canRecord: true,
   canDownload: false,
   canEditCues: true,
   canEditLoops: true,

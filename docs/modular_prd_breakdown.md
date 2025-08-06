@@ -64,7 +64,7 @@ This document defines 10 lightweight and modular PRDs derived from the original 
 **Scope:**
 - Upload button (modal gate)
 - Save session button (disabled/tooltip)
-- Record performance (Pro only)
+- Record performance (Free: 1 recording, Pro: unlimited)
 - Download (Pro-only, hidden)
 
 **Dependencies:** PRD 2 (gating hooks), PRD 3 (signup modal)

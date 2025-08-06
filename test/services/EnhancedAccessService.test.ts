@@ -39,7 +39,7 @@ describe('EnhancedAccessService', () => {
     features: {
       canUpload: true,
       canSaveSession: true,
-      canRecord: false,
+      canRecord: true,
       canDownload: false,
       canEditCues: true,
       canEditLoops: true,
@@ -49,7 +49,7 @@ describe('EnhancedAccessService', () => {
     limits: {
       maxUploads: 5,
       maxSessions: 10,
-      maxRecordings: 0,
+      maxRecordings: 1,
       maxLibraryTracks: 20
     }
   };
@@ -90,6 +90,13 @@ describe('EnhancedAccessService', () => {
       expect(EnhancedAccessService.canAccessFeature('browse_library', mockGuestTier)).toBe(true);
     });
 
+    it('should allow free users to access recording', () => {
+      expect(EnhancedAccessService.canAccessFeature('upload', mockFreeTier)).toBe(true);
+      expect(EnhancedAccessService.canAccessFeature('record', mockFreeTier)).toBe(true);
+      expect(EnhancedAccessService.canAccessFeature('download', mockFreeTier)).toBe(false);
+      expect(EnhancedAccessService.canAccessFeature('edit_cues', mockFreeTier)).toBe(true);
+    });
+
     it('should return false for unknown features', () => {
       expect(EnhancedAccessService.canAccessFeature('unknown_feature', mockProTier)).toBe(false);
     });
@@ -99,21 +106,29 @@ describe('EnhancedAccessService', () => {
     it('should return correct config for upload feature', () => {
       const config = EnhancedAccessService.getFeatureGateConfig('upload');
       expect(config.gateType).toBe('modal');
-      expect(config.message).toContain('upload');
-      expect(config.ctaText).toBe('Upgrade to Pro');
+      expect(config.message).toContain('remix your own sounds');
+      expect(config.ctaText).toBe('Sign up to upload tracks');
     });
 
     it('should return correct config for record feature', () => {
       const config = EnhancedAccessService.getFeatureGateConfig('record');
       expect(config.gateType).toBe('modal');
-      expect(config.message).toContain('record');
-      expect(config.ctaText).toBe('Upgrade to Pro');
+      expect(config.message).toContain('Record and export');
+      expect(config.ctaText).toBe('Upgrade to Pro Creator');
+    });
+
+    it('should return tier-specific config for record feature', () => {
+      const freeConfig = EnhancedAccessService.getFeatureGateConfig('record', mockFreeTier);
+      const guestConfig = EnhancedAccessService.getFeatureGateConfig('record', mockGuestTier);
+      
+      expect(freeConfig.message).toContain('free recording');
+      expect(guestConfig.message).toContain('Record and export');
     });
 
     it('should return correct config for edit_cues feature', () => {
       const config = EnhancedAccessService.getFeatureGateConfig('edit_cues');
       expect(config.gateType).toBe('tooltip');
-      expect(config.message).toContain('edit cues');
+      expect(config.message).toContain('customize cue points');
     });
 
     it('should return default config for unknown features', () => {
@@ -125,7 +140,7 @@ describe('EnhancedAccessService', () => {
 
   describe('checkUsageLimits', () => {
     it('should always return true for pro users', async () => {
-      const result = await EnhancedAccessService.checkUsageLimits('upload', mockProTier, 'user123');
+      const result = await EnhancedAccessService.checkUsageLimits('user123', mockProTier, 'upload');
       expect(result).toBe(true);
     });
 
@@ -135,13 +150,13 @@ describe('EnhancedAccessService', () => {
       (supabase.from as any).mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockResolvedValue({
-            data: [{ count: 3 }],
+            count: 3,
             error: null
           })
         })
       });
 
-      const result = await EnhancedAccessService.checkUsageLimits('upload', mockFreeTier, 'user123');
+      const result = await EnhancedAccessService.checkUsageLimits('user123', mockFreeTier, 'upload');
       expect(result).toBe(true);
     });
 
@@ -151,13 +166,13 @@ describe('EnhancedAccessService', () => {
       (supabase.from as any).mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockResolvedValue({
-            data: [{ count: 10 }], // Exceeds limit of 5
+            count: 10, // Exceeds limit of 5
             error: null
           })
         })
       });
 
-      const result = await EnhancedAccessService.checkUsageLimits('upload', mockFreeTier, 'user123');
+      const result = await EnhancedAccessService.checkUsageLimits('user123', mockFreeTier, 'upload');
       expect(result).toBe(false);
     });
   });

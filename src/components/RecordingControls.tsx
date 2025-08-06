@@ -6,6 +6,7 @@ import { UpgradePrompt } from './UpgradePrompt';
 import { useUserTier } from '../hooks/useUserTier';
 import { showSignupModal } from '../hooks/useSignupModal';
 import FeatureGate from './FeatureGate';
+import { useAuth } from '../context/AuthContext';
 
 interface RecordingControlsProps {
   className?: string;
@@ -22,6 +23,7 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
   } = useRecording();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier } = useUserTier();
+  const { user } = useAuth();
   
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
@@ -115,10 +117,12 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
 
                 // Check record limits for authenticated users
                 const canRecord = await canPerformAction('record');
+                
                 if (!canRecord) {
                   setShowUpgradePrompt(true);
                   return;
                 }
+                
                 startPerformanceRecording(audioContext);
               }}
               className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
@@ -140,8 +144,8 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
         {/* Upgrade Prompt Modal */}
         {showUpgradePrompt && (
           <UpgradePrompt
-            message={getUpgradeMessage('save_session')}
-            feature="Session Save"
+            message={getUpgradeMessage('record')}
+            feature="Recording"
             onClose={() => setShowUpgradePrompt(false)}
           />
         )}

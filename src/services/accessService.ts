@@ -188,7 +188,7 @@ export class EnhancedAccessService extends AccessService {
     return featureAccess[feature] || false;
   }
   
-  static getFeatureGateConfig(feature: string): FeatureGateConfig {
+  static getFeatureGateConfig(feature: string, tier?: UserTier): FeatureGateConfig {
     const configs = {
       upload: {
         gateType: 'modal',
@@ -204,8 +204,12 @@ export class EnhancedAccessService extends AccessService {
       },
       record: {
         gateType: 'modal',
-        message: "🎙 Record and export your performances",
-        ctaText: "Upgrade to Pro Creator",
+        message: tier?.id === 'free' 
+          ? "🎙 You've used your free recording. Upgrade for unlimited recordings!"
+          : "🎙 Record and export your performances",
+        ctaText: tier?.id === 'free' 
+          ? "Upgrade to Pro Creator" 
+          : "Upgrade to Pro Creator",
         upgradeRequired: true
       },
       download: {

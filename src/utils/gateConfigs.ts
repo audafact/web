@@ -43,7 +43,7 @@ const FEATURE_GATE_CONFIGS: FeatureGateConfigs = {
   record_audio: {
     mobile: { gateType: 'overlay', text: 'Tap to record' },
     tablet: { gateType: 'overlay', text: 'Click to record' },
-    desktop: { gateType: 'lock', tooltip: 'Sign up to record audio' }
+    desktop: { gateType: 'lock', tooltip: 'Sign up to record audio (1 free recording available)' }
   },
   advanced_effects: {
     mobile: { gateType: 'overlay', text: 'Tap for effects' },

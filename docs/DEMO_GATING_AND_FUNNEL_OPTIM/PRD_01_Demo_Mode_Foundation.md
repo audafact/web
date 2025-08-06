@@ -146,7 +146,7 @@ const useDemoTrackLoader = () => {
 | **Library Preview** | ✅ Listen only | Disable "Add to Studio" |
 | **Upload** | ❌ Gated | Modal with signup CTA |
 | **Save Session** | ❌ Gated | Disabled button |
-| **Recording** | ❌ Gated | Pro-only modal |
+| **Recording** | ❌ Gated | Free: 1 recording, Pro: unlimited |
 | **Download** | ❌ Hidden | Completely hidden |
 
 ---

@@ -27,6 +27,19 @@ export const useAccessControl = () => {
     refreshAccessStatus();
   }, [user?.id, tier.id]);
 
+  // Listen for recording saved events to refresh access status
+  useEffect(() => {
+    const handleRecordingSaved = () => {
+      refreshAccessStatus();
+    };
+
+    window.addEventListener('recordingSaved', handleRecordingSaved);
+    
+    return () => {
+      window.removeEventListener('recordingSaved', handleRecordingSaved);
+    };
+  }, [refreshAccessStatus]);
+
   const canAccessFeature = (feature: string): boolean => {
     return EnhancedAccessService.canAccessFeature(feature, tier);
   };
