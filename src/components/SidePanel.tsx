@@ -851,7 +851,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => deleteSession(session.id)}
+                                      onClick={async () => await deleteSession(session.id)}
                                       className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                       title="Delete Session"
                                     >
@@ -1050,7 +1050,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => deletePerformance(performance.id)}
+                                      onClick={async () => await deletePerformance(performance.id)}
                                       className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                       title="Delete Performance"
                                     >

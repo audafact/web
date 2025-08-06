@@ -41,7 +41,7 @@ export interface Session {
 export interface Recording {
   id: string;
   user_id: string;
-  session_id: string;
+  session_id?: string; // Optional - recordings can exist without sessions
   recording_url: string;
   length?: number;
   notes?: string;

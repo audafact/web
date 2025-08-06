@@ -28,6 +28,7 @@ interface Performance {
   tracks: string[];
   duration: number;
   audioBlob?: Blob; // Add audio blob to performances
+  databaseId?: string; // Database recording ID if saved to database
 }
 
 interface AudioRecording {
@@ -68,9 +69,9 @@ interface RecordingContextValue {
   exportPerformance: (performanceId: string) => void;
   exportSession: (sessionId: string) => void;
   exportAudioRecording: (recordingId: string) => void;
-  deletePerformance: (performanceId: string) => void;
-  deleteSession: (sessionId: string) => void;
-  deleteAudioRecording: (recordingId: string) => void;
+  deletePerformance: (performanceId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
+  deleteAudioRecording: (recordingId: string) => Promise<void>;
 }
 
 // Helper function to convert AudioBuffer to WAV format
@@ -288,34 +289,54 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               return;
             }
             
-            // Create a session for the recording first
-            const sessionRecord = await DatabaseService.createSession({
-              user_id: user.id,
-              session_name: `Performance ${new Date().toLocaleString()}`,
-              track_ids: [], // Empty array for now - track_ids should be UUIDs, not track names
-              cuepoints: performanceEventsRef.current.filter(e => e.type === 'cue_trigger').map(e => e.data),
-              loop_regions: performanceEventsRef.current.filter(e => e.type === 'loop_play').map(e => e.data),
-              mode: 'loop'
-            });
+            // Check recording limits first
+            const { count: recordingCount, error: countError } = await supabase
+              .from('recordings')
+              .select('id', { count: 'exact' })
+              .eq('user_id', user.id);
             
-            if (!sessionRecord) {
-              console.error('Failed to create session for recording');
+            if (countError) {
+              console.error('Error checking recording count:', countError);
               return;
             }
             
-            // Create database record directly without storage upload for now
+            const currentRecordingCount = recordingCount || 0;
+            
+            // Get user's access tier from database
+            const { data: userData, error: userTierError } = await supabase
+              .from('users')
+              .select('access_tier')
+              .eq('id', user.id)
+              .single();
+            
+            const userTier = userTierError ? 'free' : (userData?.access_tier || 'free');
+            const maxRecordings = userTier === 'pro' ? Infinity : 1;
+            
+            if (currentRecordingCount >= maxRecordings) {
+              console.warn('User has reached recording limit');
+              return;
+            }
+            
+            // Create database record without requiring a session
             const recordingRecord = await DatabaseService.createRecording({
               user_id: user.id,
-              session_id: sessionRecord.id,
+              session_id: undefined, // Optional - recordings can exist without sessions
               recording_url: `local://recording_${Date.now()}.wav`, // Placeholder URL
               length: duration / 1000, // Convert to seconds
               notes: `Performance recording with ${performanceEventsRef.current.length} events`
             });
             
-            // Dispatch event to notify that recording was saved
-            window.dispatchEvent(new CustomEvent('recordingSaved', {
-              detail: { userId: user.id, recordingCount: 1 }
-            }));
+            if (recordingRecord) {
+              // Update the performance with the database ID
+              setPerformances(prev => prev.map(p => 
+                p.id === performanceId ? { ...p, databaseId: recordingRecord.id } : p
+              ));
+              
+              // Dispatch event to notify that recording was saved
+              window.dispatchEvent(new CustomEvent('recordingSaved', {
+                detail: { userId: user.id, recordingCount: 1 }
+              }));
+            }
           } catch (error) {
             console.error('Failed to save recording to database:', error);
             // Don't fail the recording if database save fails
@@ -427,7 +448,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [stopPerformanceRecording]);
 
   // Session functions
-  const saveCurrentState = useCallback((studioState: any) => {
+  const saveCurrentState = useCallback(async (studioState: any) => {
     const sessionId = `session_${Date.now()}`;
     const currentTime = Date.now();
     
@@ -445,10 +466,89 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       duration: 0
     };
     
+    // Save to local state immediately for UI responsiveness
     setSavedSessions(prev => [stateSession, ...prev]);
     
+    // If user is authenticated, save to database
+    if (user?.id) {
+      try {
+        // Check if user can save more sessions
+        const { count: sessionCount, error: countError } = await supabase
+          .from('sessions')
+          .select('id', { count: 'exact' })
+          .eq('user_id', user.id);
+        
+        if (countError) {
+          console.error('Error checking session count:', countError);
+          return;
+        }
+        
+        const currentSessionCount = sessionCount || 0;
+        
+        // Get user's access tier from database
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('access_tier')
+          .eq('id', user.id)
+          .single();
+        
+        const userTier = userError ? 'free' : (userData?.access_tier || 'free');
+        const maxSessions = userTier === 'pro' ? Infinity : 2;
+        
+        if (currentSessionCount >= maxSessions) {
+          console.warn('User has reached session limit');
+          // Remove from local state since it couldn't be saved to database
+          setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
+          return;
+        }
+        
+        // Helper function to check if a string is a valid UUID
+        const isValidUUID = (str: string): boolean => {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          return uuidRegex.test(str);
+        };
 
-  }, []);
+        // Filter track IDs to only include valid UUIDs (uploaded tracks)
+        const validTrackIds = studioState.tracks
+          ?.map((track: any) => track.id)
+          .filter((id: string) => isValidUUID(id)) || [];
+
+        // Save to database
+        const dbSession = await DatabaseService.createSession({
+          user_id: user.id,
+          session_name: `Studio Session ${new Date().toLocaleString()}`,
+          track_ids: validTrackIds, // Only include valid UUIDs
+          cuepoints: studioState.tracks?.flatMap((track: any) => track.cuePoints || []) || [],
+          loop_regions: studioState.tracks?.map((track: any) => ({
+            trackId: track.id,
+            start: track.loopStart,
+            end: track.loopEnd
+          })).filter((region: any) => region.start !== undefined && region.end !== undefined) || [],
+          mode: 'loop'
+        });
+        
+        if (dbSession) {
+          // Update local session with database ID
+          setSavedSessions(prev => prev.map(s => 
+            s.id === sessionId ? { ...s, id: dbSession.id } : s
+          ));
+          
+          // Dispatch event to notify that session was saved
+          window.dispatchEvent(new CustomEvent('sessionSaved', {
+            detail: { userId: user.id, sessionCount: currentSessionCount + 1 }
+          }));
+        } else {
+          console.error('Failed to save session to database');
+          // Remove from local state since it couldn't be saved to database
+          setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
+        }
+      } catch (error) {
+        console.error('Error saving session to database:', error);
+        // Remove from local state since it couldn't be saved to database
+        setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
+      }
+    }
+  }, [user]);
 
   // Management functions
   const clearAll = useCallback(() => {
@@ -539,17 +639,65 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     URL.revokeObjectURL(url);
   }, [audioRecordings]);
 
-  const deletePerformance = useCallback((performanceId: string) => {
+  const deletePerformance = useCallback(async (performanceId: string) => {
+    // Find the performance to get its database ID
+    const performance = performances.find(p => p.id === performanceId);
+    
+    // Remove from local state immediately for UI responsiveness
     setPerformances(prev => prev.filter(p => p.id !== performanceId));
-  }, []);
+    
+    // If performance has a database ID and user is authenticated, delete from database
+    if (performance?.databaseId && user?.id) {
+      try {
+        const success = await DatabaseService.deleteRecording(performance.databaseId, user.id);
+        if (!success) {
+          console.error('Failed to delete recording from database');
+          // Could add error handling here (e.g., show toast, restore to local state)
+        }
+      } catch (error) {
+        console.error('Error deleting recording from database:', error);
+        // Could add error handling here
+      }
+    }
+  }, [performances, user]);
 
-  const deleteSession = useCallback((sessionId: string) => {
+  const deleteSession = useCallback(async (sessionId: string) => {
+    // Remove from local state immediately for UI responsiveness
     setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
-  }, []);
+    
+    // If user is authenticated, delete from database
+    if (user?.id) {
+      try {
+        const success = await DatabaseService.deleteSession(sessionId, user.id);
+        if (!success) {
+          console.error('Failed to delete session from database');
+          // Could add error handling here (e.g., show toast, restore to local state)
+        }
+      } catch (error) {
+        console.error('Error deleting session from database:', error);
+        // Could add error handling here
+      }
+    }
+  }, [user]);
 
-  const deleteAudioRecording = useCallback((recordingId: string) => {
+  const deleteAudioRecording = useCallback(async (recordingId: string) => {
+    // Remove from local state immediately for UI responsiveness
     setAudioRecordings(prev => prev.filter(r => r.id !== recordingId));
-  }, []);
+    
+    // If user is authenticated, delete from database
+    if (user?.id) {
+      try {
+        const success = await DatabaseService.deleteRecording(recordingId, user.id);
+        if (!success) {
+          console.error('Failed to delete recording from database');
+          // Could add error handling here (e.g., show toast, restore to local state)
+        }
+      } catch (error) {
+        console.error('Error deleting recording from database:', error);
+        // Could add error handling here
+      }
+    }
+  }, [user]);
 
   const getRecordingDestination = useCallback(() => {
     return recordingDestinationRef.current;

@@ -1627,7 +1627,7 @@ const Studio = () => {
       timestamp: Date.now()
     };
     
-    saveCurrentState(studioState);
+    await saveCurrentState(studioState);
   };
 
   // Add handler for toggling accordion controls
