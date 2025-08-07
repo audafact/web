@@ -23,6 +23,7 @@ import NextTrackButton from '../components/NextTrackButton';
 import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
+import { AccessService } from '../services/accessService';
 import { TimeSignature } from '../types/music';
 
 // Define available audio assets - lazy load audio files
@@ -1719,6 +1720,8 @@ const Studio = () => {
       setIsManuallyAddingTrack(true);
       setIsLoading(true);
       setError(null);
+      
+      // No longer need to track individual user library usage
       
       // Use existing audio context if available
       let context = audioContext;

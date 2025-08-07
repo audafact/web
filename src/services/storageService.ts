@@ -4,6 +4,7 @@ import { StorageFile, UploadResponse, DownloadResponse, AudioFile } from '../typ
 export class StorageService {
   private static readonly UPLOAD_BUCKET = 'user-uploads';
   private static readonly RECORDING_BUCKET = 'session-recordings';
+  private static readonly LIBRARY_BUCKET = 'library-tracks';
   private static readonly MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
   private static readonly ALLOWED_AUDIO_TYPES = [
     'audio/mpeg',
@@ -273,6 +274,88 @@ export class StorageService {
       console.error('Error getting audio file info:', error);
       return null;
     }
+  }
+
+  /**
+   * Upload a library track to the library-tracks bucket
+   */
+  static async uploadLibraryTrack(
+    file: File,
+    trackId: string,
+    metadata?: {
+      name: string;
+      artist?: string;
+      genre: string;
+      bpm?: number;
+      key?: string;
+      duration?: number;
+      tags?: string[];
+    }
+  ): Promise<UploadResponse> {
+    try {
+      // Validate file
+      if (!this.isValidAudioFile(file)) {
+        throw new Error('Invalid file type or size');
+      }
+
+      // Create filename using track ID
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${trackId}.${fileExt}`;
+
+      // Upload file
+      const { data, error } = await supabase.storage
+        .from(this.LIBRARY_BUCKET)
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true, // Allow overwriting
+          metadata: {
+            trackId,
+            originalName: file.name,
+            size: file.size,
+            type: file.type,
+            ...metadata
+          }
+        });
+
+      if (error) throw error;
+
+      // Convert to StorageFile type
+      const storageFile: StorageFile = {
+        name: fileName,
+        bucket_id: this.LIBRARY_BUCKET,
+        owner: 'system',
+        id: data?.path || '',
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        last_accessed_at: new Date().toISOString(),
+        metadata: {
+          trackId,
+          originalName: file.name,
+          size: file.size,
+          type: file.type,
+          ...metadata
+        }
+      };
+
+      return { data: storageFile, error: null };
+    } catch (error) {
+      console.error('Error uploading library track:', error);
+      return { data: null, error };
+    }
+  }
+
+  /**
+   * Get the public URL for a library track
+   */
+  static getLibraryTrackUrl(trackId: string, fileType: string): string {
+    return this.getPublicUrl(this.LIBRARY_BUCKET, `${trackId}.${fileType}`);
+  }
+
+  /**
+   * Get a signed URL for a library track (if needed for private access)
+   */
+  static async getLibraryTrackSignedUrl(trackId: string, fileType: string, expiresIn: number = 3600): Promise<string> {
+    return this.getSignedUrl(this.LIBRARY_BUCKET, `${trackId}.${fileType}`, expiresIn);
   }
 
   /**

@@ -72,14 +72,16 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
             onClick={handleAddToStudio}
             className="add-button"
             title="Add to studio"
+            style={{ color: 'white', fontSize: '18px', fontWeight: 'bold' }}
           >
-            ➕
+            +
           </button>
         ) : (
           <button
             onClick={handleAddToStudio}
             className="add-button locked"
             title="Sign up to add this track to your studio"
+            style={{ color: 'white', fontSize: '16px' }}
           >
             🔒
           </button>

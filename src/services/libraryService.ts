@@ -84,18 +84,30 @@ export class LibraryService {
   /**
    * Get current rotation week info
    */
-  static async getCurrentRotationInfo(): Promise<{ weekNumber: number; trackCount: number }> {
+  static async getCurrentRotationInfo(): Promise<{ 
+    weekNumber: number; 
+    trackCount: number;
+    nextRotationDate: string;
+    daysUntilRotation: number;
+  }> {
     try {
-      const { data, error } = await supabase.rpc('get_free_user_tracks');
+      const { data, error } = await supabase.rpc('get_rotation_info');
       if (error) throw error;
       
-      return {
-        weekNumber: new Date().getTime() / (1000 * 60 * 60 * 24 * 7), // Rough week calculation
-        trackCount: data?.length || 0
-      };
+      if (data && data.length > 0) {
+        const info = data[0];
+        return {
+          weekNumber: info.current_week,
+          trackCount: info.current_track_count,
+          nextRotationDate: info.next_rotation_date,
+          daysUntilRotation: info.days_until_rotation
+        };
+      }
+      
+      return { weekNumber: 1, trackCount: 0, nextRotationDate: '', daysUntilRotation: 0 };
     } catch (error) {
       console.error('Error getting rotation info:', error);
-      return { weekNumber: 1, trackCount: 0 };
+      return { weekNumber: 1, trackCount: 0, nextRotationDate: '', daysUntilRotation: 0 };
     }
   }
 
@@ -111,13 +123,24 @@ export class LibraryService {
       bpm: dbTrack.bpm || 0,
       key: dbTrack.key || undefined,
       duration: dbTrack.duration || 0,
-      file: dbTrack.file_url, // This will be the URL to fetch the file
+      file: this.getLibraryTrackUrl(dbTrack.track_id, dbTrack.type), // Generate storage URL
       type: dbTrack.type,
       size: dbTrack.size || 'Unknown',
       tags: dbTrack.tags,
       isProOnly: dbTrack.is_pro_only,
       previewUrl: dbTrack.preview_url || undefined
     }));
+  }
+
+  /**
+   * Get the storage URL for a library track
+   */
+  private static getLibraryTrackUrl(trackId: string, fileType: string): string {
+    const { data } = supabase.storage
+      .from('library-tracks')
+      .getPublicUrl(`${trackId}.${fileType}`);
+    
+    return data.publicUrl;
   }
 
   /**

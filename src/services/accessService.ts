@@ -62,9 +62,8 @@ export class AccessService {
       const currentSessions = sessionsResult.count || 0;
       const currentRecordings = recordingsResult.count || 0;
       
-      // For library tracks, we'll need to track this in localStorage or a separate table
-      // For now, we'll use a placeholder - you may want to add a library_usage table
-      const currentLibraryTracks = 0; // TODO: Implement actual tracking
+      // Get current library track count from database
+      const currentLibraryTracks = await this.getUserLibraryTrackCount(userId);
 
       const limits = this.getLimitsForTier(accessTier);
 
@@ -116,9 +115,9 @@ export class AccessService {
 
     switch (action) {
       case 'add_library_track':
-        // TODO: Implement actual library track counting
-        // For now, return true for pro users, false for free users
-        return accessTier === 'pro';
+        // Free users can add any of the 10 available library tracks to their studio
+        // The limit is on library availability, not studio usage
+        return accessTier !== 'guest'; // Only guests are blocked from adding tracks
       
       case 'download':
         return limits.canDownload;
@@ -163,11 +162,66 @@ export class AccessService {
       case 'record':
         return "You've reached your recording limit (1 recording). " + baseMessage;
       case 'add_library_track':
-        return "You've reached your library track limit (10 tracks). " + baseMessage;
+        return "Sign up to add tracks from the library to your studio. " + baseMessage;
       case 'download':
         return "Download your recordings with Pro Creator. " + baseMessage;
       default:
         return baseMessage;
+    }
+  }
+
+  /**
+   * Get the number of library tracks a user has added to their studio
+   * Note: This is no longer needed since we don't limit studio usage
+   */
+  private static async getUserLibraryTrackCount(userId: string): Promise<number> {
+    // No longer tracking individual user library usage
+    return 0;
+  }
+
+  /**
+   * Add a library track to user's collection
+   * Note: This is no longer needed since we don't limit studio usage
+   */
+  static async addLibraryTrackToUser(userId: string, trackId: string): Promise<boolean> {
+    // No longer tracking individual user library usage
+    return true;
+  }
+
+  /**
+   * Remove a library track from user's collection
+   * Note: This is no longer needed since we don't limit studio usage
+   */
+  static async removeLibraryTrackFromUser(userId: string, trackId: string): Promise<boolean> {
+    // No longer tracking individual user library usage
+    return true;
+  }
+
+  /**
+   * Get user's current library tracks
+   * Note: This is no longer needed since we don't limit studio usage
+   */
+  static async getUserLibraryTracks(userId: string): Promise<any[]> {
+    // No longer tracking individual user library usage
+    return [];
+  }
+
+  /**
+   * Get rotation information
+   */
+  static async getRotationInfo(): Promise<any> {
+    try {
+      const { data, error } = await supabase.rpc('get_rotation_info');
+      
+      if (error) {
+        console.error('Error getting rotation info:', error);
+        return null;
+      }
+      
+      return data?.[0] || null;
+    } catch (error) {
+      console.error('Error getting rotation info:', error);
+      return null;
     }
   }
 }

@@ -1,61 +1,89 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { LibraryService } from '../services/libraryService';
 import { useUserTier } from '../hooks/useUserTier';
 
 interface RotationInfoProps {
-  weekNumber: number;
-  trackCount: number;
   className?: string;
 }
 
-export const RotationInfo: React.FC<RotationInfoProps> = ({ 
-  weekNumber, 
-  trackCount, 
-  className = '' 
-}) => {
+const RotationInfo: React.FC<RotationInfoProps> = ({ className = '' }) => {
   const { tier } = useUserTier();
+  const [rotationInfo, setRotationInfo] = useState<{
+    weekNumber: number;
+    trackCount: number;
+    nextRotationDate: string;
+    daysUntilRotation: number;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  if (tier.id !== 'free') {
+  useEffect(() => {
+    const loadRotationInfo = async () => {
+      try {
+        const info = await LibraryService.getCurrentRotationInfo();
+        setRotationInfo(info);
+      } catch (error) {
+        console.error('Error loading rotation info:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadRotationInfo();
+  }, []);
+
+  // Only show for free users
+  if (tier.id !== 'free' || isLoading || !rotationInfo) {
     return null;
   }
 
-  const getNextRotationDate = () => {
-    const now = new Date();
-    const daysUntilNextWeek = 7 - now.getDay();
-    const nextWeek = new Date(now);
-    nextWeek.setDate(now.getDate() + daysUntilNextWeek);
-    nextWeek.setHours(0, 0, 0, 0);
-    return nextWeek;
+  const formatDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return dateString;
+    }
   };
 
-  const formatTimeUntilNextRotation = () => {
-    const now = new Date();
-    const nextRotation = getNextRotationDate();
-    const diffMs = nextRotation.getTime() - now.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
-    if (diffDays > 0) {
-      return `${diffDays} day${diffDays > 1 ? 's' : ''}`;
-    } else if (diffHours > 0) {
-      return `${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+  const getRotationMessage = () => {
+    if (rotationInfo.daysUntilRotation === 0) {
+      return "New tracks available today!";
+    } else if (rotationInfo.daysUntilRotation === 1) {
+      return "New tracks tomorrow!";
     } else {
-      return 'Less than an hour';
+      return `${rotationInfo.daysUntilRotation} days until new tracks`;
     }
   };
 
   return (
     <div className={`rotation-info ${className}`}>
-      <div className="rotation-badge">
-        <span className="rotation-icon">🔄</span>
-        <span className="rotation-text">
-          Week {Math.floor(weekNumber)} • {trackCount} tracks available
-        </span>
-      </div>
-      <div className="rotation-countdown">
-        <span className="countdown-text">
-          New tracks in {formatTimeUntilNextRotation()}
-        </span>
+      <div className="rotation-info-content">
+        <div className="rotation-info-header">
+          <span className="rotation-icon">🔄</span>
+          <span className="rotation-title">Track Rotation</span>
+        </div>
+        
+        <div className="rotation-details">
+          <div className="rotation-stat">
+            <span className="stat-label">Current Tracks:</span>
+            <span className="stat-value">{rotationInfo.trackCount}/10</span>
+          </div>
+          
+          <div className="rotation-stat">
+            <span className="stat-label">Next Rotation:</span>
+            <span className="stat-value">{formatDate(rotationInfo.nextRotationDate)}</span>
+          </div>
+          
+          <div className="rotation-message">
+            {getRotationMessage()}
+          </div>
+        </div>
       </div>
     </div>
   );
-}; 
+};
+
+export default RotationInfo; 

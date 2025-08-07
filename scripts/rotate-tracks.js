@@ -28,6 +28,15 @@ class TrackRotationManager {
   }
 
   /**
+   * Get rotation information
+   */
+  async getRotationInfo() {
+    const { data, error } = await this.supabase.rpc("get_rotation_info");
+    if (error) throw error;
+    return data?.[0] || null;
+  }
+
+  /**
    * Get all available tracks
    */
   async getAllTracks() {
@@ -48,15 +57,6 @@ class TrackRotationManager {
   async getTracksForWeek(weekNumber) {
     console.log(`Looking for tracks in week ${weekNumber}`);
 
-    // First, let's see what tracks have this rotation week (without filters)
-    const { data: allTracks, error: allError } = await this.supabase
-      .from("library_tracks")
-      .select("track_id, name, is_active, is_pro_only, rotation_week")
-      .eq("rotation_week", weekNumber);
-
-    if (allError) throw allError;
-    console.log(`All tracks with rotation_week ${weekNumber}:`, allTracks);
-
     const { data, error } = await this.supabase
       .from("library_tracks")
       .select("*")
@@ -75,56 +75,29 @@ class TrackRotationManager {
   }
 
   /**
+   * Get free user tracks (current rotation)
+   */
+  async getFreeUserTracks() {
+    const { data, error } = await this.supabase.rpc("get_free_user_tracks");
+    if (error) throw error;
+    return data || [];
+  }
+
+  /**
    * Set rotation week for tracks
    */
   async setRotationWeek(trackIds, weekNumber) {
-    console.log(`Attempting to set week ${weekNumber} for tracks:`, trackIds);
+    console.log(`Setting week ${weekNumber} for tracks:`, trackIds);
 
-    // First, let's check what tracks exist and their current rotation_week
-    const { data: existingTracks, error: checkError } = await this.supabase
+    const { error } = await this.supabase
       .from("library_tracks")
-      .select("track_id, name, rotation_week")
+      .update({ rotation_week: weekNumber })
       .in("track_id", trackIds);
 
-    if (checkError) {
-      console.error("Error checking existing tracks:", checkError);
-      throw checkError;
-    }
-
-    console.log("Found tracks before update:", existingTracks);
-
-    // Try updating one track at a time to see if that works
-    for (const trackId of trackIds) {
-      console.log(`Updating ${trackId} to week ${weekNumber}...`);
-
-      const { error } = await this.supabase
-        .from("library_tracks")
-        .update({ rotation_week: weekNumber })
-        .eq("track_id", trackId);
-
-      if (error) {
-        console.error(`Error updating ${trackId}:`, error);
-        throw error;
-      }
-
-      console.log(`Updated ${trackId} successfully`);
-    }
-
+    if (error) throw error;
     console.log(
       `Set rotation week ${weekNumber} for ${trackIds.length} tracks`
     );
-
-    // Let's verify the update worked
-    const { data: updatedTracks, error: verifyError } = await this.supabase
-      .from("library_tracks")
-      .select("track_id, name, rotation_week")
-      .in("track_id", trackIds);
-
-    if (verifyError) {
-      console.error("Error verifying update:", verifyError);
-    } else {
-      console.log("Tracks after update:", updatedTracks);
-    }
   }
 
   /**
@@ -141,72 +114,71 @@ class TrackRotationManager {
   }
 
   /**
-   * Rotate tracks to next week
+   * Use the new automated rotation function
    */
   async rotateToNextWeek() {
-    const currentWeek = await this.getCurrentRotationWeek();
-    const nextWeek = currentWeek + 1;
+    console.log("🔄 Using automated rotation function...");
 
-    // Get all available tracks
-    const allTracks = await this.getAllTracks();
+    const { data, error } = await this.supabase.rpc("rotate_free_user_tracks");
 
-    // Select 10 tracks for next week (you can customize this logic)
-    const tracksForNextWeek = this.selectTracksForWeek(allTracks, nextWeek);
-
-    // Clear current week
-    const currentWeekTracks = await this.getTracksForWeek(currentWeek);
-    if (currentWeekTracks.length > 0) {
-      await this.clearRotationWeek(currentWeekTracks.map((t) => t.track_id));
+    if (error) {
+      console.error("❌ Error during automated rotation:", error);
+      throw error;
     }
 
-    // Set next week
-    await this.setRotationWeek(
-      tracksForNextWeek.map((t) => t.track_id),
-      nextWeek
-    );
+    console.log("✅ Automated rotation completed successfully!");
 
-    console.log(`Rotated tracks: Week ${currentWeek} → Week ${nextWeek}`);
-    console.log(
-      `Tracks for week ${nextWeek}:`,
-      tracksForNextWeek.map((t) => t.name)
-    );
+    // Get updated rotation info
+    const rotationInfo = await this.getRotationInfo();
+    if (rotationInfo) {
+      console.log("\n📊 Rotation Summary:");
+      console.log(`   Current Week: ${rotationInfo.current_week}`);
+      console.log(`   Available Tracks: ${rotationInfo.current_track_count}`);
+      console.log(`   Next Rotation: ${rotationInfo.next_rotation_date}`);
+      console.log(
+        `   Days Until Rotation: ${rotationInfo.days_until_rotation}`
+      );
+    }
+
+    // Show current free user tracks
+    const freeTracks = await this.getFreeUserTracks();
+    console.log("\n🎵 Current Free User Tracks:");
+    freeTracks.forEach((track, index) => {
+      console.log(`   ${index + 1}. ${track.name} (${track.genre})`);
+    });
   }
 
   /**
-   * Select tracks for a specific week (customize this logic)
+   * Get user library usage statistics
+   * Note: No longer tracking individual user usage since the limit is on library availability
    */
-  selectTracksForWeek(allTracks, weekNumber) {
-    // Simple rotation: take every 3rd track starting from week number
-    const startIndex = (weekNumber - 1) * 3;
-    const selectedTracks = [];
-
-    for (let i = 0; i < 10 && startIndex + i < allTracks.length; i++) {
-      selectedTracks.push(allTracks[startIndex + i]);
-    }
-
-    // If we don't have enough tracks, wrap around
-    if (selectedTracks.length < 10) {
-      for (let i = 0; selectedTracks.length < 10 && i < allTracks.length; i++) {
-        if (!selectedTracks.find((t) => t.track_id === allTracks[i].track_id)) {
-          selectedTracks.push(allTracks[i]);
-        }
-      }
-    }
-
-    return selectedTracks.slice(0, 10);
+  async getUserUsageStats() {
+    console.log("\n📊 User Library Usage Statistics:");
+    console.log("Note: We no longer track individual user library usage.");
+    console.log(
+      "The 10-track limit applies to library availability, not studio usage."
+    );
+    console.log(
+      "Free users can add all available library tracks to their studio."
+    );
   }
 
   /**
    * Show current rotation status
    */
   async showStatus() {
-    const currentWeek = await this.getCurrentRotationWeek();
-    const currentTracks = await this.getTracksForWeek(currentWeek);
+    const rotationInfo = await this.getRotationInfo();
+    const currentTracks = await this.getFreeUserTracks();
     const allTracks = await this.getAllTracks();
 
     console.log("\n=== Track Rotation Status ===");
-    console.log(`Current Week: ${currentWeek}`);
-    console.log(`Current Tracks (${currentTracks.length}):`);
+    if (rotationInfo) {
+      console.log(`Current Week: ${rotationInfo.current_week}`);
+      console.log(`Available Tracks: ${rotationInfo.current_track_count}/10`);
+      console.log(`Next Rotation: ${rotationInfo.next_rotation_date}`);
+      console.log(`Days Until Rotation: ${rotationInfo.days_until_rotation}`);
+    }
+    console.log(`\nCurrent Tracks (${currentTracks.length}):`);
     currentTracks.forEach((track) => {
       console.log(`  - ${track.name} (${track.genre})`);
     });
@@ -322,6 +294,19 @@ class TrackRotationManager {
       console.error("Error adding tracks from file:", error.message);
     }
   }
+
+  /**
+   * Clean up old usage records
+   * Note: No longer needed since we don't track individual user usage
+   */
+  async cleanupOldUsage() {
+    console.log(
+      "🧹 Cleanup not needed - we no longer track individual user library usage."
+    );
+    console.log(
+      "The 10-track limit applies to library availability, not studio usage."
+    );
+  }
 }
 
 // CLI interface
@@ -381,18 +366,33 @@ async function main() {
         await manager.listAllTracks();
         break;
 
+      case "usage":
+        await manager.getUserUsageStats();
+        break;
+
+      case "cleanup":
+        await manager.cleanupOldUsage();
+        break;
+
       default:
         console.log(`
-Track Rotation Manager
+Track Rotation Manager (Updated)
 
 Usage:
   node rotate-tracks.js status                    - Show current rotation status
-  node rotate-tracks.js rotate                    - Rotate to next week
+  node rotate-tracks.js rotate                    - Use automated rotation (3 tracks/week)
   node rotate-tracks.js set-week <week> <ids...>  - Set rotation week for tracks
   node rotate-tracks.js clear-week <ids...>       - Clear rotation week for tracks
   node rotate-tracks.js add                       - Add new track interactively
   node rotate-tracks.js add-file <file>           - Add tracks from JSON file
   node rotate-tracks.js list                      - List all tracks with rotation info
+  node rotate-tracks.js usage                     - Show user library usage statistics
+  node rotate-tracks.js cleanup                   - Clean up old usage records
+
+New Features:
+  - Automated rotation with smart track selection (10 tracks for free users)
+  - Rotation information display
+  - Library availability management (not studio usage limits)
         `);
     }
   } catch (error) {

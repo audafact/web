@@ -5,6 +5,8 @@ import { useAccessControl } from '../hooks/useAccessControl';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { trackEvent } from '../services/analyticsService';
 import { LibraryService } from '../services/libraryService';
+import { AccessService } from '../services/accessService';
+import { useAuth } from '../context/AuthContext';
 import LibraryTrackItem from './LibraryTrackItem';
 
 const LibraryPanel: React.FC<LibraryPanelProps> = ({
@@ -15,6 +17,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
   isLoading
 }) => {
   const { tier } = useUserTier();
+  const { user } = useAuth();
   const { canAccessFeature } = useAccessControl();
   const { togglePreview, isPreviewing } = usePreviewAudio();
   
@@ -76,7 +79,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
     await togglePreview(track);
   };
   
-  const handleAddToStudio = (track: LibraryTrack) => {
+  const handleAddToStudio = async (track: LibraryTrack) => {
     if (tier.id === 'guest') {
       // Dispatch custom event for signup modal
       window.dispatchEvent(new CustomEvent('showSignupModal', {
@@ -84,6 +87,8 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
       }));
       return;
     }
+    
+    // No longer need to track individual user library usage
     
     onAddToStudio(track);
     

@@ -47,6 +47,11 @@ export const useAccessControl = () => {
   const canPerformAction = async (action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download'): Promise<boolean> => {
     if (!user?.id) return false;
     
+    // Handle add_library_track separately since it's not in the feature access map
+    if (action === 'add_library_track') {
+      return tier.id !== 'guest'; // Only guests are blocked from adding library tracks
+    }
+    
     const hasFeatureAccess = canAccessFeature(action);
     if (!hasFeatureAccess) return false;
     

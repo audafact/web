@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
+import { AccessService } from '../services/accessService';
 import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useUserTier } from '../hooks/useUserTier';
@@ -13,6 +14,7 @@ import { LibraryTrack } from '../types/music';
 import LibraryTrackItem from './LibraryTrackItem';
 import FeatureGate from './FeatureGate';
 import { showSignupModal } from '../hooks/useSignupModal';
+import RotationInfo from './RotationInfo';
 
 interface AudioAsset {
   id: string;
@@ -417,6 +419,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
         return;
       }
       
+      // No longer need to track individual user library usage
+      
       const libraryAsset = asset as AudioAsset;
       onAddFromLibrary(libraryAsset, 'preview');
     }
@@ -526,13 +530,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 {/* Enhanced Library Content */}
                 {activeAudioTab === 'library' && (
                   <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-md font-medium audafact-heading">Track Library</h3>
-                      </div>
+                                          <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-md font-medium audafact-heading">Track Library</h3>
+                        </div>
 
-                      {/* Search and Filter */}
-                      <div className="space-y-3">
+                        {/* Rotation Info for Free Users - Hidden for now */}
+                        {/* <RotationInfo className="mb-4" /> */}
+
+                        {/* Search and Filter */}
+                        <div className="space-y-3">
                         <input
                           type="text"
                           placeholder="Search tracks..."
