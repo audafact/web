@@ -23,9 +23,30 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
     
     onAddToStudio();
   };
+
+  const handleDragStart = (e: React.DragEvent) => {
+    if (tier.id === 'guest') {
+      e.preventDefault();
+      return;
+    }
+
+    e.dataTransfer.setData('text/plain', track.id);
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      type: 'library-track',
+      name: track.name,
+      id: track.id,
+      file: track.file,
+      trackType: track.type
+    }));
+    e.dataTransfer.effectAllowed = 'copy';
+  };
   
   return (
-    <div className={`track-item ${isProOnly ? 'pro-only' : ''}`}>
+    <div 
+      className={`track-item ${isProOnly ? 'pro-only' : ''}`}
+      draggable={canAddToStudio}
+      onDragStart={handleDragStart}
+    >
       <div className="track-info">
         <div className="track-header">
           <h4 className="track-name">{track.name}</h4>

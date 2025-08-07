@@ -228,7 +228,7 @@ export class AccessService {
 
 export class EnhancedAccessService extends AccessService {
   static canAccessFeature(feature: string, tier: UserTier): boolean {
-    const featureAccess = {
+    const featureAccess: Record<string, boolean> = {
       upload: tier.features.canUpload,
       save_session: tier.features.canSaveSession,
       record: tier.features.canRecord,
@@ -243,7 +243,7 @@ export class EnhancedAccessService extends AccessService {
   }
   
   static getFeatureGateConfig(feature: string, tier?: UserTier): FeatureGateConfig {
-    const configs = {
+    const configs: Record<string, FeatureGateConfig> = {
       upload: {
         gateType: 'modal',
         message: "🎧 Ready to remix your own sounds?",

@@ -547,7 +547,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         />
                         
                         <div className="text-sm audafact-text-secondary bg-audafact-surface-2 p-2 rounded">
-                          Preview tracks and add them to your studio. Guest users can preview but need to sign up to add tracks.
+                          Preview tracks and add them to your studio. Drag tracks to the studio or use the + button. Guest users can preview but need to sign up to add tracks.
                         </div>
                         
                         {/* Enhanced Library Tracks */}
