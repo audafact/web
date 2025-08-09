@@ -47,11 +47,11 @@ const TimeSignatureControls = ({
   };
 
   return (
-    <div className="flex items-center space-x-4 p-3 audafact-card">
+    <div className="flex flex-wrap items-center gap-2 md:space-x-4 md:gap-4 p-2 md:p-3 audafact-card">
       {/* Time Signature Label */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium audafact-heading">Time Signature</label>
-        <span className="text-xs audafact-text-secondary">Beats per measure</span>
+        <label className="text-xs md:text-sm font-medium audafact-heading">Time Signature</label>
+        <span className="hidden md:block text-xs audafact-text-secondary">Beats per measure</span>
       </div>
 
       {/* Custom Time Signature Input */}
@@ -62,16 +62,16 @@ const TimeSignatureControls = ({
           max="32"
           value={timeSignature.numerator}
           onChange={(e) => handleNumeratorChange(e.target.value)}
-          className="w-12 px-2 py-1 text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent text-center"
+          className="w-10 md:w-12 px-2 py-0.5 md:py-1 text-xs md:text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent text-center"
         />
-        <span className="text-sm audafact-text-secondary">/</span>
+        <span className="text-xs md:text-sm audafact-text-secondary">/</span>
         <input
           type="number"
           min="1"
           max="32"
           value={timeSignature.denominator}
           onChange={(e) => handleDenominatorChange(e.target.value)}
-          className="w-12 px-2 py-1 text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent text-center"
+          className="w-10 md:w-12 px-2 py-0.5 md:py-1 text-xs md:text-sm border border-audafact-divider rounded bg-audafact-surface-2 text-audafact-text-primary focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-transparent text-center"
         />
       </div>
 
@@ -79,7 +79,7 @@ const TimeSignatureControls = ({
       <div className="relative">
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="px-3 py-1.5 text-sm font-medium bg-audafact-surface-2 text-audafact-text-secondary border border-audafact-divider rounded-md hover:bg-audafact-divider hover:text-audafact-text-primary transition-colors duration-200"
+          className="px-2 py-1 text-xs md:px-3 md:py-1.5 md:text-sm font-medium bg-audafact-surface-2 text-audafact-text-secondary border border-audafact-divider rounded-md hover:bg-audafact-divider hover:text-audafact-text-primary transition-colors duration-200"
         >
           Common
         </button>
@@ -90,7 +90,7 @@ const TimeSignatureControls = ({
               <button
                 key={ts.label}
                 onClick={() => handleCommonTimeSignatureSelect(ts)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-audafact-surface-2 text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
+                className="w-full text-left px-3 py-2 text-xs md:text-sm hover:bg-audafact-surface-2 text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
               >
                 {ts.label}
               </button>
@@ -101,10 +101,10 @@ const TimeSignatureControls = ({
 
       {/* Current Time Signature Display */}
       <div className="flex flex-col">
-        <span className="text-sm font-medium audafact-accent-cyan">
+        <span className="text-xs md:text-sm font-medium audafact-accent-cyan">
           {timeSignature.numerator}/{timeSignature.denominator}
         </span>
-        <span className="text-xs audafact-text-secondary">
+        <span className="text-[10px] md:text-xs audafact-text-secondary">
           {timeSignature.numerator} beats per measure
         </span>
 

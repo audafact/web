@@ -873,7 +873,7 @@ const TrackControls = ({
   }, []);
 
   return (
-    <div className={`audafact-card p-4 space-y-4 ${disabled ? 'opacity-50' : ''}`}>
+    <div className={`audafact-card p-2 md:p-4 space-y-2 md:space-y-4 ${disabled ? 'opacity-50' : ''}`}>
       {/* Playback Controls */}
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-3">
@@ -895,7 +895,7 @@ const TrackControls = ({
           </div>
           
           {mode === 'loop' && (
-            <div className="text-sm audafact-text-secondary">
+            <div className="text-xs md:text-sm audafact-text-secondary">
               Loop: {loopStart.toFixed(2)}s - {loopEnd.toFixed(2)}s
             </div>
           )}
@@ -904,14 +904,14 @@ const TrackControls = ({
         {mode === 'cue' && (
           <div className="flex items-center space-x-3">
             {isSelected && (
-              <div className="text-xs audafact-text-secondary">
+              <div className="text-xs audafact-text-secondary hidden md:block">
                 Press 1-0 keys to trigger cues
               </div>
             )}
             <button
               onClick={onSelect}
               disabled={disabled}
-              className={`px-3 py-1 rounded text-sm transition-colors duration-200 ${
+              className={`px-2 py-0.5 text-xs rounded-sm md:px-3 md:py-1 md:text-sm transition-colors duration-200 ${
                 disabled
                   ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed' 
                   : isSelected 
@@ -919,17 +919,18 @@ const TrackControls = ({
                     : 'bg-audafact-surface-2 text-audafact-text-secondary hover:bg-audafact-divider hover:text-audafact-text-primary'
               }`}
             >
-              {isSelected ? 'Selected to Cue' : 'Select to Cue'}
+              <span className="md:hidden">{isSelected ? 'Selected' : 'Select'}</span>
+              <span className="hidden md:inline">{isSelected ? 'Selected to Cue' : 'Select to Cue'}</span>
             </button>
           </div>
         )}
       </div>
 
       {/* Volume and Speed Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
         {/* Volume Control */}
         <div className="space-y-2">
-          <label className="text-sm font-medium audafact-heading">Volume</label>
+          <label className="text-xs md:text-sm font-medium audafact-heading">Volume</label>
           <div className="flex items-center space-x-3">
             <input
               type="range"
@@ -956,18 +957,19 @@ const TrackControls = ({
                   });
                 }
               }}
-              className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
+              className={`flex-1 h-1.5 md:h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-sm audafact-text-secondary w-12">{Math.round(volume * 100)}%</span>
+            <span className="text-xs md:text-sm audafact-text-secondary w-10 md:w-12">{Math.round(volume * 100)}%</span>
           </div>
         </div>
 
         {/* Speed Control */}
         <div className="space-y-2">
-          <label className="text-sm font-medium audafact-heading">
-            Playback Speed: {speed.toFixed(2)}x
+          <label className="text-xs md:text-sm font-medium audafact-heading">
+            <span className="md:hidden">Speed: {speed.toFixed(2)}x</span>
+            <span className="hidden md:inline">Playback Speed: {speed.toFixed(2)}x</span>
           </label>
           <div className="flex items-center space-x-3">
             <input
@@ -997,11 +999,11 @@ const TrackControls = ({
                   });
                 }
               }}
-              className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
+              className={`flex-1 h-1.5 md:h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-sm text-gray-600 w-16">
+            <span className="text-xs md:text-sm text-gray-600 w-14 md:w-16">
               {getCurrentEffectiveTempo()} BPM
             </span>
           </div>
@@ -1112,23 +1114,47 @@ const TrackControls = ({
       {mode === 'cue' && (
         <div>
           <h4 className="text-xs font-medium mb-2 audafact-text-secondary">Cue Points</h4>
-          <div className="grid grid-cols-10 gap-1">
-            {cuePoints.map((point, index) => (
+          {/* First row: 1-5 (indexes 0-4) */}
+          <div className="grid grid-cols-5 gap-0.5 md:gap-1 mb-1">
+            {cuePoints.slice(0, 5).map((_, index) => (
               <button
-                key={index}
+                key={`cue-top-${index}`}
                 onClick={() => !disabled && playCuePoint(index)}
                 disabled={disabled}
-                className={`text-xs py-1 px-1 rounded transition-colors duration-200 ${
+                className={`h-7 md:h-8 text-[10px] md:text-xs py-0.5 md:py-1 px-1 rounded-sm md:rounded transition-colors duration-200 ${
                   disabled
                     ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
-                    : activeCueIndex === index 
-                      ? 'bg-audafact-alert-red text-audafact-text-primary' 
+                    : activeCueIndex === index
+                      ? 'bg-audafact-alert-red text-audafact-text-primary'
                       : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
                 }`}
               >
                 {index + 1}
               </button>
             ))}
+          </div>
+          {/* Second row: 6-0 (indexes 5-9, label 10th as 0) */}
+          <div className="grid grid-cols-5 gap-0.5 md:gap-1">
+            {cuePoints.slice(5, 10).map((_, idx) => {
+              const index = idx + 5;
+              const label = index === 9 ? '0' : String(index + 1);
+              return (
+                <button
+                  key={`cue-bottom-${index}`}
+                  onClick={() => !disabled && playCuePoint(index)}
+                  disabled={disabled}
+                  className={`h-7 md:h-8 text-[10px] md:text-xs py-0.5 md:py-1 px-1 rounded-sm md:rounded transition-colors duration-200 ${
+                    disabled
+                      ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
+                      : activeCueIndex === index
+                        ? 'bg-audafact-alert-red text-audafact-text-primary'
+                        : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
