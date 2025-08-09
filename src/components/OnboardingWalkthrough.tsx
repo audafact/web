@@ -29,6 +29,8 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
 }) => {
   const [targetElement, setTargetElement] = useState<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const ranActionForStepRef = useRef<string | null>(null);
+  const [, setPositionTick] = useState<number>(0);
 
   useEffect(() => {
     if (!isOpen || currentStep >= steps.length) return;
@@ -37,7 +39,81 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
     
     // Use a small delay to ensure DOM is ready
     const findElement = () => {
-      const element = document.querySelector(step.targetSelector) as HTMLElement;
+      // Ensure any step action (which may mutate the layout) runs before measuring
+      if (step.action && ranActionForStepRef.current !== step.id) {
+        ranActionForStepRef.current = step.id;
+        try {
+          step.action();
+        } catch (error) {
+          console.warn('Onboarding action failed:', error);
+        }
+        // Wait a frame so the DOM reflects the action, then re-run
+        requestAnimationFrame(() => setTimeout(findElement, 50));
+        return;
+      }
+      // There can be multiple matching elements (e.g., per-track controls).
+      // Choose the first visible, on-screen element closest to the viewport center.
+      // For some steps we want to prefer a specific selector.
+
+      const getPreferredMatches = (): HTMLElement[] => {
+        // Step-specific selector preferences
+        if (step.id === 'track-modes') {
+          const preferred = Array.from(document.querySelectorAll('[data-testid="preview-mode-button"]')) as HTMLElement[];
+          if (preferred.length > 0) return preferred;
+        }
+        if (step.id === 'volume-controls') {
+          const preferred = Array.from(document.querySelectorAll('[data-testid="volume-control"]')) as HTMLElement[];
+          if (preferred.length > 0) return preferred;
+        }
+        return Array.from(document.querySelectorAll(step.targetSelector)) as HTMLElement[];
+      };
+
+      const allMatches = getPreferredMatches();
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const viewportCenterX = viewportWidth / 2;
+      const viewportCenterY = viewportHeight / 2;
+
+      const candidates = allMatches
+        .map((el) => {
+          const rect = el.getBoundingClientRect();
+          const style = window.getComputedStyle(el);
+          const isDisplayed = style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0;
+          const hasSize = rect.width > 0 && rect.height > 0;
+          const fullyOnScreen = rect.top >= 0 && rect.left >= 0 && rect.bottom <= viewportHeight && rect.right <= viewportWidth;
+          const partiallyOnScreen = rect.right > 0 && rect.bottom > 0 && rect.left < viewportWidth && rect.top < viewportHeight;
+          const onScreen = fullyOnScreen || partiallyOnScreen;
+          const visible = isDisplayed && hasSize && onScreen;
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const distanceToCenter = Math.hypot(centerX - viewportCenterX, centerY - viewportCenterY);
+          return { el, rect, visible, distanceToCenter, fullyOnScreen };
+        })
+        .filter((x) => x.visible);
+
+      let element: HTMLElement | undefined;
+      if (candidates.length === 0) {
+        element = allMatches[0];
+      } else if (step.id === 'volume-controls') {
+        // Prefer the left-most visible range (volume slider is left-most), bias to fully visible
+        const sorted = candidates.sort((a, b) => {
+          if (a.fullyOnScreen !== b.fullyOnScreen) return a.fullyOnScreen ? -1 : 1;
+          return a.rect.left - b.rect.left;
+        });
+        element = sorted[0].el;
+      } else {
+        // Prefer fully visible closest to center; fallback to partially visible
+        const fully = candidates
+          .filter((c) => c.fullyOnScreen)
+          .sort((a, b) => a.distanceToCenter - b.distanceToCenter);
+        if (fully.length > 0) {
+          element = fully[0].el;
+        } else {
+          element = candidates
+            .sort((a, b) => a.distanceToCenter - b.distanceToCenter)[0].el;
+        }
+      }
       
       // Debug mode
       const isDebugMode = localStorage.getItem('audafact_debug_onboarding') === 'true';
@@ -49,14 +125,17 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
           console.log(`Onboarding: Found element for step "${step.id}"`, element);
         }
         
-        // Execute action if provided
-        if (step.action) {
-          try {
-            step.action();
-          } catch (error) {
-            console.warn('Onboarding action failed:', error);
-          }
+        // Ensure the element is scrolled into view so the overlay positions correctly
+        try {
+          element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+        } catch {
+          // Fallback without options in older environments
+          element.scrollIntoView();
         }
+        // Force a re-measure on the next frame after potential scroll
+        requestAnimationFrame(() => setTargetElement(element));
+
+        // Action already executed above (once per step)
       } else {
         console.warn(`Onboarding: Element not found for selector: ${step.targetSelector}`);
         if (isDebugMode) {
@@ -71,22 +150,37 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
 
     // Try immediately, then with a small delay
     findElement();
-    const timeoutId = setTimeout(findElement, 100);
+    const timeoutId = setTimeout(findElement, 150);
 
     return () => clearTimeout(timeoutId);
   }, [isOpen, currentStep]);
+
+  // Keep overlay in sync when user scrolls or resizes
+  useEffect(() => {
+    if (!isOpen) return;
+    const handle = () => setPositionTick((v) => v + 1);
+    window.addEventListener('scroll', handle, { passive: true });
+    window.addEventListener('resize', handle);
+    return () => {
+      window.removeEventListener('scroll', handle);
+      window.removeEventListener('resize', handle);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.repeat) return; // avoid auto-repeat causing race conditions
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
+        e.stopPropagation();
         handleNext();
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
+        e.stopPropagation();
         handlePrevious();
       }
     };
@@ -117,6 +211,11 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
 
   const step = steps[currentStep];
   const progress = ((currentStep + 1) / steps.length) * 100;
+
+  const getHighlightPadding = () => {
+    if (step.id === 'time-tempo-controls') return 2;
+    return 4;
+  };
 
   // Calculate tooltip position
   const getTooltipPosition = () => {
@@ -295,10 +394,10 @@ const OnboardingWalkthrough: React.FC<OnboardingWalkthroughProps> = ({
         <div
           className="absolute border-2 border-audafact-accent-cyan rounded-lg shadow-lg transition-all duration-300 ease-in-out"
           style={{
-            top: targetElement.getBoundingClientRect().top - 4,
-            left: targetElement.getBoundingClientRect().left - 4,
-            width: targetElement.getBoundingClientRect().width + 8,
-            height: targetElement.getBoundingClientRect().height + 8,
+            top: targetElement.getBoundingClientRect().top - getHighlightPadding(),
+            left: targetElement.getBoundingClientRect().left - getHighlightPadding(),
+            width: targetElement.getBoundingClientRect().width + getHighlightPadding() * 2,
+            height: targetElement.getBoundingClientRect().height + getHighlightPadding() * 2,
             pointerEvents: 'none',
             boxShadow: '0 0 0 4px rgba(6, 182, 212, 0.3), 0 0 20px rgba(6, 182, 212, 0.5)',
             opacity: targetElement ? 1 : 0,
