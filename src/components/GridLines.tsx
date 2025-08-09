@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef } from 'react';
 import { TimeSignature } from '../types/music';
 
 interface GridLinesProps {
@@ -8,7 +8,6 @@ interface GridLinesProps {
   timeSignature: TimeSignature;
   firstMeasureTime: number;
   visible?: boolean;
-  containerRef?: React.RefObject<HTMLDivElement>;
   showMeasures?: boolean; // Add prop to know when measures are being displayed
 }
 
@@ -19,11 +18,9 @@ const GridLines = ({
   timeSignature,
   firstMeasureTime,
   visible = true,
-  containerRef: externalContainerRef,
   showMeasures = false
 }: GridLinesProps) => {
   const internalContainerRef = useRef<HTMLDivElement>(null);
-  const containerRef = externalContainerRef || internalContainerRef;
 
   // Calculate beat duration in seconds (same as MeasureDisplay)
   const beatDuration = useCallback(() => {

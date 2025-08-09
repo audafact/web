@@ -1,59 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useUserTier } from '../hooks/useUserTier';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { FeatureGateProps } from '../types/music';
-import { EnhancedAccessService } from '../services/accessService';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { trackEvent } from '../services/analyticsService';
 import VisualFeatureGate from './VisualFeatureGate';
 import { getGateConfigForScreen } from '../utils/gateConfigs';
-
-// Modal Gate Component
-const ModalGate: React.FC<{ 
-  feature: string; 
-  children: React.ReactNode; 
-  onTrigger: () => void 
-}> = ({ 
-  feature, 
-  children, 
-  onTrigger 
-}) => {
-  return (
-    <div className="modal-gate" onClick={onTrigger}>
-      {children}
-    </div>
-  );
-};
-
-// Tooltip Gate Component
-const TooltipGate: React.FC<{ 
-  feature: string; 
-  children: React.ReactNode; 
-  onTrigger: () => void 
-}> = ({ 
-  feature, 
-  children, 
-  onTrigger 
-}) => {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const config = EnhancedAccessService.getFeatureGateConfig(feature);
-  
-  return (
-    <div 
-      className="tooltip-gate"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-      onClick={onTrigger}
-    >
-      {children}
-      {showTooltip && (
-        <div className="feature-tooltip">
-          {config.message}
-        </div>
-      )}
-    </div>
-  );
-};
 
 // Main FeatureGate Component
 const FeatureGate: React.FC<FeatureGateProps> = ({ 

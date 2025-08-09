@@ -7,7 +7,6 @@ interface MeasureDisplayProps {
   zoomLevel: number;
   onFirstMeasureChange: (time: number) => void;
   timeSignature: TimeSignature;
-  onTimeSignatureChange: (timeSignature: TimeSignature) => void;
   firstMeasureTime: number;
   visible?: boolean;
   containerRef?: React.RefObject<HTMLDivElement>;
@@ -19,7 +18,6 @@ const MeasureDisplay = ({
   zoomLevel,
   onFirstMeasureChange,
   timeSignature,
-  onTimeSignatureChange,
   firstMeasureTime,
   visible = true,
   containerRef: externalContainerRef
@@ -97,7 +95,6 @@ const MeasureDisplay = ({
     if (!isDraggingFirstMeasure || !containerRef.current) return;
     
     const deltaX = e.clientX - dragStartX;
-    const containerRect = containerRef.current.getBoundingClientRect();
     const relativeDeltaX = deltaX;
     const timeDelta = pixelsToTime(relativeDeltaX);
     const newTime = Math.max(0, Math.min(duration, dragStartTime + timeDelta));

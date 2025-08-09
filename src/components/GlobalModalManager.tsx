@@ -78,7 +78,6 @@ export const GlobalModalManager: React.FC = () => {
         isOpen={modalState.isOpen}
         onClose={closeSignupModal}
         trigger={modalState.trigger}
-        action={modalState.action}
       />
       
       {/* Message Display */}

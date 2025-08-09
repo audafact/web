@@ -11,14 +11,12 @@ interface SignupModalProps {
   isOpen: boolean;
   onClose: () => void;
   trigger: string;
-  action?: string;
 }
 
 const SignupModal: React.FC<SignupModalProps> = ({
   isOpen,
   onClose,
   trigger,
-  action
 }) => {
   const { signIn } = useAuth();
   const { cacheIntent } = usePostSignupActions();

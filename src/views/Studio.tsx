@@ -2126,7 +2126,6 @@ const Studio = () => {
             onUploadTrack={handleUploadTrack}
             onAddFromLibrary={handleAddFromLibrary}
             onAddUserTrack={handleAddUserTrack}
-            isLoading={isLoading}
           />
         )}
       </>
@@ -2361,7 +2360,6 @@ const Studio = () => {
           onUploadTrack={handleUploadTrack}
           onAddFromLibrary={handleAddFromLibrary}
           onAddUserTrack={handleAddUserTrack}
-          isLoading={isLoading}
         />
       </>
     );
@@ -2787,7 +2785,6 @@ const Studio = () => {
                     initialTempo={track.tempo}
                     onTempoChange={handleTempoChange}
                     playbackSpeed={playbackSpeeds[track.id] || 1}
-                    onSpeedChange={handleSpeedChange}
                   />
                 </div>
 
@@ -2847,11 +2844,7 @@ const Studio = () => {
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
                 cuePoints={track.cuePoints}
-                onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
-                onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
                 ensureAudio={ensureAudioBeforeAction}
-                trackColor={track.mode === 'loop' ? 'indigo' : track.mode === 'cue' ? 'red' : 'blue'}
-                setPlayhead={track.mode === 'loop' ? setLoopPlayhead : setSamplePlayhead}
                 isSelected={track.id === selectedCueTrackId}
                 onSelect={() => handleTrackSelect(track.id)}
                 onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}
@@ -2893,7 +2886,6 @@ const Studio = () => {
         onUploadTrack={handleUploadTrack}
         onAddFromLibrary={handleAddFromLibrary}
         onAddUserTrack={handleAddUserTrack}
-        isLoading={isLoading}
       />
       
 
@@ -2903,7 +2895,6 @@ const Studio = () => {
         isOpen={modalState.isOpen}
         onClose={closeSignupModal}
         trigger={modalState.trigger}
-        action={modalState.action}
       />
       
       {/* Upgrade Prompt Modal */}

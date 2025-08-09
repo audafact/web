@@ -31,7 +31,7 @@ const MobileGate: React.FC<MobileGateProps> = ({
   const { tier } = useUserTier();
   const { canAccessFeature } = useAccessControl();
   
-  const hasAccess = canAccessFeature(feature, tier);
+  const hasAccess = canAccessFeature(feature);
   
   const handleClick = (e: React.MouseEvent) => {
     if (!hasAccess) {
@@ -42,7 +42,7 @@ const MobileGate: React.FC<MobileGateProps> = ({
       trackEvent('mobile_gate_tapped', {
         feature,
         screenSize: isMobile ? 'mobile' : 'tablet',
-        userTier: tier
+        userTier: tier.id
       });
       
       if (onClick) {

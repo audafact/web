@@ -22,6 +22,8 @@ export interface TrackingEvents {
   
   // Feature gate interactions
   'feature_gate_clicked': { feature: string; userTier: string; gateType: string };
+  'tooltip_shown': { feature: string; tooltipText?: string; userTier: string };
+  'mobile_gate_tapped': { feature: string; screenSize: 'mobile' | 'tablet'; userTier: string };
   'signup_modal_shown': { trigger: string; userTier: string };
   'signup_modal_dismissed': { trigger: string; userTier: string };
   

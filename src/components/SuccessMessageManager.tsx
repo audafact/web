@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useMessageSystem } from '../hooks/useMessageSystem';
 import SuccessMessage from './SuccessMessage';
-import { SUCCESS_MESSAGES } from '../types/postSignup';
 
 const SuccessMessageManager: React.FC = () => {
   const { messages } = useMessageSystem();

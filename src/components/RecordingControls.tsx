@@ -5,8 +5,6 @@ import { useAccessControl } from '../hooks/useAccessControl';
 import { UpgradePrompt } from './UpgradePrompt';
 import { useUserTier } from '../hooks/useUserTier';
 import { showSignupModal } from '../hooks/useSignupModal';
-import FeatureGate from './FeatureGate';
-import { useAuth } from '../context/AuthContext';
 
 interface RecordingControlsProps {
   className?: string;
@@ -21,9 +19,8 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     startPerformanceRecording, 
     stopPerformanceRecording
   } = useRecording();
-  const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
+  const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { tier } = useUserTier();
-  const { user } = useAuth();
   
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);

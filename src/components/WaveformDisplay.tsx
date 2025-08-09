@@ -9,7 +9,6 @@ import { showSignupModal } from '../hooks/useSignupModal';
 interface WaveformDisplayProps {
   audioFile: File;
   mode: 'preview' | 'loop' | 'cue';
-  audioContext: AudioContext | null;
   loopStart: number;
   loopEnd: number;
   cuePoints: number[];
@@ -28,12 +27,8 @@ interface WaveformDisplayProps {
   timeSignature?: TimeSignature;
   firstMeasureTime?: number;
   onFirstMeasureChange?: (time: number) => void;
-  onTimeSignatureChange?: (timeSignature: TimeSignature) => void;
   // Cue thumb props
   showCueThumbs?: boolean;
-  // Volume
-  volume?: number;
-  onVolumeChange?: (volume: number) => void;
   // Playback control
   isPlaying?: boolean;
   // Playhead position change callback
@@ -48,7 +43,6 @@ const WaveformDisplay = ({
   audioFile,
   mode,
   playhead,
-  audioContext,
   loopStart,
   loopEnd,
   cuePoints,
@@ -66,12 +60,8 @@ const WaveformDisplay = ({
   timeSignature = { numerator: 4, denominator: 4 },
   firstMeasureTime = 0,
   onFirstMeasureChange,
-  onTimeSignatureChange,
   // Cue thumb props
   showCueThumbs = false,
-  // Volume
-  volume = 1,
-  onVolumeChange,
   // Playback control
   isPlaying = false,
   // Playhead position change callback
@@ -130,25 +120,6 @@ const WaveformDisplay = ({
       }
     };
   }, []);
-
-  const shouldUpdateRegions = useMemo(() => {
-    const modeChanged = prevModeRef.current !== mode;
-    const loopChanged = mode === 'loop' && (
-      prevLoopStartRef.current !== loopStart || 
-      prevLoopEndRef.current !== loopEnd
-    );
-    const cuePointsChanged = mode === 'cue' && (
-      prevCuePointsRef.current.length !== cuePoints.length ||
-      prevCuePointsRef.current.some((point, index) => point !== cuePoints[index])
-    );
-    
-    // In preview mode, we don't need to update regions
-    if (mode === 'preview') {
-      return modeChanged;
-    }
-    
-    return modeChanged || loopChanged || cuePointsChanged;
-  }, [mode, loopStart, loopEnd, cuePoints]);
 
   // Effect to create/revoke Blob URL
   useEffect(() => {
@@ -391,8 +362,6 @@ const WaveformDisplay = ({
         // Force a small delay to ensure removal is complete
         await new Promise(resolve => setTimeout(resolve, 10));
         
-        // Double-check that regions are actually removed
-        const remainingRegions = regionsPluginRef.current.getRegions();
       } catch (e) {
         console.warn('Error clearing all regions:', e);
       }
@@ -1008,7 +977,6 @@ const WaveformDisplay = ({
                 timeSignature={timeSignature}
                 firstMeasureTime={firstMeasureTime}
                 visible={true}
-                containerRef={containerRef}
                 showMeasures={internalShowMeasures}
               />
             )}
@@ -1022,7 +990,6 @@ const WaveformDisplay = ({
                 zoomLevel={zoomLevel}
                 onFirstMeasureChange={onFirstMeasureChange || (() => {})}
                 timeSignature={timeSignature}
-                onTimeSignatureChange={onTimeSignatureChange || (() => {})}
                 firstMeasureTime={firstMeasureTime}
                 visible={internalShowMeasures}
                 containerRef={containerRef}

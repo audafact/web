@@ -2,19 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
-import { AccessService } from '../services/accessService';
 import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useUserTier } from '../hooks/useUserTier';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
-import { trackEvent } from '../services/analyticsService';
 import { UpgradePrompt } from './UpgradePrompt';
 import { LibraryService } from '../services/libraryService';
 import { LibraryTrack } from '../types/music';
 import LibraryTrackItem from './LibraryTrackItem';
-import FeatureGate from './FeatureGate';
 import { showSignupModal } from '../hooks/useSignupModal';
-import RotationInfo from './RotationInfo';
 
 interface AudioAsset {
   id: string;
@@ -41,7 +37,6 @@ interface SidePanelProps {
   onUploadTrack: (file: File, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddFromLibrary: (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddUserTrack: (track: UserTrack, trackType: 'preview' | 'loop' | 'cue') => void;
-  isLoading: boolean;
   initialMode?: 'upload' | 'library';
 }
 
@@ -51,7 +46,6 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onUploadTrack,
   onAddFromLibrary,
   onAddUserTrack,
-  isLoading,
   initialMode
 }) => {
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();

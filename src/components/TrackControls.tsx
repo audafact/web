@@ -9,11 +9,7 @@ interface TrackControlsProps {
   loopStart: number;
   loopEnd: number;
   cuePoints: number[];
-  onLoopPointsChange: (start: number, end: number) => void;
-  onCuePointChange: (index: number, time: number) => void;
   ensureAudio: (callback: () => void) => Promise<void>;
-  setPlayhead: (time: number) => void;
-  trackColor?: 'indigo' | 'red' | 'blue';
   isSelected?: boolean;
   onSelect?: () => void;
   onPlaybackTimeChange?: (time: number) => void;
@@ -55,11 +51,7 @@ const TrackControls = ({
   loopStart, 
   loopEnd, 
   cuePoints, 
-  onLoopPointsChange, 
-  onCuePointChange, 
   ensureAudio, 
-  setPlayhead, 
-  trackColor = 'indigo',
   isSelected = false,
   onSelect,
   onPlaybackTimeChange,
@@ -101,8 +93,6 @@ const TrackControls = ({
   }, [recordingDestination, isPlaying, trackId, audioContext, mode]);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState<number | null>(null);
-  const [isSpeedSliderHovered, setIsSpeedSliderHovered] = useState(false);
-  const [isSpeedSliderDragging, setIsSpeedSliderDragging] = useState(false);
   
   // Filter state
   const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
@@ -162,11 +152,6 @@ const TrackControls = ({
     const stepSize = Math.max(0.001, Math.min(0.05, 1 / trackTempo));
     
     return { minTempo, maxTempo, stepSize };
-  }, [trackTempo]);
-
-  // Convert tempo to speed multiplier
-  const tempoToSpeed = useCallback((targetTempo: number) => {
-    return targetTempo / trackTempo;
   }, [trackTempo]);
 
   // Convert speed multiplier to tempo

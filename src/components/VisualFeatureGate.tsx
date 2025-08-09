@@ -5,39 +5,7 @@ import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { trackEvent } from '../services/analyticsService';
 
-interface LockedFeatureStyles {
-  opacity: number;
-  cursor: string;
-  position: 'relative' | 'absolute';
-  lockIcon: {
-    position: 'top-right' | 'center' | 'overlay';
-    size: 'small' | 'medium' | 'large';
-    color: string;
-    background: string;
-  };
-  disabledState: {
-    background: string;
-    color: string;
-    border: string;
-  };
-}
-
-const LOCKED_FEATURE_CONFIG: LockedFeatureStyles = {
-  opacity: 0.6,
-  cursor: 'not-allowed',
-  position: 'relative',
-  lockIcon: {
-    position: 'top-right',
-    size: 'small',
-    color: '#ffffff',
-    background: 'rgba(0, 0, 0, 0.8)'
-  },
-  disabledState: {
-    background: '#f3f4f6',
-    color: '#9ca3af',
-    border: '#d1d5db'
-  }
-};
+// Removed unused LockedFeatureStyles and LOCKED_FEATURE_CONFIG
 
 interface VisualFeatureGateProps {
   feature: string;
@@ -70,7 +38,7 @@ const VisualFeatureGate: React.FC<VisualFeatureGateProps> = ({
   const timeoutRef = useRef<NodeJS.Timeout>();
   const triggerRef = useRef<HTMLDivElement>(null);
   
-  const hasAccess = canAccessFeature(feature, tier);
+  const hasAccess = canAccessFeature(feature);
   
   const handleClick = (e: React.MouseEvent) => {
     if (!hasAccess) {
@@ -78,11 +46,10 @@ const VisualFeatureGate: React.FC<VisualFeatureGateProps> = ({
       e.stopPropagation();
       
       // Track interaction
-      trackEvent('gate_clicked', {
+      trackEvent('feature_gate_clicked', {
         feature,
         gateType,
-        userTier: tier,
-        screenSize: isMobile ? 'mobile' : isTablet ? 'tablet' : 'desktop'
+        userTier: tier.id
       });
       
       if (onClick) {
@@ -128,7 +95,7 @@ const VisualFeatureGate: React.FC<VisualFeatureGateProps> = ({
       trackEvent('tooltip_shown', {
         feature,
         tooltipText,
-        userTier: tier
+        userTier: tier.id
       });
     }
   };

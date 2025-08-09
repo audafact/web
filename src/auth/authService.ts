@@ -1,5 +1,5 @@
 import { supabase } from '../services/supabase';
-import { AuthError, User } from '@supabase/supabase-js';
+import { User } from '@supabase/supabase-js';
 
 export interface AuthResponse {
   success: boolean;
@@ -144,7 +144,7 @@ export const authService = {
   // Sign in with Google
   async signInWithGoogle(): Promise<AuthResponse> {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`

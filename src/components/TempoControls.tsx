@@ -5,7 +5,6 @@ interface TempoControlsProps {
   initialTempo?: number;
   onTempoChange: (trackId: string, tempo: number) => void;
   playbackSpeed?: number;
-  onSpeedChange?: (trackId: string, speed: number) => void;
 }
 
 const TempoControls = ({ 
@@ -13,7 +12,6 @@ const TempoControls = ({
   initialTempo = 120, 
   onTempoChange, 
   playbackSpeed = 1,
-  onSpeedChange
 }: TempoControlsProps) => {
   const [tempo, setTempo] = useState(initialTempo);
   const [tempoInput, setTempoInput] = useState(initialTempo.toString());
