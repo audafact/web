@@ -16,7 +16,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
     { key: '?', description: 'Show this help modal' },
     { key: 'Z', description: 'Zoom in on waveform' },
     { key: 'X', description: 'Zoom out on waveform' },
-    { key: 'R', description: 'Reset zoom level' }
+    { key: 'C', description: 'Reset zoom level' }
   ];
 
   const tips = [

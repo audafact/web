@@ -933,9 +933,44 @@ const WaveformDisplay = ({
 
   return (
     <div className="w-full box-border overflow-hidden relative">
+      {/* Compact Zoom Controls Overlay */}
+      <div className="absolute top-2 right-2 z-20 flex items-center gap-1 bg-audafact-surface-2 bg-opacity-80 border border-audafact-divider rounded-md shadow-sm px-1 py-0.5">
+        <button
+          type="button"
+          onClick={onZoomOut}
+          className="p-1 rounded hover:bg-audafact-surface-1 text-audafact-text-secondary hover:text-audafact-accent-cyan focus:outline-none"
+          title="Zoom Out (X)"
+          aria-label="Zoom out"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={onResetZoom}
+          className="px-1.5 py-0.5 text-[10px] leading-none rounded hover:bg-audafact-surface-1 text-audafact-text-secondary hover:text-audafact-accent-cyan focus:outline-none"
+          title="Reset Zoom (C)"
+          aria-label="Reset zoom"
+        >
+          {(typeof zoomLevel === 'number' ? zoomLevel : 1).toFixed(2).replace(/\.00$/, '')}x
+        </button>
+        <button
+          type="button"
+          onClick={onZoomIn}
+          className="p-1 rounded hover:bg-audafact-surface-1 text-audafact-text-secondary hover:text-audafact-accent-cyan focus:outline-none"
+          title="Zoom In (Z)"
+          aria-label="Zoom in"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+      </div>
       {!isReady && (
         <div className="absolute inset-0 flex items-center justify-center audafact-text-secondary bg-audafact-surface-1 z-10">
-          Loading waveform...
+          {`Loading waveform... ${mode}`}
         </div>
       )}
 

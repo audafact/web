@@ -481,6 +481,24 @@ const Studio = () => {
         return;
       }
 
+      // Zoom shortcuts: z=zoom in, x=zoom out, c=reset (affects first track)
+      if (tracks.length > 0) {
+        const activeTrackId = tracks[0].id;
+        if (event.key === 'z' || event.key === 'Z') {
+          event.preventDefault();
+          handleZoomIn(activeTrackId);
+          return;
+        } else if (event.key === 'x' || event.key === 'X') {
+          event.preventDefault();
+          handleZoomOut(activeTrackId);
+          return;
+        } else if (event.key === 'c' || event.key === 'C') {
+          event.preventDefault();
+          handleResetZoom(activeTrackId);
+          return;
+        }
+      }
+
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         handlePreviousTrack();
