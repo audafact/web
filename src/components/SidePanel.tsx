@@ -72,6 +72,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
     const savedTab = localStorage.getItem('sidePanelActiveSessionsTab');
     return (savedTab as 'saved' | 'shared' | null) || 'saved'; // Default to saved sessions
   });
+  // When true, allow user to collapse the submenu without auto-selecting another
+  const [allowEmptyAudioTab, setAllowEmptyAudioTab] = useState(false);
+  const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
   
 
   const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
@@ -160,15 +163,34 @@ const SidePanel: React.FC<SidePanelProps> = ({
       localStorage.setItem('sidePanelExpandedMenus', JSON.stringify(newState));
       return newState;
     });
+    // Reset empty-allow flags when menus are toggled so defaults work on next open
+    if (menuKey === 'audio-library') {
+      setAllowEmptyAudioTab(false);
+    }
+    if (menuKey === 'sessions') {
+      setAllowEmptySessionsTab(false);
+    }
   };
 
   // Handle submenu item selection
   const handleAudioTabSelect = (tab: 'my-tracks' | 'library') => {
-    setActiveAudioTab(prev => prev === tab ? null : tab);
+    setActiveAudioTab(prev => {
+      const next = prev === tab ? null : tab;
+      // If collapsing (setting to null), allow empty so we don't auto-select the other tab
+      setAllowEmptyAudioTab(next === null);
+      // If selecting a tab, disable empty allowance
+      if (next !== null) setAllowEmptyAudioTab(false);
+      return next;
+    });
   };
 
   const handleSessionsTabSelect = (tab: 'saved' | 'shared') => {
-    setActiveSessionsTab(prev => prev === tab ? null : tab);
+    setActiveSessionsTab(prev => {
+      const next = prev === tab ? null : tab;
+      setAllowEmptySessionsTab(next === null);
+      if (next !== null) setAllowEmptySessionsTab(false);
+      return next;
+    });
   };
 
 
@@ -187,17 +209,17 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   // Auto-select library tab when tracks menu is expanded and no tab is selected
   useEffect(() => {
-    if (expandedMenus['audio-library'] && !activeAudioTab) {
+    if (expandedMenus['audio-library'] && !activeAudioTab && !allowEmptyAudioTab) {
       setActiveAudioTab('library');
     }
-  }, [expandedMenus['audio-library'], activeAudioTab]);
+  }, [expandedMenus['audio-library'], activeAudioTab, allowEmptyAudioTab]);
 
   // Auto-select saved sessions tab when sessions menu is expanded and no tab is selected
   useEffect(() => {
-    if (expandedMenus['sessions'] && !activeSessionsTab) {
+    if (expandedMenus['sessions'] && !activeSessionsTab && !allowEmptySessionsTab) {
       setActiveSessionsTab('saved');
     }
-  }, [expandedMenus['sessions'], activeSessionsTab]);
+  }, [expandedMenus['sessions'], activeSessionsTab, allowEmptySessionsTab]);
 
   // Save tab preferences to localStorage whenever they change
   useEffect(() => {
