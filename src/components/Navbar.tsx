@@ -6,28 +6,35 @@ import { PerformanceDashboard } from './PerformanceDashboard';
 
 const Navbar = () => {
   const { user, loading, signOut } = useAuth();
-  const { toggleSidePanel } = useSidePanel();
+  const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const location = useLocation();
   const isStudioPage = location.pathname === '/studio';
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
     <nav className="sticky top-0 bg-audafact-surface-1 border-b border-audafact-divider shadow-card z-50">
-      <div className="w-full px-8">
-        <div className="flex items-center h-16 relative">
+      <div className="w-full px-4 md:px-8">
+        <div className="flex items-center h-14 md:h-16 relative">
           {/* Left side: Hamburger menu and Logo/Brand */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 md:gap-4">
             {/* Hamburger Menu Button - Show on studio page for all users */}
             {isStudioPage && (
               <button
                 onClick={toggleSidePanel}
                 className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
-                aria-label="Toggle sidebar"
+                aria-label={isSidePanelOpen ? 'Close sidebar' : 'Open sidebar'}
                 data-testid="side-panel-toggle"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
+                {isSidePanelOpen ? (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                )}
               </button>
             )}
             
@@ -38,14 +45,14 @@ const Navbar = () => {
               <img 
                 src="/favicon.svg" 
                 alt="Audafact Logo" 
-                className="w-8 h-8"
+                className="w-7 h-7 md:w-8 md:h-8"
               />
-              <span className="text-xl font-poppins font-bold">Audafact</span>
+              <span className="text-lg md:text-xl font-poppins font-bold">Audafact</span>
             </Link>
           </div>
 
-          {/* Navigation Links - Absolutely Centered */}
-          <div className="hidden md:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
+          {/* Navigation Links - Absolutely Centered (show on lg+ to avoid overlap on tablet portrait) */}
+          <div className="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
             {!user && (
               <Link 
                 to="/" 
@@ -81,7 +88,7 @@ const Navbar = () => {
           </div>
 
           {/* Auth Section */}
-          <div className="flex items-center space-x-4 ml-auto">
+          <div className="flex items-center space-x-2 md:space-x-4 ml-auto">
             {/* Performance Dashboard Button - Only show in development */}
             {process.env.NODE_ENV === 'development' && (
               <button
@@ -98,14 +105,14 @@ const Navbar = () => {
             
             {!loading && (
               user ? (
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2 md:space-x-4">
                   <Link
                     to="/profile"
-                    className="text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200 text-sm"
+                    className="hidden sm:inline text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200 text-sm"
                   >
                     Profile
                   </Link>
-                  <span className="text-audafact-text-secondary text-sm">
+                  <span className="hidden md:inline text-audafact-text-secondary text-sm">
                     {user.email}
                   </span>
                   <button
@@ -118,13 +125,101 @@ const Navbar = () => {
               ) : (
                 <Link
                   to="/auth"
-                  className="audafact-button-primary"
+                  className="audafact-button-primary px-3 py-1.5 md:px-4 md:py-2"
                 >
                   Sign In
                 </Link>
               )
             )}
+
+            {/* Mobile menu toggle (shown on < lg) */}
+            <button
+              onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+              className="p-2 rounded-lg lg:hidden text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 transition-colors duration-200"
+              aria-label="Toggle navigation menu"
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-nav"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
           </div>
+        </div>
+      </div>
+
+      {/* Mobile dropdown menu */}
+      <div
+        id="mobile-nav"
+        className={`${isMobileMenuOpen ? 'block' : 'hidden'} lg:hidden border-t border-audafact-divider bg-audafact-surface-1`}
+      >
+        <div className="px-4 py-3 space-y-2">
+          {!user && (
+            <Link
+              to="/"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                location.pathname === '/'
+                  ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                  : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+              }`}
+            >
+              Home
+            </Link>
+          )}
+          <Link
+            to="/studio"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+              location.pathname === '/studio'
+                ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+            }`}
+          >
+            Studio
+          </Link>
+          <Link
+            to="/pricing"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+              location.pathname === '/pricing'
+                ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+            }`}
+          >
+            Pricing
+          </Link>
+
+          {/* Account section */}
+          {!loading && (
+            user ? (
+              <div className="pt-2 mt-2 border-t border-audafact-divider">
+                <Link
+                  to="/profile"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block px-2 py-2 rounded-lg text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
+                >
+                  Profile
+                </Link>
+                <button
+                  onClick={() => { setIsMobileMenuOpen(false); signOut(); }}
+                  className="w-full text-left px-2 py-2 rounded-lg text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : (
+              <div className="pt-2 mt-2 border-t border-audafact-divider">
+                <Link
+                  to="/auth"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block px-2 py-2 rounded-lg bg-audafact-accent-blue text-audafact-text-primary text-center font-medium hover:bg-opacity-90 transition-colors duration-200"
+                >
+                  Sign In
+                </Link>
+              </div>
+            )
+          )}
         </div>
       </div>
       
