@@ -11,23 +11,25 @@ import { createOnboardingSteps, createQuickOnboardingSteps } from '../config/onb
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
-import ModeSelector from '../components/ModeSelector';
+// import ModeSelector from '../components/ModeSelector';
 import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
 import RecordingControls from '../components/RecordingControls';
 import SidePanel from '../components/SidePanel';
 import SignupModal from '../components/SignupModal';
 import DemoModeIndicator from '../components/DemoModeIndicator';
-import DemoTrackInfo from '../components/DemoTrackInfo';
-import NextTrackButton from '../components/NextTrackButton';
+// import DemoTrackInfo from '../components/DemoTrackInfo';
+// import NextTrackButton from '../components/NextTrackButton';
 import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
-import { AccessService } from '../services/accessService';
+// import { AccessService } from '../services/accessService';
 import { TimeSignature } from '../types/music';
+import { useUserTier } from '../hooks/useUserTier';
+import { LibraryService } from '../services/libraryService';
 
-// Define available audio assets - lazy load audio files
-const audioAssets: AudioAsset[] = [
+// Default bundled audio assets - used as fallback when no Supabase library tracks are available
+const defaultAudioAssets: AudioAsset[] = [
   {
     id: 'ron-drums',
     name: 'RON Drums',
@@ -102,11 +104,14 @@ const Studio = () => {
   const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
   const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
+  const { tier } = useUserTier();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
+  // Unified list of assets available for navigation (Supabase library if available, else defaults)
+  const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>(defaultAudioAssets);
 
   // Onboarding handlers
   const onboardingHandlers = {
@@ -209,8 +214,8 @@ const Studio = () => {
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
   const [touchEndY, setTouchEndY] = useState<number | null>(null);
-  const [isSwiping, setIsSwiping] = useState<boolean>(false);
-  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
+  // const [isSwiping, setIsSwiping] = useState<boolean>(false);
+  // const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
   const [isWaveformScrolling, setIsWaveformScrolling] = useState<boolean>(false);
   
   // Add track functionality state
@@ -301,6 +306,35 @@ const Studio = () => {
     setCanAddTrack(!hasPreviewTrack);
   }, [tracks]);
 
+  // Load library tracks for navigation based on tier
+  useEffect(() => {
+    let isCancelled = false;
+    const loadAssets = async () => {
+      try {
+      if (isDemoMode) return; // demo mode uses curated demo flow
+        const libraryTracks = await LibraryService.getLibraryTracks(tier.id);
+        if (isCancelled) return;
+        if (libraryTracks && libraryTracks.length > 0) {
+          const mapped: AudioAsset[] = libraryTracks.map(t => ({
+            id: t.id,
+            name: t.name,
+            file: t.file,
+            type: t.type,
+            size: t.size
+          }));
+          setAvailableAssets(mapped);
+        } else {
+          setAvailableAssets(defaultAudioAssets);
+        }
+      } catch (e) {
+        console.error('Failed to load library tracks:', e);
+        if (!isCancelled) setAvailableAssets(defaultAudioAssets);
+      }
+    };
+    loadAssets();
+    return () => { isCancelled = true; };
+  }, [tier.id, isDemoMode]);
+
   // Load a random track on component mount
   useEffect(() => {
     const loadRandomTrack = async () => {
@@ -318,8 +352,9 @@ const Studio = () => {
             type: currentDemoTrack.type
           };
         } else {
-          const randomIndex = Math.floor(Math.random() * audioAssets.length);
-          asset = audioAssets[randomIndex];
+          const sourceAssets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+          const randomIndex = Math.floor(Math.random() * sourceAssets.length);
+          asset = sourceAssets[randomIndex];
         }
         
         // Use existing audio context if available
@@ -383,7 +418,14 @@ const Studio = () => {
         };
         
         setTracks([newTrack]);
-        setCurrentTrackIndex(0);
+        // Align navigation index with chosen asset
+        if (!isDemoMode) {
+          const sourceAssets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+          const idx = sourceAssets.findIndex(a => a.id === asset.id);
+          setCurrentTrackIndex(Math.max(0, idx));
+        } else {
+          setCurrentTrackIndex(0);
+        }
         setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
         setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
         setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
@@ -427,7 +469,7 @@ const Studio = () => {
     if (tracks.length === 0 && !isManuallyAddingTrack) {
       loadRandomTrack();
     }
-  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack, onboarding]);
+  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack, onboarding, availableAssets]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -484,7 +526,7 @@ const Studio = () => {
             showMeasures: settings.showMeasures || false
           };
           
-          setTracks([updatedTrack]);
+        setTracks([updatedTrack]);
           setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
           setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
           setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
@@ -500,6 +542,8 @@ const Studio = () => {
             fromTrackId: tracks[0]?.id,
             toTrackId: trackId
           });
+          // keep index at 0 in demo mode
+          setCurrentTrackIndex(0);
           
         } catch (error) {
           console.error('Error updating demo track:', error);
@@ -540,8 +584,6 @@ const Studio = () => {
     
     setTouchStartX(e.targetTouches[0].clientX);
     setTouchStartY(e.targetTouches[0].clientY);
-    setIsSwiping(false);
-    setSwipeDirection(null);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -598,8 +640,7 @@ const Studio = () => {
     const isHorizontalSwipe = deltaX > 100 && deltaX > deltaY * 3 && deltaY < 50;
     
     if (isHorizontalSwipe) {
-      setIsSwiping(true);
-      setSwipeDirection((touchStartX - currentX) > 0 ? 'left' : 'right');
+      // Horizontal swipe in progress
     }
   };
 
@@ -656,8 +697,6 @@ const Studio = () => {
       setTouchEndX(null);
       setTouchStartY(null);
       setTouchEndY(null);
-      setIsSwiping(false);
-      setSwipeDirection(null);
       setShowAddTrackGesture(false);
       return;
     }
@@ -673,8 +712,6 @@ const Studio = () => {
       setTouchEndX(null);
       setTouchStartY(null);
       setTouchEndY(null);
-      setIsSwiping(false);
-      setSwipeDirection(null);
       setShowAddTrackGesture(false);
       return;
     }
@@ -731,8 +768,6 @@ const Studio = () => {
     setTouchEndX(null);
     setTouchStartY(null);
     setTouchEndY(null);
-    setIsSwiping(false);
-    setSwipeDirection(null);
     setShowAddTrackGesture(false);
   };
 
@@ -823,11 +858,12 @@ const Studio = () => {
       // In demo mode, load next demo track
       loadRandomDemoTrack();
     } else {
-      // Normal mode - cycle through audio assets
-      const nextIndex = (currentTrackIndex + 1) % audioAssets.length;
+      // Normal mode - cycle through available assets
+      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const nextIndex = (currentTrackIndex + 1) % assets.length;
       await loadTrackByIndex(nextIndex, true); // true = only update first track
     }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack, availableAssets]);
 
   const handlePreviousTrack = useCallback(async () => {
     if (isTrackLoading || isDemoLoading) return; // Disable during loading
@@ -837,11 +873,12 @@ const Studio = () => {
       // In demo mode, load next demo track (since we don't have previous demo track concept)
       loadRandomDemoTrack();
     } else {
-      // Normal mode - cycle through audio assets
-      const prevIndex = currentTrackIndex === 0 ? audioAssets.length - 1 : currentTrackIndex -1;
+      // Normal mode - cycle through available assets
+      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const prevIndex = currentTrackIndex === 0 ? assets.length - 1 : currentTrackIndex - 1;
       await loadTrackByIndex(prevIndex, true); // true = only update first track
     }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack, availableAssets]);
 
   const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
     try {
@@ -849,7 +886,9 @@ const Studio = () => {
 
       setError(null);
       
-      const asset = audioAssets[index];
+      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const safeIndex = ((index % assets.length) + assets.length) % assets.length;
+      const asset = assets[safeIndex];
       
       // Use existing audio context if available
       let context = audioContext;
@@ -926,7 +965,7 @@ const Studio = () => {
         // Replace all tracks (original behavior)
         setTracks([newTrack]);
       }
-      setCurrentTrackIndex(index);
+      setCurrentTrackIndex(safeIndex);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
       setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
@@ -971,15 +1010,16 @@ const Studio = () => {
       setError(null);
       
       // Select a random asset that's different from existing tracks
+      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
       const existingAssetIds = tracks.map(track => track.id);
-      const availableAssets = audioAssets.filter(asset => !existingAssetIds.includes(asset.id));
+      const unusedAssets = assets.filter(asset => !existingAssetIds.includes(asset.id));
       
       // If all assets are used, allow duplicates but with different IDs
       let selectedAsset;
-      if (availableAssets.length > 0) {
-        selectedAsset = availableAssets[Math.floor(Math.random() * availableAssets.length)];
+      if (unusedAssets.length > 0) {
+        selectedAsset = unusedAssets[Math.floor(Math.random() * unusedAssets.length)];
       } else {
-        selectedAsset = audioAssets[Math.floor(Math.random() * audioAssets.length)];
+        selectedAsset = assets[Math.floor(Math.random() * assets.length)];
       }
       
       // Use existing audio context
@@ -1238,9 +1278,20 @@ const Studio = () => {
     }
     
     setTracks(prev => 
-      prev.map(track => 
-        track && track.id === trackId ? { ...track, mode } : track
-      )
+      prev.map(track => {
+        if (!track || track.id !== trackId) return track;
+        // When switching to cue mode, auto-generate default cue points if none exist
+        if (mode === 'cue' && (!track.cuePoints || track.cuePoints.length === 0)) {
+          const duration = track.buffer?.duration || 0;
+          const autoCues = Array.from({ length: 10 }, (_, i) => duration * (i / 10));
+          // persist cue points
+          const settings = loadTrackSettingsFromLocal(trackId) || {};
+          saveTrackSettingsToLocal(trackId, { ...settings, cuePoints: autoCues });
+          saveCuePointsToLocal(trackId, autoCues);
+          return { ...track, mode, cuePoints: autoCues };
+        }
+        return { ...track, mode };
+      })
     );
     
     // Handle state transitions when switching modes
@@ -1519,8 +1570,9 @@ const Studio = () => {
       const trackId = e.dataTransfer.getData('text/plain');
       if (!trackId) return;
       
-      // Find the asset in the audioAssets array
-      const asset = audioAssets.find(a => a.id === trackId);
+      // Find the asset in the available assets list
+      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const asset = assets.find(a => a.id === trackId);
       if (asset) {
         // Add from library
         await handleAddFromLibrary(asset, 'preview');
@@ -1900,8 +1952,9 @@ const Studio = () => {
           type: currentDemoTrack.type
         };
       } else {
-        const randomIndex = Math.floor(Math.random() * audioAssets.length);
-        asset = audioAssets[randomIndex];
+        const sourceAssets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+        const randomIndex = Math.floor(Math.random() * sourceAssets.length);
+        asset = sourceAssets[randomIndex];
       }
       
       const response = await fetch(asset.file);
