@@ -466,10 +466,14 @@ const Studio = () => {
     };
 
     // Only load a random track if there are no tracks currently loaded
-    if (tracks.length === 0 && !isManuallyAddingTrack) {
+    if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading) {
+      // In demo mode, wait until a demo track is selected to avoid double-loading
+      if (isDemoMode && !currentDemoTrack) {
+        return;
+      }
       loadRandomTrack();
     }
-  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack, onboarding, availableAssets]);
+  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack, onboarding, availableAssets, isTrackLoading]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -515,6 +519,8 @@ const Studio = () => {
   // Handle demo track changes
   useEffect(() => {
     if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
+      // If the currently loaded track already matches the demo track, do nothing
+      if (tracks[0]?.id === currentDemoTrack.id) return;
       // Update the current track with the new demo track
       const updateTrackWithDemoTrack = async () => {
         try {
@@ -1960,9 +1966,13 @@ const Studio = () => {
       const context = await initializeAudio();
       setIsAudioInitialized(true);
       
-      // Load demo track if in demo mode, otherwise load random track
+      // Load demo track if in demo mode; if no demo selected yet, just return and let demo selection trigger update
       let asset;
-      if (isDemoMode && currentDemoTrack) {
+      if (isDemoMode) {
+        if (!currentDemoTrack) {
+          setIsInitializingAudio(false);
+          return;
+        }
         asset = {
           id: currentDemoTrack.id,
           name: currentDemoTrack.name,
@@ -2800,10 +2810,9 @@ const Studio = () => {
 
             {/* Waveform Display */}
             <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
-              <WaveformDisplay
+            <WaveformDisplay
                 audioFile={track.file}
                 mode={track.mode}
-                audioContext={audioContext}
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
                 cuePoints={track.cuePoints}
@@ -2821,10 +2830,7 @@ const Studio = () => {
                 timeSignature={track.timeSignature}
                 firstMeasureTime={track.firstMeasureTime}
                 onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
-                onTimeSignatureChange={(timeSignature) => handleTimeSignatureChange(track.id, timeSignature)}
                 showCueThumbs={showCueThumbs[track.id]}
-                volume={volume[track.id] || 1}
-                onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
                 isPlaying={playbackStates[track.id] || false}
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}

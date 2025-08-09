@@ -74,7 +74,9 @@ const Home = () => {
                 </div>
 
                 <p className="text-slate-300 mb-8 font-medium">
-                  {isMobile ? 'Launch the demo.' : 'Click below to launch the demo and experience Audafact firsthand.'}
+                  {user
+                    ? (isMobile ? 'Start creating.' : 'Jump into the studio and start creating with your library and saved tracks.')
+                    : (isMobile ? 'Launch the demo.' : 'Click below to launch the demo and experience Audafact firsthand.')}
                 </p>
                 
                 {user ? (
@@ -106,7 +108,7 @@ const Home = () => {
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z"/>
                   </svg>
-                  Launch Demo
+                  {user ? 'Start Creating' : 'Launch Demo'}
                 </span>
                 <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </button>

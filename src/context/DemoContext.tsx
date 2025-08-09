@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { LibraryService } from '../services/libraryService';
 
 // Define AudioAsset interface for demo tracks
 export interface AudioAsset {
@@ -13,51 +14,14 @@ export interface AudioAsset {
   duration?: number;
 }
 
-// Demo tracks configuration - lazy load audio files
-const demoTracks: AudioAsset[] = [
-  { 
-    id: 'ron-drums', 
-    name: 'RON Drums',
-    genre: 'drum-n-bass', 
-    bpm: 140,
-    file: '/src/assets/audio/RON-drums.wav',
-    type: 'wav',
-    size: '5.5MB'
-  },
-  { 
-    id: 'secrets-of-the-heart', 
-    name: 'Secrets of the Heart',
-    genre: 'ambient', 
-    bpm: 120,
-    file: '/src/assets/audio/Secrets of the Heart.mp3',
-    type: 'mp3',
-    size: '775KB'
-  },
-  { 
-    id: 'rhythm-revealed', 
-    name: 'The Rhythm Revealed (Drums)',
-    genre: 'house', 
-    bpm: 128,
-    file: '/src/assets/audio/The Rhythm Revealed(Drums).wav',
-    type: 'wav',
-    size: '5.5MB'
-  },
-  { 
-    id: 'unveiled-desires', 
-    name: 'Unveiled Desires',
-    genre: 'techno', 
-    bpm: 135,
-    file: '/src/assets/audio/Unveiled Desires.wav',
-    type: 'wav',
-    size: '6.0MB'
-  }
-];
+// Demo tracks now come from the database (guest rotation)
 
-// Random selection with genre rotation
-const selectDemoTrack = (): AudioAsset => {
+// Random selection helper preserving no-repeat behavior
+const selectRandom = (tracks: AudioAsset[]): AudioAsset | null => {
+  if (!tracks || tracks.length === 0) return null;
   const lastTrack = localStorage.getItem('lastDemoTrack');
-  const availableTracks = demoTracks.filter(t => t.id !== lastTrack);
-  const selected = availableTracks[Math.floor(Math.random() * availableTracks.length)];
+  const pool = tracks.length > 1 ? tracks.filter(t => t.id !== lastTrack) : tracks;
+  const selected = pool[Math.floor(Math.random() * pool.length)];
   localStorage.setItem('lastDemoTrack', selected.id);
   return selected;
 };
@@ -78,30 +42,11 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { user } = useAuth();
   const [currentDemoTrack, setCurrentDemoTrack] = useState<AudioAsset | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [availableDemoTracks, setAvailableDemoTracks] = useState<AudioAsset[]>([]);
   
   const isDemoMode = !user;
   const isAuthenticated = !!user;
-  
-  const loadRandomDemoTrack = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const track = selectDemoTrack();
-      setCurrentDemoTrack(track);
-      
-      // Track analytics event
-      trackDemoEvent('track_loaded', { 
-        trackId: track.id, 
-        genre: track.genre, 
-        bpm: track.bpm 
-      });
-      
-    } catch (error) {
-      console.error('Failed to load demo track:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-  
+
   const trackDemoEvent = useCallback((event: string, properties: any) => {
     if (isDemoMode) {
       // Track demo-specific events
@@ -111,22 +56,72 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isDemo: true,
         timestamp: Date.now()
       });
-      
       // TODO: Integrate with analytics service
-      // analytics.track(`demo_${event}`, {
-      //   ...properties,
-      //   userTier: 'guest',
-      //   isDemo: true
-      // });
     }
   }, [isDemoMode]);
-  
-  // Auto-load demo track when entering demo mode
-  useEffect(() => {
-    if (isDemoMode && !currentDemoTrack) {
-      loadRandomDemoTrack();
+
+  const loadRandomDemoTrack = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Ensure we have a pool of guest tracks
+      let pool = availableDemoTracks;
+      if (!pool || pool.length === 0) {
+        const tracks = await LibraryService.getLibraryTracks('guest');
+        pool = tracks.map((t) => ({
+          id: t.id,
+          name: t.name,
+          genre: t.genre,
+          bpm: t.bpm || 0,
+          file: t.file, // public URL from storage
+          type: t.type,
+          size: t.size || 'Unknown'
+        }));
+        setAvailableDemoTracks(pool);
+      }
+
+      const selected = selectRandom(pool);
+      if (selected) {
+        setCurrentDemoTrack(selected);
+        trackDemoEvent('track_loaded', {
+          trackId: selected.id,
+          genre: selected.genre,
+          bpm: selected.bpm
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load demo track:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [isDemoMode, currentDemoTrack, loadRandomDemoTrack]);
+  }, [availableDemoTracks, trackDemoEvent]);
+  
+  // Preload guest tracks and auto-select when entering demo mode
+  useEffect(() => {
+    const preload = async () => {
+      if (!isDemoMode) return;
+      try {
+        if (!availableDemoTracks || availableDemoTracks.length === 0) {
+          const tracks = await LibraryService.getLibraryTracks('guest');
+          const mapped = tracks.map((t) => ({
+            id: t.id,
+            name: t.name,
+            genre: t.genre,
+            bpm: t.bpm || 0,
+            file: t.file,
+            type: t.type,
+            size: t.size || 'Unknown'
+          }));
+          setAvailableDemoTracks(mapped);
+        }
+        if (!currentDemoTrack) {
+          await loadRandomDemoTrack();
+        }
+      } catch (e) {
+        console.error('Failed to preload guest tracks:', e);
+      }
+    };
+    preload();
+  }, [isDemoMode, currentDemoTrack, availableDemoTracks.length, loadRandomDemoTrack]);
   
   const value = {
     isDemoMode,
@@ -135,7 +130,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isLoading,
     loadRandomDemoTrack,
     trackDemoEvent,
-    demoTracks
+    demoTracks: availableDemoTracks
   };
   
   return (
