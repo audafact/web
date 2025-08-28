@@ -11,7 +11,7 @@ export interface Measure {
 // Database Types
 export interface User {
   id: string;
-  access_tier: 'free' | 'pro' | 'enterprise';
+  access_tier: "free" | "pro" | "enterprise";
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
@@ -20,17 +20,18 @@ export interface User {
 export interface Upload {
   id: string;
   user_id: string;
-  file_key: string | null;
-  file_url: string | null;
-  title: string;
+  file_key: string;
+  content_type: string;
+  size_bytes: number;
+  title?: string;
   duration?: number;
   created_at: string;
-  // New fields for hash-based storage
+  updated_at: string;
+  // Legacy fields for backward compatibility
+  file_url?: string;
   full_hash?: string;
   short_hash?: string;
   server_key?: string;
-  size_bytes?: number;
-  content_type?: string;
   original_name?: string;
 }
 
@@ -41,7 +42,7 @@ export interface Session {
   track_ids: string[];
   cuepoints: any[];
   loop_regions: any[];
-  mode: 'loop' | 'chop';
+  mode: "loop" | "chop";
   created_at: string;
   updated_at: string;
 }
@@ -67,8 +68,6 @@ export interface StorageFile {
   last_accessed_at: string;
   metadata: Record<string, any>;
 }
-
-
 
 export interface UploadResponse {
   data: StorageFile | null;
@@ -111,14 +110,14 @@ export interface UsageLimits {
 }
 
 export interface UserTier {
-  id: 'guest' | 'free' | 'pro';
+  id: "guest" | "free" | "pro";
   name: string;
   features: FeatureAccess;
   limits: UsageLimits;
 }
 
 export interface FeatureGateConfig {
-  gateType: 'modal' | 'tooltip' | 'disabled' | 'hidden';
+  gateType: "modal" | "tooltip" | "disabled" | "hidden";
   message: string;
   ctaText: string;
   upgradeRequired: boolean;
@@ -128,7 +127,7 @@ export interface FeatureGateProps {
   feature: string;
   children: React.ReactNode;
   fallback?: React.ReactNode;
-  gateType?: 'modal' | 'tooltip' | 'disabled' | 'hidden';
+  gateType?: "modal" | "tooltip" | "disabled" | "hidden";
   onGateTrigger?: (feature: string) => void;
 }
 
@@ -148,6 +147,9 @@ export interface LibraryTrack {
   tags: string[];
   isProOnly?: boolean;
   previewUrl?: string;
+  // Additional fields for enhanced functionality
+  rotationWeek?: number;
+  isActive?: boolean;
 }
 
 export interface LibraryPanelProps {
