@@ -2,6 +2,9 @@
 # Excludes large files and build artifacts to keep branches clean
 
 .env
+.env.ingest
+assets/
+scripts/archive/
 parts/
 **/parts/
 eggs/

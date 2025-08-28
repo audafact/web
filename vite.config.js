@@ -9,6 +9,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  // Environment variable configuration
+  define: {
+    "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
+      process.env.VITE_API_BASE_URL || "https://api.audafact.com"
+    ),
+  },
   build: {
     sourcemap: true,
     rollupOptions: {

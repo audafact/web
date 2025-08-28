@@ -10,7 +10,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { router } from './routes';
 import React from 'react';
 
-function App() {
+function App() { 
   // Lazy load analytics service after app is mounted
   React.useEffect(() => {
     const loadAnalytics = async () => {

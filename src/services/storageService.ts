@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { StorageFile, UploadResponse, DownloadResponse, AudioFile } from '../types/music';
+import { sha256Blob, shortHex } from '../lib/hash';
+import { buildApiUrl, API_CONFIG } from '../config/api';
 
 export class StorageService {
   private static readonly UPLOAD_BUCKET = 'user-uploads';
@@ -16,7 +18,7 @@ export class StorageService {
   ];
 
   /**
-   * Upload an audio file to the user-uploads bucket
+   * Upload an audio file to R2 storage with hash computation and key generation
    */
   static async uploadAudioFile(
     file: File,
@@ -29,33 +31,44 @@ export class StorageService {
         throw new Error('Invalid file type or size');
       }
 
-      // Create unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      // 1) Compute hash and build key
+      const fullHash = await sha256Blob(file);
+      const shortHash = shortHex(fullHash, 10);
+      const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
 
-      // Upload file
-      const { data, error } = await supabase.storage
-        .from(this.UPLOAD_BUCKET)
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-          metadata: {
-            title: title || file.name,
-            originalName: file.name,
-            size: file.size,
-            type: file.type,
-            uploadedBy: userId
-          }
-        });
+      // 2) Get signed PUT URL from API
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
 
-      if (error) throw error;
+      const signedUploadResponse = await this.getSignedUploadUrl(
+        file.type || 'application/octet-stream',
+        ext,
+        token
+      );
 
-      // Convert to StorageFile type
+      // 3) Upload to R2 using signed URL
+      const uploadResponse = await fetch(signedUploadResponse.url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      // 4) Convert to StorageFile type for backward compatibility
       const storageFile: StorageFile = {
-        name: fileName,
-        bucket_id: this.UPLOAD_BUCKET,
+        name: signedUploadResponse.key, // Use server key as name
+        bucket_id: 'r2-storage', // Indicate R2 storage
         owner: userId,
-        id: data?.path || '',
+        id: signedUploadResponse.key,
         updated_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
         last_accessed_at: new Date().toISOString(),
@@ -64,7 +77,13 @@ export class StorageService {
           originalName: file.name,
           size: file.size,
           type: file.type,
-          uploadedBy: userId
+          uploadedBy: userId,
+          // New hash-based metadata
+          fullHash,
+          shortHash,
+          serverKey: signedUploadResponse.key,
+          sizeBytes: file.size,
+          contentType: file.type || 'application/octet-stream',
         }
       };
 
@@ -76,7 +95,38 @@ export class StorageService {
   }
 
   /**
-   * Upload a recording to the session-recordings bucket
+   * Get a signed upload URL from the API for R2 storage
+   */
+  private static async getSignedUploadUrl(
+    contentType: string,
+    ext: string,
+    token: string
+  ): Promise<{ url: string; key: string }> {
+    const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.SIGN_UPLOAD), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        contentType,
+        ext,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get signed upload URL: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      url: data.url,
+      key: data.key,
+    };
+  }
+
+  /**
+   * Upload a recording to R2 storage with hash computation
    */
   static async uploadRecording(
     file: File,
@@ -90,34 +140,44 @@ export class StorageService {
         throw new Error('Invalid file type or size');
       }
 
-      // Create unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${sessionId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      // 1) Compute hash and build key
+      const fullHash = await sha256Blob(file);
+      const shortHash = shortHex(fullHash, 10);
+      const ext = (file.name.split('.').pop() || 'mp3').toLowerCase();
 
-      // Upload file
-      const { data, error } = await supabase.storage
-        .from(this.RECORDING_BUCKET)
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-          metadata: {
-            originalName: file.name,
-            size: file.size,
-            type: file.type,
-            sessionId,
-            notes,
-            uploadedBy: userId
-          }
-        });
+      // 2) Get signed PUT URL from API
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
 
-      if (error) throw error;
+      const signedUploadResponse = await this.getSignedUploadUrl(
+        file.type || 'application/octet-stream',
+        ext,
+        token
+      );
 
-      // Convert to StorageFile type
+      // 3) Upload to R2 using signed URL
+      const uploadResponse = await fetch(signedUploadResponse.url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      // 4) Convert to StorageFile type for backward compatibility
       const storageFile: StorageFile = {
-        name: fileName,
-        bucket_id: this.RECORDING_BUCKET,
+        name: signedUploadResponse.key, // Use server key as name
+        bucket_id: 'r2-storage', // Indicate R2 storage
         owner: userId,
-        id: data?.path || '',
+        id: signedUploadResponse.key,
         updated_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
         last_accessed_at: new Date().toISOString(),
@@ -127,7 +187,13 @@ export class StorageService {
           type: file.type,
           sessionId,
           notes,
-          uploadedBy: userId
+          uploadedBy: userId,
+          // New hash-based metadata
+          fullHash,
+          shortHash,
+          serverKey: signedUploadResponse.key,
+          sizeBytes: file.size,
+          contentType: file.type || 'application/octet-stream',
         }
       };
 
@@ -135,6 +201,51 @@ export class StorageService {
     } catch (error) {
       console.error('Error uploading recording:', error);
       return { data: null, error };
+    }
+  }
+
+  /**
+   * Check if a file with the same hash already exists
+   * This can be used to prevent duplicate uploads
+   */
+  static async checkDuplicateFile(fullHash: string, userId: string): Promise<boolean> {
+    try {
+      // Query the database to check if a file with this hash exists
+      const { data, error } = await supabase
+        .from('uploads')
+        .select('id')
+        .eq('full_hash', fullHash)
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error;
+      }
+
+      return !!data; // Returns true if file exists, false otherwise
+    } catch (error) {
+      console.error('Error checking for duplicate file:', error);
+      return false; // Assume no duplicate on error
+    }
+  }
+
+  /**
+   * Get file info by hash
+   */
+  static async getFileByHash(fullHash: string, userId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('uploads')
+        .select('*')
+        .eq('full_hash', fullHash)
+        .eq('user_id', userId)
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error getting file by hash:', error);
+      return null;
     }
   }
 

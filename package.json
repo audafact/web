@@ -15,7 +15,6 @@
   "dependencies": {
     "@stripe/react-stripe-js": "^3.8.1",
     "@stripe/stripe-js": "^7.7.0",
-    "@supabase/supabase-js": "^2.0.0",
     "@tailwindcss/forms": "^0.5.0",
     "@tailwindcss/typography": "^0.5.0",
     "@wavesurfer/react": "^1.0.11",
@@ -29,8 +28,11 @@
     "web-audio-beat-detector": "^8.2.29"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.873.0",
+    "@aws-sdk/lib-storage": "^3.873.0",
     "@babel/plugin-transform-react-jsx": "^7.27.1",
     "@babel/preset-react": "^7.27.1",
+    "@supabase/supabase-js": "^2.56.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^14.3.1",
     "@testing-library/user-event": "^14.6.1",

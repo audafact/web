@@ -35,7 +35,7 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
       type: 'library-track',
       name: track.name,
       id: track.id,
-      file: track.file,
+      file: track.fileKey,
       trackType: track.type
     }));
     e.dataTransfer.effectAllowed = 'copy';

@@ -64,6 +64,49 @@ export class DatabaseService {
   }
 
   /**
+   * Create a new hash-based upload record with R2 storage metadata
+   */
+  static async createHashBasedUpload(
+    userId: string,
+    title: string,
+    serverKey: string,
+    fullHash: string,
+    shortHash: string,
+    sizeBytes: number,
+    contentType: string,
+    originalName: string,
+    duration?: number
+  ): Promise<Upload | null> {
+    try {
+      const uploadData = {
+        user_id: userId,
+        file_url: serverKey, // Use server key as file_url for R2 storage
+        title,
+        duration,
+        // New hash-based fields
+        full_hash: fullHash,
+        short_hash: shortHash,
+        server_key: serverKey,
+        size_bytes: sizeBytes,
+        content_type: contentType,
+        original_name: originalName,
+      };
+
+      const { data, error } = await supabase
+        .from('uploads')
+        .insert(uploadData)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error creating hash-based upload:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get user's uploads
    */
   static async getUserUploads(userId: string): Promise<Upload[]> {

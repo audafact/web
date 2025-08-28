@@ -20,10 +20,18 @@ export interface User {
 export interface Upload {
   id: string;
   user_id: string;
-  file_url: string;
+  file_key: string | null;
+  file_url: string | null;
   title: string;
   duration?: number;
   created_at: string;
+  // New fields for hash-based storage
+  full_hash?: string;
+  short_hash?: string;
+  server_key?: string;
+  size_bytes?: number;
+  content_type?: string;
+  original_name?: string;
 }
 
 export interface Session {
@@ -133,8 +141,9 @@ export interface LibraryTrack {
   bpm: number;
   key?: string;
   duration: number;
-  file: string;
-  type: 'wav' | 'mp3';
+  fileKey: string;
+  previewKey?: string;
+  type: "wav" | "mp3";
   size: string;
   tags: string[];
   isProOnly?: boolean;
