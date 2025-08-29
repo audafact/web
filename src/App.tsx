@@ -9,6 +9,16 @@ import SuccessMessageManager from './components/SuccessMessageManager';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { router } from './routes';
 import React from 'react';
+// Add this import to your App.tsx or main component
+import { debugJWT, testJWTToken } from './debug-jwt';
+import { testR2MigrationInBrowser, getCurrentJWT, testJWTWithWorker } from './test-r2-migration-browser';
+
+// Add this to make it available globally for debugging
+(window as any).debugJWT = debugJWT;
+(window as any).testJWTToken = testJWTToken;
+(window as any).testR2MigrationInBrowser = testR2MigrationInBrowser;
+(window as any).getCurrentJWT = getCurrentJWT;
+(window as any).testJWTWithWorker = testJWTWithWorker;
 
 function App() { 
   // Lazy load analytics service after app is mounted
