@@ -1,4 +1,9 @@
 // services/libraryService.ts
+//
+// NOTE: This service now only provides database tracks for Pro users.
+// Guest and Free users get demo tracks from bundled audio files via DemoContext.
+// No database queries are made for non-pro users.
+//
 import { supabase } from "./supabase";
 import { LibraryTrack } from "../types/music";
 import { normalizeLegacyUrlToKey } from "@/utils/media";
@@ -39,7 +44,7 @@ export interface DatabaseLibraryTrack {
 export class LibraryService {
   /**
    * Get library tracks based on user tier.
-   * Free/guest: RPC get_free_user_tracks
+   * Free/guest: No tracks (demo tracks are bundled)
    * Pro: RPC get_pro_user_tracks
    */
   static async getLibraryTracks(
@@ -54,12 +59,11 @@ export class LibraryService {
         );
       }
 
-      // guest and free use the free RPC
-      const { data, error } = await supabase.rpc("get_free_user_tracks");
-      if (error) throw error;
-      return this.transformDatabaseTracks(
-        (data ?? []) as DatabaseLibraryTrack[]
+      // guest and free users don't get database tracks - demo tracks are bundled
+      console.log(
+        "Guest/free user: No database tracks needed (demo tracks are bundled)"
       );
+      return [];
     } catch (error) {
       console.error("Error fetching library tracks:", error);
       return [];
@@ -71,6 +75,11 @@ export class LibraryService {
     genre: string,
     userTier: "guest" | "free" | "pro"
   ): Promise<LibraryTrack[]> {
+    // Guest/free users don't have database tracks to filter
+    if (userTier === "guest" || userTier === "free") {
+      return [];
+    }
+
     const tracks = await this.getLibraryTracks(userTier);
     return tracks.filter((t) => t.genre === genre);
   }
@@ -79,6 +88,11 @@ export class LibraryService {
   static async getAvailableGenres(
     userTier: "guest" | "free" | "pro"
   ): Promise<string[]> {
+    // Guest/free users don't have database tracks to get genres from
+    if (userTier === "guest" || userTier === "free") {
+      return [];
+    }
+
     const tracks = await this.getLibraryTracks(userTier);
     return [...new Set(tracks.map((t) => t.genre))];
   }
@@ -88,6 +102,11 @@ export class LibraryService {
     trackId: string,
     userTier: "guest" | "free" | "pro"
   ): Promise<LibraryTrack | null> {
+    // Guest/free users don't have database tracks to search
+    if (userTier === "guest" || userTier === "free") {
+      return null;
+    }
+
     const tracks = await this.getLibraryTracks(userTier);
     return tracks.find((t) => t.id === trackId) ?? null;
   }
@@ -162,6 +181,10 @@ export class LibraryService {
         size: t.size ?? "Unknown",
         tags: t.tags,
         isProOnly: t.is_pro_only,
+        previewUrl: t.preview_url ?? undefined,
+        rotationWeek: t.rotation_week ?? undefined,
+        isActive: t.is_active ?? undefined,
+        isDemo: false, // Default to false since is_demo doesn't exist in DatabaseLibraryTrack
       };
     });
   }
@@ -172,6 +195,11 @@ export class LibraryService {
   static async getTrackCount(
     userTier: "guest" | "free" | "pro"
   ): Promise<number> {
+    // Guest/free users don't have database tracks to count
+    if (userTier === "guest" || userTier === "free") {
+      return 0;
+    }
+
     const tracks = await this.getLibraryTracks(userTier);
     return tracks.length;
   }
@@ -182,6 +210,7 @@ export function pickPlayableKey(
   t: LibraryTrack,
   userTier: "guest" | "free" | "pro"
 ): string {
+  // Guest/free users don't have database tracks, so this function is mainly for pro users
   if ((userTier === "guest" || userTier === "free") && t.previewKey) {
     return t.previewKey;
   }

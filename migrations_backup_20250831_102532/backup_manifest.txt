@@ -1,0 +1,38 @@
+DATABASE BACKUP MANIFEST
+========================
+Backup Date: Sun Aug 31 10:25:48 CDT 2025
+Backup Directory: migrations_backup_20250831_102532
+Backup Status: ❌
+
+Backup Files:
+- complete_database_backup.sql ( 16K)
+- schema_only_backup.sql (MISSING OR EMPTY)
+- data_only_backup.sql ( 36K)
+- critical_tables_backup.sql (4.0K)
+
+Migration Files:
+drwxr-xr-x  8 david  staff   256 Aug 31 10:25 .
+drwxr-xr-x  8 david  staff   256 Aug 31 10:25 ..
+-rw-r--r--  1 david  staff  1420 Aug 31 10:25 20250101000000_add_user_creation_trigger.sql
+-rw-r--r--  1 david  staff  2169 Aug 31 10:25 20250830201700_add_r2_storage_fields.sql
+-rw-r--r--  1 david  staff  7082 Aug 31 10:25 20250831022018_baseline_schema.sql
+-rw-r--r--  1 david  staff   721 Aug 31 10:25 20250831022250_remote_schema.sql
+-rw-r--r--  1 david  staff  4810 Aug 31 10:25 20250831022250_remote_schema_safe.sql
+-rw-r--r--  1 david  staff  1319 Aug 31 10:25 20250831022300_schema_lock.sql
+
+Backup Commands Used:
+- Complete DB: pg_dump with schema=public,auth
+- Schema Only: pg_dump with --schema-only
+- Data Only: pg_dump with --data-only
+- Critical Tables: Custom SQL backup script
+
+Restore Instructions:
+1. Complete restore: psql -f migrations_backup_20250831_102532/complete_database_backup.sql
+2. Schema restore: psql -f migrations_backup_20250831_102532/schema_only_backup.sql
+3. Data restore: psql -f migrations_backup_20250831_102532/data_only_backup.sql
+4. Critical tables: psql -f migrations_backup_20250831_102532/critical_tables_backup.sql
+
+Notes:
+- This backup was created before running migrations
+- Keep this backup until migrations are verified successful
+- Test restore procedures in a safe environment first

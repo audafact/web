@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
@@ -7,7 +7,7 @@ import { useAccessControl } from '../hooks/useAccessControl';
 import { useUserTier } from '../hooks/useUserTier';
 import { UpgradePrompt } from './UpgradePrompt';
 import { LibraryService } from '../services/libraryService';
-import { LibraryTrack } from '../types/music';
+import { LibraryTrack, UserTrack } from '../types/music';
 import LibraryTrackItem from './LibraryTrackItem';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
@@ -24,16 +24,7 @@ interface AudioAsset {
   fileUrl?: string;
 }
 
-interface UserTrack {
-  id: string;
-  name: string;
-  file: File | null;
-  fileKey: string;
-  type: string;
-  size: string;
-  url?: string;
-  uploadedAt: number;
-}
+
 
 interface SidePanelProps {
   isOpen: boolean;
@@ -52,6 +43,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onAddUserTrack,
   initialMode
 }) => {
+
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
@@ -99,17 +91,20 @@ const SidePanel: React.FC<SidePanelProps> = ({
     if (activeAudioTab === 'library' && libraryTracks.length === 0) {
       loadLibraryTracks();
     }
-  }, [activeAudioTab]);
+  }, [activeAudioTab, libraryTracks.length]);
 
   // Load user tracks from database on mount
   useEffect(() => {
+    
     const loadUserTracks = async () => {
       if (!user) {
+
         setUserTracks([]);
         return;
       }
 
       try {
+
         const uploads = await DatabaseService.getUserUploads(user.id);
         const userTracksData = await Promise.all(
           uploads.map(async (upload) => {
@@ -119,7 +114,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
             return {
               id: upload.id,
-              name: upload.title,
+              name: upload.title || `Track ${upload.id}`, // Ensure name is always a string
               file: null as File | null,            // only used pre-upload
               fileKey,                              // ← use this everywhere for signing/playing/deleting
               type: upload.content_type ?? "audio/mpeg",
@@ -129,7 +124,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
           })
         );
 
-        
+
         setUserTracks(userTracksData);
       } catch (error) {
         console.error('Error loading user tracks from database:', error);
@@ -138,9 +133,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
     };
 
     loadUserTracks();
-  }, [user]);
+  }, [user?.id]); // Only depend on user.id, not the entire user object
 
-  const loadLibraryTracks = async () => {
+  const loadLibraryTracks = useCallback(async () => {
     setIsLoadingLibrary(true);
     try {
       const tracks = await LibraryService.getLibraryTracks(tier.id);
@@ -150,7 +145,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
     } finally {
       setIsLoadingLibrary(false);
     }
-  };
+  }, [tier.id]);
 
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {

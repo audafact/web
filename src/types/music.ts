@@ -140,16 +140,17 @@ export interface LibraryTrack {
   bpm: number;
   key?: string;
   duration: number;
-  fileKey: string;
-  previewKey?: string;
+  fileKey: string; // Transformed from database field file_key
+  previewKey?: string; // Transformed from database field preview_key
   type: "wav" | "mp3";
   size: string;
   tags: string[];
-  isProOnly?: boolean;
-  previewUrl?: string;
+  isProOnly?: boolean; // Transformed from database field is_pro_only
+  previewUrl?: string; // Transformed from database field preview_url
   // Additional fields for enhanced functionality
-  rotationWeek?: number;
-  isActive?: boolean;
+  rotationWeek?: number; // Transformed from database field rotation_week
+  isActive?: boolean; // Transformed from database field is_active
+  isDemo?: boolean; // Transformed from database field is_demo
 }
 
 export interface LibraryPanelProps {
@@ -167,4 +168,16 @@ export interface LibraryTrackItemProps {
   onAddToStudio: () => void;
   canAddToStudio: boolean;
   isProOnly: boolean;
+}
+
+// Unified UserTrack interface for uploaded tracks
+export interface UserTrack {
+  id: string;
+  name: string;
+  file: File | null;
+  fileKey: string;
+  type: string;
+  size: string;
+  url?: string;
+  uploadedAt: number;
 }

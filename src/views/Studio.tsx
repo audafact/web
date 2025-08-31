@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
@@ -24,41 +24,10 @@ import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
 // import { AccessService } from '../services/accessService';
-import { TimeSignature } from '../types/music';
+import { TimeSignature, UserTrack } from '../types/music';
 import { useUserTier } from '../hooks/useUserTier';
 import { LibraryService } from '../services/libraryService';
-
-// Default bundled audio assets - used as fallback when no Supabase library tracks are available
-const defaultAudioAssets: AudioAsset[] = [
-  {
-    id: 'ron-drums',
-    name: 'RON Drums',
-    file: '/src/assets/audio/RON-drums.wav',
-    type: 'wav',
-    size: '5.5MB'
-  },
-  {
-    id: 'secrets-of-the-heart',
-    name: 'Secrets of the Heart',
-    file: '/src/assets/audio/Secrets of the Heart.mp3',
-    type: 'mp3',
-    size: '775KB'
-  },
-  {
-    id: 'rhythm-revealed',
-    name: 'The Rhythm Revealed (Drums)',
-    file: '/src/assets/audio/The Rhythm Revealed(Drums).wav',
-    type: 'wav',
-    size: '5.5MB'
-  },
-  {
-    id: 'unveiled-desires',
-    name: 'Unveiled Desires',
-    file: '/src/assets/audio/Unveiled Desires.wav',
-    type: 'wav',
-    size: '6.0MB'
-  }
-];
+import { signFile } from '../lib/api';
 
 // Define a Track type
 interface Track {
@@ -79,22 +48,14 @@ interface Track {
 interface AudioAsset {
   id: string;
   name: string;
-  file: string;
+  fileKey: string;
   type: 'wav' | 'mp3';
   size: string;
   duration?: number;
+  is_demo?: boolean;
 }
 
-// Define UserTrack interface for uploaded tracks
-interface UserTrack {
-  id: string;
-  name: string;
-  file: File | null;
-  type: string;
-  size: string;
-  url: string;
-  uploadedAt: number;
-}
+
 
 const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
@@ -110,8 +71,11 @@ const Studio = () => {
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
-  // Unified list of assets available for navigation (Supabase library if available, else defaults)
-  const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>(defaultAudioAssets);
+  // Unified list of assets available for navigation (Supabase library only)
+  const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
+  
+  // Ref to prevent multiple track loads
+  const hasLoadedTrack = useRef(false);
 
   // Onboarding handlers
   const onboardingHandlers = {
@@ -229,6 +193,7 @@ const Studio = () => {
   
   // Separate loading states
   const [isTrackLoading, setIsTrackLoading] = useState<boolean>(false);
+  const [trackLoadRetryCount, setTrackLoadRetryCount] = useState<number>(0);
 
   // Add drag and drop state
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
@@ -306,75 +271,147 @@ const Studio = () => {
     setCanAddTrack(!hasPreviewTrack);
   }, [tracks]);
 
+
+
+
+
+
+
   // Load library tracks for navigation based on tier
   useEffect(() => {
     let isCancelled = false;
     const loadAssets = async () => {
       try {
-      if (isDemoMode) return; // demo mode uses curated demo flow
-        const libraryTracks = await LibraryService.getLibraryTracks(tier.id);
-        if (isCancelled) return;
-        if (libraryTracks && libraryTracks.length > 0) {
-          const mapped: AudioAsset[] = libraryTracks.map(t => ({
-            id: t.id,
-            name: t.name,
-            file: t.file,
-            type: t.type,
-            size: t.size
-          }));
-          setAvailableAssets(mapped);
+        if (isDemoMode) {
+          // For demo mode, use bundled tracks from DemoContext
+          console.log('Demo mode - using bundled demo tracks from DemoContext');
+          setAvailableAssets([]); // No need to load additional assets in demo mode
+        } else if (user) {
+          // Only for logged-in users, load tracks based on their tier
+          const libraryTracks = await LibraryService.getLibraryTracks(tier.id);
+          if (isCancelled) return;
+          if (libraryTracks && libraryTracks.length > 0) {
+            console.log('Raw library tracks from database:', libraryTracks);
+            const mapped: AudioAsset[] = libraryTracks.map(t => ({
+              id: t.id,
+              name: t.name,
+              fileKey: t.fileKey, // LibraryTrack now has fileKey field
+              type: t.type,
+              size: t.size,
+              is_demo: false // Logged-in users don't have demo tracks
+            }));
+            console.log('Mapped available assets:', mapped);
+            console.log('Demo tracks found:', mapped.filter(t => t.is_demo));
+            setAvailableAssets(mapped);
+          } else {
+            console.log('No library tracks found');
+            setAvailableAssets([]);
+          }
         } else {
-          setAvailableAssets(defaultAudioAssets);
+          // Anonymous users (not demo mode, not logged in) - no assets needed
+          console.log('Anonymous user - no library tracks needed');
+          setAvailableAssets([]);
         }
       } catch (e) {
         console.error('Failed to load library tracks:', e);
-        if (!isCancelled) setAvailableAssets(defaultAudioAssets);
+        if (!isCancelled) setAvailableAssets([]);
       }
     };
     loadAssets();
     return () => { isCancelled = true; };
-  }, [tier.id, isDemoMode]);
+  }, [tier.id, isDemoMode, user]);
 
   // Load a random track on component mount
-  useEffect(() => {
-    const loadRandomTrack = async () => {
+  const loadRandomTrack = useCallback(async () => {
       try {
         setIsTrackLoading(true);
         setError(null);
         
-        // Use demo track if in demo mode, otherwise select a random asset
-        let asset;
+        // In demo mode, use the DemoContext's current track
         if (isDemoMode && currentDemoTrack) {
-          asset = {
+          console.log('Demo mode: Using DemoContext track:', currentDemoTrack.name);
+          
+          // Use existing audio context if available
+          let context = audioContext;
+          if (!context) {
+            try {
+              context = await initializeAudio();
+              setIsAudioInitialized(true);
+            } catch (initError) {
+              console.error('Error initializing audio context:', initError);
+              setNeedsUserInteraction(true);
+              setIsTrackLoading(false);
+              // Don't return - let the user interaction handler retry
+              return;
+            }
+          }
+          
+          // Check if audio context is suspended and needs user interaction
+          if (context.state === 'suspended') {
+            setNeedsUserInteraction(true);
+            setIsTrackLoading(false);
+            return;
+          }
+
+          // Fetch the bundled demo track from DemoContext
+          const response = await fetch(currentDemoTrack.file);
+          const blob = await response.blob();
+          const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
+            type: `audio/${currentDemoTrack.type}` 
+          });
+          
+          // Load the audio file into buffer
+          const buffer = await loadAudioBuffer(file, context);
+          
+          // Create track using DemoContext metadata
+          const newTrack: Track = {
             id: currentDemoTrack.id,
-            name: currentDemoTrack.name,
-            file: currentDemoTrack.file,
-            type: currentDemoTrack.type
+            file,
+            buffer,
+            mode: 'preview',
+            loopStart: 0,
+            loopEnd: buffer.duration,
+            cuePoints: Array.from({ length: 10 }, (_, i) => 
+              buffer.duration * (i / 10)
+            ),
+            tempo: currentDemoTrack.bpm || 120,
+            timeSignature: { numerator: 4, denominator: 4 },
+            firstMeasureTime: 0,
+            showMeasures: false
           };
-        } else {
-          const sourceAssets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
-          const randomIndex = Math.floor(Math.random() * sourceAssets.length);
-          asset = sourceAssets[randomIndex];
+          
+          setTracks([newTrack]);
+          setCurrentTrackIndex(0);
+          setIsTrackLoading(false);
+          
+          // Track demo event
+          trackDemoEvent('session_started', { 
+            trackId: currentDemoTrack.id,
+            timestamp: Date.now()
+          });
+          
+          return;
         }
+        
+        // For authenticated users, use the existing logic
+        // Select a random asset from available assets
+        if (!availableAssets || availableAssets.length === 0) {
+          throw new Error('No library tracks available yet. Please wait for tracks to load from the library or check your connection.');
+        }
+        
+        const randomIndex = Math.floor(Math.random() * availableAssets.length);
+        const asset = availableAssets[randomIndex];
+        console.log('Selected asset for loading:', asset);
+        console.log('Asset fileKey:', asset.fileKey);
         
         // Use existing audio context if available
         let context = audioContext;
-
         if (!context) {
           try {
             context = await initializeAudio();
             setIsAudioInitialized(true);
           } catch (initError) {
             console.error('Error initializing audio context:', initError);
-            setNeedsUserInteraction(true);
-            setIsTrackLoading(false);
-            return;
-          }
-        } else if (context.state === 'suspended') {
-          try {
-            await context.resume();
-          } catch (resumeError) {
-            console.error('Failed to resume audio context:', resumeError);
             setNeedsUserInteraction(true);
             setIsTrackLoading(false);
             return;
@@ -387,8 +424,11 @@ const Studio = () => {
           return;
         }
         
-        // Fetch the audio file from the asset
-        const response = await fetch(asset.file);
+        // Get signed URL from Worker API
+        const audioUrl = await signFile(asset.fileKey);
+        
+        // Fetch the audio file
+        const response = await fetch(audioUrl);
         const blob = await response.blob();
         const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
         
@@ -397,15 +437,13 @@ const Studio = () => {
         
         // Generate track ID
         const trackId = asset.id;
-        
-        // Try to load settings from localStorage
         const settings = loadTrackSettingsFromLocal(trackId) || {};
         
         const newTrack: Track = {
           id: trackId,
           file,
           buffer,
-          mode: isDemoMode ? 'preview' : (settings.mode || 'preview'), // Force preview mode in demo
+          mode: settings.mode || 'preview',
           loopStart: settings.loopStart || 0,
           loopEnd: settings.loopEnd || buffer.duration,
           cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -418,62 +456,51 @@ const Studio = () => {
         };
         
         setTracks([newTrack]);
-        // Align navigation index with chosen asset
-        if (!isDemoMode) {
-          const sourceAssets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
-          const idx = sourceAssets.findIndex(a => a.id === asset.id);
-          setCurrentTrackIndex(Math.max(0, idx));
-        } else {
-          setCurrentTrackIndex(0);
-        }
+        setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
         setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
         setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
-        // Reset playback speed but keep volume
         setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
-        // Set volume based on mode
         const trackVolume = newTrack.mode === 'preview' 
           ? lastUsedVolumeRef.current 
           : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
         setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
         
-        // Track demo event if in demo mode
-        if (isDemoMode) {
-          trackDemoEvent('session_started', { 
-            trackId: asset.id,
-            timestamp: Date.now()
-          });
-        }
-        
-        // Start onboarding only for anonymous users when first track loads
-        // Logged-in users should only get walkthrough when explicitly clicking "Load a random track"
-        if (isAnonymousUser && onboarding.shouldShowOnboarding()) {
-          // Small delay to ensure UI is fully rendered
-          setTimeout(() => {
-            onboarding.startOnboarding();
-          }, 1000);
-        }
-        
-        // Track loading is complete
+        // Reset retry count on successful load
+        setTrackLoadRetryCount(0);
         setIsTrackLoading(false);
       } catch (error) {
         console.error('Error loading random track:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        setError(`Error loading track: ${errorMessage}`);
         setIsTrackLoading(false);
+        
+        // Increment retry count and prevent infinite retry loop
+        const newRetryCount = trackLoadRetryCount + 1;
+        setTrackLoadRetryCount(newRetryCount);
+        
+        if (newRetryCount >= 3) {
+          setError('Unable to load tracks after multiple attempts. Please check your connection and try again.');
+        } else if (error instanceof Error && error.message.includes('Failed to fetch')) {
+          setError(`Connection error (attempt ${newRetryCount}/3). Please check your connection and try again.`);
+        } else {
+          setError(`Error loading track: ${errorMessage}`);
+        }
       }
-    };
+    }, [audioContext, initializeAudio, isDemoMode, currentDemoTrack, availableAssets, user, trackDemoEvent]);
 
-    // Only load a random track if there are no tracks currently loaded
-    if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading) {
-      // In demo mode, wait until a demo track is selected to avoid double-loading
-      if (isDemoMode && !currentDemoTrack) {
-        return;
+    useEffect(() => {
+      if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
+        if (isDemoMode) {
+          // In demo mode, don't auto-load - wait for user interaction
+          console.log('Demo mode: Waiting for user to click load track button');
+        } else {
+          if (availableAssets && availableAssets.length > 0 && user) {
+            loadRandomTrack();
+          }
+        }
       }
-      loadRandomTrack();
-    }
-  }, [audioContext, initializeAudio, tracks.length, isManuallyAddingTrack, isDemoMode, currentDemoTrack, onboarding, availableAssets, isTrackLoading]);
+    }, [tracks.length, isManuallyAddingTrack, isDemoMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -516,67 +543,28 @@ const Studio = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [tracks, currentTrackIndex]);
 
-  // Handle demo track changes
-  useEffect(() => {
-    if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
-      // If the currently loaded track already matches the demo track, do nothing
-      if (tracks[0]?.id === currentDemoTrack.id) return;
-      // Update the current track with the new demo track
-      const updateTrackWithDemoTrack = async () => {
-        try {
-          const response = await fetch(currentDemoTrack.file);
-          const blob = await response.blob();
-          const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
-            type: `audio/${currentDemoTrack.type}` 
-          });
+        // Handle demo track changes
+      useEffect(() => {
+        if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
+          // If the currently loaded track already matches the demo track, do nothing
+          if (tracks[0]?.id === currentDemoTrack.id) return;
           
-          const buffer = await loadAudioBuffer(file, audioContext);
-          const trackId = currentDemoTrack.id;
-          const settings = loadTrackSettingsFromLocal(trackId) || {};
-          
-          const updatedTrack: Track = {
-            id: trackId,
-            file,
-            buffer,
-            mode: isDemoMode ? 'preview' : (settings.mode || 'preview'),
-            loopStart: settings.loopStart || 0,
-            loopEnd: settings.loopEnd || buffer.duration,
-            cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
-              buffer.duration * (i / 10)
-            ),
-            tempo: settings.tempo || 120,
-            timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
-            firstMeasureTime: settings.firstMeasureTime || 0,
-            showMeasures: settings.showMeasures || false
-          };
-          
-        setTracks([updatedTrack]);
-          setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
-          setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
-          setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
-          setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
-          const trackVolume = updatedTrack.mode === 'preview' 
-            ? lastUsedVolumeRef.current 
-            : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
-          setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
-          setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-          
-          // Track demo event
+          // In demo mode, we don't need to update tracks since we're using bundled tracks
+          // Just log the demo event and keep the current track
+          console.log('Demo mode: Demo track changed to:', currentDemoTrack.name);
           trackDemoEvent('next_track', { 
             fromTrackId: tracks[0]?.id,
-            toTrackId: trackId
+            toTrackId: currentDemoTrack.id
           });
-          // keep index at 0 in demo mode
-          setCurrentTrackIndex(0);
-          
-        } catch (error) {
-          console.error('Error updating demo track:', error);
         }
-      };
-      
-      updateTrackWithDemoTrack();
+      }, [isDemoMode, currentDemoTrack, audioContext, tracks.length, trackDemoEvent]);
+
+  // Reset the hasLoadedTrack flag when tracks are cleared
+  useEffect(() => {
+    if (tracks.length === 0) {
+      hasLoadedTrack.current = false;
     }
-  }, [isDemoMode, currentDemoTrack, audioContext, tracks.length, trackDemoEvent]);
+  }, [tracks.length]);
 
   // Touch/swipe handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -883,7 +871,7 @@ const Studio = () => {
       loadRandomDemoTrack();
     } else {
       // Normal mode - cycle through available assets
-      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const assets = availableAssets || [];
       const nextIndex = (currentTrackIndex + 1) % assets.length;
       await loadTrackByIndex(nextIndex, true); // true = only update first track
     }
@@ -898,7 +886,7 @@ const Studio = () => {
       loadRandomDemoTrack();
     } else {
       // Normal mode - cycle through available assets
-      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const assets = availableAssets || [];
       const prevIndex = currentTrackIndex === 0 ? assets.length - 1 : currentTrackIndex - 1;
       await loadTrackByIndex(prevIndex, true); // true = only update first track
     }
@@ -910,7 +898,7 @@ const Studio = () => {
 
       setError(null);
       
-      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const assets = availableAssets || [];
       const safeIndex = ((index % assets.length) + assets.length) % assets.length;
       const asset = assets[safeIndex];
       
@@ -938,8 +926,20 @@ const Studio = () => {
         throw new Error('Audio initialization failed. Please try again.');
       }
       
-      // Fetch the audio file from the asset
-      const response = await fetch(asset.file);
+      // Get signed URL from Worker API using fileKey
+      let signedUrl: string;
+      try {
+        if (!asset.fileKey) {
+          throw new Error('Asset fileKey is missing');
+        }
+        signedUrl = await signFile(asset.fileKey);
+      } catch (error) {
+        console.error('Failed to get signed URL for asset:', error);
+        throw new Error('Failed to access audio file. Please try again.');
+      }
+
+      // Fetch the audio file using the signed URL
+      const response = await fetch(signedUrl);
       const blob = await response.blob();
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
@@ -1028,13 +1028,23 @@ const Studio = () => {
   const addNewTrack = async () => {
     if (!canAddTrack || isAddingTrack) return;
     
+    // Demo mode doesn't support adding tracks
+    if (isDemoMode) {
+      console.log('Demo mode: Adding tracks not supported');
+      return;
+    }
+    
     try {
       setIsAddingTrack(true);
       setAddTrackAnimation(true);
       setError(null);
       
       // Select a random asset that's different from existing tracks
-      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const assets = availableAssets || [];
+      if (assets.length === 0) {
+        throw new Error('No library tracks available. Please wait for tracks to load from the library.');
+      }
+      
       const existingAssetIds = tracks.map(track => track.id);
       const unusedAssets = assets.filter(asset => !existingAssetIds.includes(asset.id));
       
@@ -1059,8 +1069,20 @@ const Studio = () => {
         throw new Error('Audio initialization failed. Please try again.');
       }
       
-      // Fetch the audio file from the asset
-      const response = await fetch(selectedAsset.file);
+      // Get signed URL from Worker API using fileKey
+      let signedUrl: string;
+      try {
+        if (!selectedAsset.fileKey) {
+          throw new Error('Asset fileKey is missing');
+        }
+        signedUrl = await signFile(selectedAsset.fileKey);
+      } catch (error) {
+        console.error('Failed to get signed URL for asset:', error);
+        throw new Error('Failed to access audio file. Please try again.');
+      }
+
+      // Fetch the audio file using the signed URL
+      const response = await fetch(signedUrl);
       const blob = await response.blob();
       const file = new File([blob], `${selectedAsset.name}.${selectedAsset.type}`, { type: `audio/${selectedAsset.type}` });
       
@@ -1594,12 +1616,31 @@ const Studio = () => {
       const trackId = e.dataTransfer.getData('text/plain');
       if (!trackId) return;
       
+      // Get the detailed track data from the JSON payload
+      let trackData = null;
+      try {
+        const jsonData = e.dataTransfer.getData('application/json');
+        if (jsonData) {
+          trackData = JSON.parse(jsonData);
+        }
+      } catch (error) {
+        console.warn('Failed to parse track data:', error);
+      }
+      
       // Find the asset in the available assets list
-      const assets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
+      const assets = availableAssets || [];
       const asset = assets.find(a => a.id === trackId);
+      
       if (asset) {
-        // Add from library
-        await handleAddFromLibrary(asset, 'preview');
+        // Add from library - use the new fileKey-based approach
+        if (trackData?.file) {
+          // We have fileKey from the drag payload, use it directly
+          console.log('Adding library track with fileKey:', trackData.file);
+          await handleAddFromLibrary(asset, 'preview');
+        } else {
+          // Fallback to existing method
+          await handleAddFromLibrary(asset, 'preview');
+        }
         return;
       }
       
@@ -1808,8 +1849,21 @@ const Studio = () => {
         await resumeAudioContext();
       }
 
-      // Fetch the audio file
-      const response = await fetch(asset.file);
+      // Get signed URL from Worker API using fileKey
+      let signedUrl: string;
+      try {
+        signedUrl = await signFile(asset.fileKey);
+      } catch (error) {
+        console.error('Failed to get signed URL for asset:', error);
+        throw new Error('Failed to access audio file. Please try again.');
+      }
+
+      // Fetch the audio file using the signed URL
+      const response = await fetch(signedUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio file: ${response.status}`);
+      }
+      
       const blob = await response.blob();
       const buffer = await context.decodeAudioData(await blob.arrayBuffer());
       
@@ -1954,8 +2008,36 @@ const Studio = () => {
   };
 
 
+  const handleUserInteraction = useCallback(async () => {
+    if (needsUserInteraction && audioContext) {
+      try {
+        await resumeAudioContext();
+        setNeedsUserInteraction(false);
+        // Retry loading the track after audio context is resumed
+        if (isDemoMode && currentDemoTrack && tracks.length === 0) {
+          loadRandomTrack();
+        }
+      } catch (error) {
+        console.error('Failed to resume audio context:', error);
+      }
+    }
+  }, [needsUserInteraction, audioContext, resumeAudioContext, isDemoMode, currentDemoTrack, tracks.length, loadRandomTrack]);
 
-
+  // Add this useEffect to handle user interactions:
+  useEffect(() => {
+    const handleClick = () => handleUserInteraction();
+    const handleKeyDown = () => handleUserInteraction();
+    
+    if (needsUserInteraction) {
+      document.addEventListener('click', handleClick);
+      document.addEventListener('keydown', handleKeyDown);
+      
+      return () => {
+        document.removeEventListener('click', handleClick);
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [needsUserInteraction, handleUserInteraction]);
 
   const handleInitializeAudio = async () => {
     try {
@@ -1966,26 +2048,96 @@ const Studio = () => {
       const context = await initializeAudio();
       setIsAudioInitialized(true);
       
-      // Load demo track if in demo mode; if no demo selected yet, just return and let demo selection trigger update
-      let asset;
       if (isDemoMode) {
+        // For demo mode, use DemoContext bundled tracks
         if (!currentDemoTrack) {
-          setIsInitializingAudio(false);
-          return;
+          // Load a demo track first if none is loaded
+          await loadRandomDemoTrack();
+          if (!currentDemoTrack) {
+            throw new Error('Failed to load demo track. Please try again.');
+          }
         }
-        asset = {
-          id: currentDemoTrack.id,
-          name: currentDemoTrack.name,
-          file: currentDemoTrack.file,
-          type: currentDemoTrack.type
+        
+        console.log('handleInitializeAudio - demo mode, using bundled track:', currentDemoTrack.name);
+        
+        // Fetch the bundled demo track from DemoContext
+        const response = await fetch(currentDemoTrack.file);
+        const blob = await response.blob();
+        const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
+          type: `audio/${currentDemoTrack.type}` 
+        });
+        
+        const buffer = await loadAudioBuffer(file, context);
+        const trackId = currentDemoTrack.id;
+        
+        const newTrack: Track = {
+          id: trackId,
+          file,
+          buffer,
+          mode: 'preview',
+          loopStart: 0,
+          loopEnd: buffer.duration,
+          cuePoints: Array.from({ length: 10 }, (_, i) => 
+            buffer.duration * (i / 10)
+          ),
+          tempo: currentDemoTrack.bpm || 120,
+          timeSignature: { numerator: 4, denominator: 4 },
+          firstMeasureTime: 0,
+          showMeasures: false
         };
-      } else {
-        const sourceAssets = (availableAssets && availableAssets.length > 0) ? availableAssets : defaultAudioAssets;
-        const randomIndex = Math.floor(Math.random() * sourceAssets.length);
-        asset = sourceAssets[randomIndex];
+        
+        setTracks([newTrack]);
+        setCurrentTrackIndex(0);
+        setShowMeasures(prev => ({ ...prev, [trackId]: false }));
+        setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
+        setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
+        setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
+        setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
+        setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+        
+        // Track demo event
+        trackDemoEvent('session_started', { 
+          trackId: currentDemoTrack.id,
+          timestamp: Date.now()
+        });
+        
+        // Start onboarding for demo mode
+        if (onboarding.shouldShowOnboarding()) {
+          setTimeout(() => {
+            onboarding.startOnboarding();
+          }, 1000);
+        }
+        
+        setIsInitializingAudio(false);
+        return;
       }
       
-      const response = await fetch(asset.file);
+      // For authenticated users, wait for assets to load if they're not ready yet
+      if (!availableAssets || availableAssets.length === 0) {
+        throw new Error('Library tracks are still loading. Please wait a moment and try again.');
+      }
+      
+      console.log('handleInitializeAudio - authenticated user, availableAssets:', availableAssets);
+      
+      // Use all available tracks for authenticated users
+      const availableTracks = availableAssets;
+      const randomIndex = Math.floor(Math.random() * availableTracks.length);
+      const asset = availableTracks[randomIndex];
+      
+      // Get signed URL from Worker API using fileKey
+      let signedUrl: string;
+      try {
+        if (!asset.fileKey) {
+          throw new Error('Asset fileKey is missing');
+        }
+        signedUrl = await signFile(asset.fileKey);
+      } catch (error) {
+        console.error('Failed to get signed URL for asset:', error);
+        throw new Error('Failed to access audio file. Please try again.');
+      }
+
+      // Fetch the audio file using the signed URL
+      const response = await fetch(signedUrl);
       const blob = await response.blob();
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
@@ -1993,21 +2145,21 @@ const Studio = () => {
       const trackId = asset.id;
       const settings = loadTrackSettingsFromLocal(trackId) || {};
       
-              const newTrack: Track = {
-          id: trackId,
-          file,
-          buffer,
-          mode: isDemoMode ? 'preview' : (settings.mode || 'preview'),
-          loopStart: settings.loopStart || 0,
-          loopEnd: settings.loopEnd || buffer.duration,
-          cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
-            buffer.duration * (i / 10)
-          ),
-          tempo: settings.tempo || 120,
-          timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
-          firstMeasureTime: settings.firstMeasureTime || 0,
-          showMeasures: settings.showMeasures || false
-        };
+      const newTrack: Track = {
+        id: trackId,
+        file,
+        buffer,
+        mode: settings.mode || 'preview',
+        loopStart: settings.loopStart || 0,
+        loopEnd: settings.loopEnd || buffer.duration,
+        cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
+          buffer.duration * (i / 10)
+        ),
+        tempo: settings.tempo || 120,
+        timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
+        firstMeasureTime: settings.firstMeasureTime || 0,
+        showMeasures: settings.showMeasures || false
+      };
       
       setTracks([newTrack]);
       setCurrentTrackIndex(0);
@@ -2020,14 +2172,6 @@ const Studio = () => {
         : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
       setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-      
-      // Track demo event if in demo mode
-      if (isDemoMode) {
-        trackDemoEvent('session_started', { 
-          trackId: asset.id,
-          timestamp: Date.now()
-        });
-      }
       
       // Start onboarding only for anonymous users when first track loads
       // Logged-in users should only get walkthrough when explicitly clicking "Load a random track"  
@@ -2047,8 +2191,23 @@ const Studio = () => {
     }
   };
 
+  // Memoize the callback functions to prevent SidePanel re-mounting
+  const memoizedSidePanelProps = useMemo(() => ({
+    isOpen: isSidePanelOpen,
+    onToggle: toggleSidePanel,
+    onUploadTrack: handleUploadTrack,
+    onAddFromLibrary: handleAddFromLibrary,
+    onAddUserTrack: handleAddUserTrack,
+  }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack]);
+
+
+
+
+
+
+
   // Loading state
-  if (isLoading) {
+  if (isLoading || isTrackLoading) {
     return (
       <div className="max-w-6xl mx-auto p-6">
         <div className="audafact-card p-8 text-center">
@@ -2112,7 +2271,7 @@ const Studio = () => {
                 </p>
               ) : (
                 <p className="audafact-text-secondary mb-6">
-                  <a href="/auth" className="text-audafact-accent-cyan hover:underline">
+                                      <a href="/auth" className="text-audafact-accent-cyan hover:underline">
                     Login to Audafact
                   </a> to access your library and select specific tracks.
                 </p>
@@ -2128,16 +2287,7 @@ const Studio = () => {
           </div>
         </div>
 
-        {/* SidePanel */}
-        {user && (
-          <SidePanel
-            isOpen={isSidePanelOpen}
-            onToggle={toggleSidePanel}
-            onUploadTrack={handleUploadTrack}
-            onAddFromLibrary={handleAddFromLibrary}
-            onAddUserTrack={handleAddUserTrack}
-          />
-        )}
+ 
       </>
     );
   }
@@ -2256,19 +2406,34 @@ const Studio = () => {
                         <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📤 Uploading new samples</span>
                         <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎙️ Recording your live performances</span>
                       </div>
+                      
+                      {/* Library Loading Indicator */}
+                      {availableAssets.length === 0 && (
+                        <div className="text-center mb-4">
+                          <div className="inline-flex items-center gap-2 text-slate-400">
+                            <div className="w-4 h-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span>Loading library tracks...</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                       <button
                         onClick={handleInitializeAudio}
                         className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                        disabled={isInitializingAudio}
+                        disabled={isInitializingAudio || availableAssets.length === 0}
                       >
                         <span className="relative z-10 flex items-center gap-2">
                           {isInitializingAudio ? (
                             <>
                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                               Loading...
+                            </>
+                          ) : availableAssets.length === 0 ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Loading Library...
                             </>
                           ) : (
                             <>
@@ -2318,16 +2483,28 @@ const Studio = () => {
                       <p className="text-slate-300 mb-8 font-medium">
                         Ready for more? Sign up to unlock advanced tools and features.
                       </p>
+                      
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                       <button
-                        onClick={handleInitializeAudio}
+                        onClick={async () => {
+                          if (currentDemoTrack) {
+                            loadRandomTrack();
+                          } else {
+                            // If no current demo track, load a random one first
+                            await loadRandomDemoTrack();
+                            // Then load the track
+                            if (currentDemoTrack) {
+                              loadRandomTrack();
+                            }
+                          }
+                        }}
                         className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                        disabled={isInitializingAudio}
+                        disabled={isDemoLoading}
                       >
                         <span className="relative z-10 flex items-center gap-2">
-                          {isInitializingAudio ? (
+                          {isDemoLoading ? (
                             <>
                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                               Loading...
@@ -2363,14 +2540,7 @@ const Studio = () => {
           </div>
         </div>
 
-        {/* SidePanel */}
-        <SidePanel
-          isOpen={isSidePanelOpen}
-          onToggle={toggleSidePanel}
-          onUploadTrack={handleUploadTrack}
-          onAddFromLibrary={handleAddFromLibrary}
-          onAddUserTrack={handleAddUserTrack}
-        />
+
       </>
     );
   }
@@ -2885,14 +3055,8 @@ const Studio = () => {
         ))}
       </div>
 
-      {/* SidePanel - Show for all users on studio page */}
-      <SidePanel
-        isOpen={isSidePanelOpen}
-        onToggle={toggleSidePanel}
-        onUploadTrack={handleUploadTrack}
-        onAddFromLibrary={handleAddFromLibrary}
-        onAddUserTrack={handleAddUserTrack}
-      />
+      {/* SidePanel - Single instance for all states */}
+      {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
       
 
       
