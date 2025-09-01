@@ -1,169 +1,172 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
-import { LibraryService } from '../services/libraryService';
-import { LibraryTrack } from '../types/music';
 
-// Define AudioAsset interface for library tracks
+// Define AudioAsset interface for demo tracks
 export interface AudioAsset {
   id: string;
   name: string;
   genre: string;
   bpm: number;
-  fileKey: string;
+  file: string; // URL to bundled demo track
   type: 'wav' | 'mp3';
   size: string;
   duration?: number;
   is_demo?: boolean;
 }
 
+// Demo tracks for anonymous users
+const DEMO_TRACKS: AudioAsset[] = [
+  {
+    id: 'underneath-the-moonlight-version-1',
+    name: 'Underneath the Moonlight (Version 1)',
+    genre: 'ambient',
+    bpm: 120,
+    file: '/src/assets/audio/underneath-the-moonlight-version-1.mp3',
+    type: 'mp3',
+    size: 'Unknown',
+    is_demo: true
+  },
+  {
+    id: 'break-the-chains-version-2',
+    name: 'Break the Chains (Version 2)',
+    genre: 'electronic',
+    bpm: 128,
+    file: '/src/assets/audio/break-the-chains-version-2.mp3',
+    type: 'mp3',
+    size: 'Unknown',
+    is_demo: true
+  },
+  {
+    id: 'break-the-chains-version-3',
+    name: 'Break the Chains (Version 3)',
+    genre: 'electronic',
+    bpm: 128,
+    file: '/src/assets/audio/break-the-chains-version-3.mp3',
+    type: 'mp3',
+    size: 'Unknown',
+    is_demo: true
+  },
+  {
+    id: 'groove-vibes-version-3',
+    name: 'Groove Vibes (Version 3)',
+    genre: 'electronic',
+    bpm: 128,
+    file: '/src/assets/audio/groove-vibes-version-3.mp3',
+    type: 'mp3',
+    size: 'Unknown',
+    is_demo: true
+  }
+];
+
 // Random selection helper preserving no-repeat behavior
 const selectRandom = (tracks: AudioAsset[]): AudioAsset | null => {
   if (!tracks || tracks.length === 0) return null;
-  const lastTrack = localStorage.getItem('lastLibraryTrack');
+  const lastTrack = localStorage.getItem('lastDemoTrack');
   const pool = tracks.length > 1 ? tracks.filter(t => t.id !== lastTrack) : tracks;
   const selected = pool[Math.floor(Math.random() * pool.length)];
-  localStorage.setItem('lastLibraryTrack', selected.id);
+  localStorage.setItem('lastDemoTrack', selected.id);
   return selected;
 };
 
-interface LibraryContextType {
-  isLibraryMode: boolean;
+interface DemoContextType {
+  isDemoMode: boolean;
   isAuthenticated: boolean;
-  currentLibraryTrack: AudioAsset | null;
+  currentDemoTrack: AudioAsset | null;
   isLoading: boolean;
-  loadRandomLibraryTrack: () => void;
-  trackLibraryEvent: (event: string, properties: any) => void;
-  libraryTracks: AudioAsset[];
-  userTier: 'free' | 'pro';
+  loadRandomDemoTrack: () => void;
+  trackDemoEvent: (event: string, properties: any) => void;
+  demoTracks: AudioAsset[];
 }
 
-const LibraryContext = createContext<LibraryContextType | null>(null);
+const DemoContext = createContext<DemoContextType | null>(null);
 
-export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const [currentLibraryTrack, setCurrentLibraryTrack] = useState<AudioAsset | null>(null);
+  const [currentDemoTrack, setCurrentDemoTrack] = useState<AudioAsset | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [availableLibraryTracks, setAvailableLibraryTracks] = useState<AudioAsset[]>([]);
-  const [userTier, setUserTier] = useState<'free' | 'pro'>('free');
+  const [availableDemoTracks, setAvailableDemoTracks] = useState<AudioAsset[]>([]);
   
-  const isLibraryMode = !!user; // Only authenticated users get library access
+  const isDemoMode = !user; // Only anonymous users get demo access
   const isAuthenticated = !!user;
 
-  const trackLibraryEvent = useCallback((event: string, properties: any) => {
-    if (isLibraryMode) {
-      // Track library-specific events
-      console.log(`Library event: ${event}`, {
+  const trackDemoEvent = useCallback((event: string, properties: any) => {
+    if (isDemoMode) {
+      // Track demo-specific events
+      console.log(`Demo event: ${event}`, {
         ...properties,
-        userTier,
-        isLibrary: true,
+        userTier: 'demo',
+        isDemo: true,
         timestamp: Date.now()
       });
       // TODO: Integrate with analytics service
     }
-  }, [isLibraryMode, userTier]);
+  }, [isDemoMode]);
 
-  const loadRandomLibraryTrack = useCallback(async () => {
-    if (!user) return;
+  const loadRandomDemoTrack = useCallback(async () => {
+    if (user) return; // Don't load demo tracks for authenticated users
     
     setIsLoading(true);
     try {
-      // Get tracks based on user tier
-      const tracks = await LibraryService.getLibraryTracks(userTier);
-      
-      if (tracks && tracks.length > 0) {
-        // Transform LibraryTrack to AudioAsset
-        const audioAssets: AudioAsset[] = tracks.map(track => ({
-          id: track.id,
-          name: track.name,
-          genre: track.genre,
-          bpm: track.bpm,
-          fileKey: track.fileKey,
-          type: track.type,
-          size: track.size,
-          duration: track.duration,
-          is_demo: false
-        }));
-        
-        setAvailableLibraryTracks(audioAssets);
-        
-        const selected = selectRandom(audioAssets);
-        if (selected) {
-          setCurrentLibraryTrack(selected);
-          trackLibraryEvent('track_loaded', {
-            trackId: selected.id,
-            genre: selected.genre,
-            bpm: selected.bpm
-          });
-        }
-      } else {
-        console.log('No library tracks available for user tier:', userTier);
-        setAvailableLibraryTracks([]);
-        setCurrentLibraryTrack(null);
+      // Set available demo tracks
+      setAvailableDemoTracks(DEMO_TRACKS);
+
+      const selected = selectRandom(DEMO_TRACKS);
+      if (selected) {
+        setCurrentDemoTrack(selected);
+        trackDemoEvent('track_loaded', {
+          trackId: selected.id,
+          genre: selected.genre,
+          bpm: selected.bpm
+        });
       }
     } catch (error) {
-      console.error('Failed to load library track:', error);
-      setAvailableLibraryTracks([]);
-      setCurrentLibraryTrack(null);
+      console.error('Failed to load demo track:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user, userTier, trackLibraryEvent]);
-
-  // Determine user tier and load tracks
-  useEffect(() => {
-    if (!user) return;
-    
-    // TODO: This should come from user profile or subscription service
-    // For now, assume all authenticated users are 'free' until we implement tier detection
-    const tier = 'free'; // This should be fetched from user profile
-    setUserTier(tier);
-    
-    // Load tracks for the user
-    loadRandomLibraryTrack();
-  }, [user, loadRandomLibraryTrack]);
+  }, [user, trackDemoEvent]);
   
-  // Preload library tracks for authenticated users
+  // Preload demo tracks for anonymous users
   useEffect(() => {
-    if (!isLibraryMode) return;
+    if (!isDemoMode) return;
     
-    if (!currentLibraryTrack && availableLibraryTracks.length === 0) {
-      loadRandomLibraryTrack();
+    if (!currentDemoTrack && availableDemoTracks.length === 0) {
+      loadRandomDemoTrack();
     }
-  }, [isLibraryMode, currentLibraryTrack, availableLibraryTracks.length, loadRandomLibraryTrack]);
+  }, [isDemoMode, currentDemoTrack, availableDemoTracks.length, loadRandomDemoTrack]);
 
   const value = {
-    isLibraryMode,
+    isDemoMode,
     isAuthenticated,
-    currentLibraryTrack,
+    currentDemoTrack,
     isLoading,
-    loadRandomLibraryTrack,
-    trackLibraryEvent,
-    libraryTracks: availableLibraryTracks,
-    userTier
+    loadRandomDemoTrack,
+    trackDemoEvent,
+    demoTracks: availableDemoTracks
   };
   
   return (
-    <LibraryContext.Provider value={value}>
+    <DemoContext.Provider value={value}>
       {children}
-    </LibraryContext.Provider>
+    </DemoContext.Provider>
   );
 };
 
-export const useLibrary = () => {
-  const context = useContext(LibraryContext);
+export const useDemo = () => {
+  const context = useContext(DemoContext);
   if (!context) {
-    throw new Error('useLibrary must be used within LibraryProvider');
+    throw new Error('useDemo must be used within DemoProvider');
   }
   return context;
 };
 
-// Hook for library mode detection
-export const useLibraryMode = () => {
+// Hook for demo mode detection
+export const useDemoMode = () => {
   const { user } = useAuth();
-  const isLibraryMode = !!user;
+  const isDemoMode = !user;
   
   return {
-    isLibraryMode,
+    isDemoMode,
     isAuthenticated: !!user
   };
 }; 

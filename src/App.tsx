@@ -4,6 +4,7 @@ import { AudioProvider } from './context/AudioContext';
 import { SidePanelProvider } from './context/SidePanelContext';
 import { RecordingProvider } from './context/RecordingContext';
 import { DemoProvider } from './context/DemoContext';
+import { LibraryProvider } from './context/LibraryContext';
 import { GlobalModalManager } from './components/GlobalModalManager';
 import SuccessMessageManager from './components/SuccessMessageManager';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -37,15 +38,17 @@ function App() {
     <ErrorBoundary>
       <AuthProvider>
         <DemoProvider>
-          <AudioProvider>
-            <SidePanelProvider>
-              <RecordingProvider>
-                <RouterProvider router={router} />
-                <GlobalModalManager />
-                <SuccessMessageManager />
-              </RecordingProvider>
-            </SidePanelProvider>
-          </AudioProvider>
+          <LibraryProvider>
+            <AudioProvider>
+              <SidePanelProvider>
+                <RecordingProvider>
+                  <RouterProvider router={router} />
+                  <GlobalModalManager />
+                  <SuccessMessageManager />
+                </RecordingProvider>
+              </SidePanelProvider>
+            </AudioProvider>
+          </LibraryProvider>
         </DemoProvider>
       </AuthProvider>
     </ErrorBoundary>

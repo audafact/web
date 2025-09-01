@@ -3,7 +3,7 @@ import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
-import { useGuest } from '../context/GuestContext';
+import { useDemo } from '../context/DemoContext';
 import { useLibrary } from '../context/LibraryContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
@@ -63,7 +63,7 @@ const Studio = () => {
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { user, loading: authLoading } = useAuth();
-  const { isGuestMode, currentBundledTrack, loadRandomBundledTrack, isLoading: isGuestLoading, trackGuestEvent } = useGuest();
+  const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
   const { isLibraryMode, currentLibraryTrack, loadRandomLibraryTrack, isLoading: isLibraryLoading, trackLibraryEvent, userTier } = useLibrary();
   const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
@@ -284,10 +284,10 @@ const Studio = () => {
     let isCancelled = false;
     const loadAssets = async () => {
       try {
-        if (isGuestMode) {
-          // For guest mode, use bundled tracks from GuestContext
-          console.log('Guest mode - using bundled tracks from GuestContext');
-          setAvailableAssets([]); // No need to load additional assets in guest mode
+        if (isDemoMode) {
+          // For demo mode, use bundled tracks from DemoContext
+          console.log('Demo mode - using bundled tracks from DemoContext');
+          setAvailableAssets([]); // No need to load additional assets in demo mode
         } else if (user) {
           // Only for logged-in users, load tracks based on their tier
           const libraryTracks = await LibraryService.getLibraryTracks(tier.id);
@@ -321,7 +321,7 @@ const Studio = () => {
     };
     loadAssets();
     return () => { isCancelled = true; };
-  }, [userTier, isGuestMode, user]);
+  }, [userTier, isDemoMode, user]);
 
   // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
@@ -329,9 +329,9 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-        // In guest mode, use the GuestContext's current track
-        if (isGuestMode && currentBundledTrack) {
-          console.log('Guest mode: Using GuestContext track:', currentBundledTrack.name);
+                 // In demo mode, use the DemoContext's current track
+         if (isDemoMode && currentDemoTrack) {
+           console.log('Demo mode: Using DemoContext track:', currentDemoTrack.name);
           
           // Use existing audio context if available
           let context = audioContext;
@@ -355,40 +355,40 @@ const Studio = () => {
             return;
           }
 
-          // Fetch the bundled track from GuestContext
-          const response = await fetch(currentBundledTrack.file);
-          const blob = await response.blob();
-          const file = new File([blob], `${currentBundledTrack.name}.${currentBundledTrack.type}`, { 
-            type: `audio/${currentBundledTrack.type}` 
-          });
-          
-          // Load the audio file into buffer
-          const buffer = await loadAudioBuffer(file, context);
-          
-          // Create track using GuestContext metadata
-          const newTrack: Track = {
-            id: currentBundledTrack.id,
-            file,
-            buffer,
-            mode: 'preview',
-            loopStart: 0,
-            loopEnd: buffer.duration,
-            cuePoints: Array.from({ length: 10 }, (_, i) => 
-              buffer.duration * (i / 10)
-            ),
-            tempo: currentBundledTrack.bpm || 120,
-            timeSignature: { numerator: 4, denominator: 4 },
-            firstMeasureTime: 0,
-            showMeasures: false
-          };
+                     // Fetch the bundled track from DemoContext
+           const response = await fetch(currentDemoTrack.file);
+           const blob = await response.blob();
+           const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
+             type: `audio/${currentDemoTrack.type}` 
+           });
+           
+           // Load the audio file into buffer
+           const buffer = await loadAudioBuffer(file, context);
+           
+           // Create track using DemoContext metadata
+           const newTrack: Track = {
+             id: currentDemoTrack.id,
+             file,
+             buffer,
+             mode: 'preview',
+             loopStart: 0,
+             loopEnd: buffer.duration,
+             cuePoints: Array.from({ length: 10 }, (_, i) => 
+               buffer.duration * (i / 10)
+             ),
+             tempo: currentDemoTrack.bpm || 120,
+             timeSignature: { numerator: 4, denominator: 4 },
+             firstMeasureTime: 0,
+             showMeasures: false
+           };
           
           setTracks([newTrack]);
           setCurrentTrackIndex(0);
           setIsTrackLoading(false);
           
-          // Track guest event
-          trackGuestEvent('session_started', { 
-            trackId: currentBundledTrack.id,
+          // Track demo event
+          trackDemoEvent('session_started', { 
+            trackId: currentDemoTrack.id,
             timestamp: Date.now()
           });
           
@@ -489,20 +489,20 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isGuestMode, currentBundledTrack, availableAssets, user, trackGuestEvent]);
+    }, [audioContext, initializeAudio, isDemoMode, currentDemoTrack, availableAssets, user, trackDemoEvent]);
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
-        if (isGuestMode) {
-          // In guest mode, don't auto-load - wait for user interaction
-          console.log('Guest mode: Waiting for user to click load track button');
+        if (isDemoMode) {
+          // In demo mode, don't auto-load - wait for user interaction
+          console.log('Demo mode: Waiting for user to click load track button');
         } else {
           if (availableAssets && availableAssets.length > 0 && user) {
             loadRandomTrack();
           }
         }
       }
-    }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
+    }, [tracks.length, isManuallyAddingTrack, isDemoMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -545,21 +545,21 @@ const Studio = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [tracks, currentTrackIndex]);
 
-        // Handle guest track changes
+        // Handle demo track changes
       useEffect(() => {
-        if (isGuestMode && currentBundledTrack && audioContext && tracks.length > 0) {
+        if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
           // If the currently loaded track already matches the bundled track, do nothing
-          if (tracks[0]?.id === currentBundledTrack.id) return;
+          if (tracks[0]?.id === currentDemoTrack.id) return;
           
-          // In guest mode, we don't need to update tracks since we're using bundled tracks
-          // Just log the guest event and keep the current track
-          console.log('Guest mode: Bundled track changed to:', currentBundledTrack.name);
-          trackGuestEvent('next_track', { 
+          // In demo mode, we don't need to update tracks since we're using bundled tracks
+          // Just log the demo event and keep the current track
+          console.log('Demo mode: Bundled track changed to:', currentDemoTrack.name);
+          trackDemoEvent('next_track', { 
             fromTrackId: tracks[0]?.id,
-            toTrackId: currentBundledTrack.id
+            toTrackId: currentDemoTrack.id
           });
         }
-      }, [isGuestMode, currentBundledTrack, audioContext, tracks.length, trackGuestEvent]);
+      }, [isDemoMode, currentDemoTrack, audioContext, tracks.length, trackDemoEvent]);
 
   // Reset the hasLoadedTrack flag when tracks are cleared
   useEffect(() => {
@@ -868,9 +868,9 @@ const Studio = () => {
     if (isTrackLoading || isDemoLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
-    if (isDemoMode) {
-      // In demo mode, load next demo track
-      loadRandomDemoTrack();
+         if (isDemoMode) {
+       // In demo mode, load next bundled track
+       loadRandomDemoTrack();
     } else {
       // Normal mode - cycle through available assets
       const assets = availableAssets || [];
@@ -884,7 +884,7 @@ const Studio = () => {
     if (tracks.length === 0) return;
     
     if (isDemoMode) {
-      // In demo mode, load next demo track (since we don't have previous demo track concept)
+      // In demo mode, load next bundled track (since we don't have previous bundled track concept)
       loadRandomDemoTrack();
     } else {
       // Normal mode - cycle through available assets
@@ -2053,16 +2053,16 @@ const Studio = () => {
       if (isDemoMode) {
         // For demo mode, use DemoContext bundled tracks
         if (!currentDemoTrack) {
-          // Load a demo track first if none is loaded
+          // Load a bundled track first if none is loaded
           await loadRandomDemoTrack();
           if (!currentDemoTrack) {
-            throw new Error('Failed to load demo track. Please try again.');
+            throw new Error('Failed to load bundled track. Please try again.');
           }
         }
         
         console.log('handleInitializeAudio - demo mode, using bundled track:', currentDemoTrack.name);
         
-        // Fetch the bundled demo track from DemoContext
+        // Fetch the bundled track from DemoContext
         const response = await fetch(currentDemoTrack.file);
         const blob = await response.blob();
         const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
@@ -2494,7 +2494,7 @@ const Studio = () => {
                           if (currentDemoTrack) {
                             loadRandomTrack();
                           } else {
-                            // If no current demo track, load a random one first
+                            // If no current bundled track, load a random one first
                             await loadRandomDemoTrack();
                             // Then load the track
                             if (currentDemoTrack) {
