@@ -1,8 +1,9 @@
 // services/libraryService.ts
 //
-// NOTE: This service now only provides database tracks for Pro users.
-// Guest and Free users get demo tracks from bundled audio files via DemoContext.
-// No database queries are made for non-pro users.
+// NOTE: This service now provides database tracks based on user tier:
+// - Guest users: No tracks (bundled tracks via GuestContext)
+// - Free users: 10 monthly revolving tracks from library_tracks
+// - Pro users: All available tracks from library_tracks
 //
 import { supabase } from "./supabase";
 import { LibraryTrack } from "../types/music";
@@ -44,26 +45,32 @@ export interface DatabaseLibraryTrack {
 export class LibraryService {
   /**
    * Get library tracks based on user tier.
-   * Free/guest: No tracks (demo tracks are bundled)
-   * Pro: RPC get_pro_user_tracks
+   * Guest: No tracks (bundled tracks via GuestContext)
+   * Free: 10 monthly revolving tracks via get_user_tracks RPC
+   * Pro: All tracks via get_user_tracks RPC
    */
   static async getLibraryTracks(
     userTier: "guest" | "free" | "pro"
   ): Promise<LibraryTrack[]> {
     try {
-      if (userTier === "pro") {
-        const { data, error } = await supabase.rpc("get_pro_user_tracks");
-        if (error) throw error;
-        return this.transformDatabaseTracks(
-          (data ?? []) as DatabaseLibraryTrack[]
+      if (userTier === "guest") {
+        // Guest users don't get database tracks - they use bundled tracks
+        console.log(
+          "Guest user: No database tracks needed (bundled tracks via GuestContext)"
         );
+        return [];
       }
 
-      // guest and free users don't get database tracks - demo tracks are bundled
-      console.log(
-        "Guest/free user: No database tracks needed (demo tracks are bundled)"
+      // Free and Pro users get tracks via RPC function
+      const { data, error } = await supabase.rpc("get_user_tracks");
+      if (error) {
+        console.error("Error calling get_user_tracks RPC:", error);
+        throw error;
+      }
+
+      return this.transformDatabaseTracks(
+        (data ?? []) as DatabaseLibraryTrack[]
       );
-      return [];
     } catch (error) {
       console.error("Error fetching library tracks:", error);
       return [];
@@ -75,8 +82,8 @@ export class LibraryService {
     genre: string,
     userTier: "guest" | "free" | "pro"
   ): Promise<LibraryTrack[]> {
-    // Guest/free users don't have database tracks to filter
-    if (userTier === "guest" || userTier === "free") {
+    // Guest users don't have database tracks to filter
+    if (userTier === "guest") {
       return [];
     }
 
@@ -88,8 +95,8 @@ export class LibraryService {
   static async getAvailableGenres(
     userTier: "guest" | "free" | "pro"
   ): Promise<string[]> {
-    // Guest/free users don't have database tracks to get genres from
-    if (userTier === "guest" || userTier === "free") {
+    // Guest users don't have database tracks to get genres from
+    if (userTier === "guest") {
       return [];
     }
 
@@ -102,8 +109,8 @@ export class LibraryService {
     trackId: string,
     userTier: "guest" | "free" | "pro"
   ): Promise<LibraryTrack | null> {
-    // Guest/free users don't have database tracks to search
-    if (userTier === "guest" || userTier === "free") {
+    // Guest users don't have database tracks to search
+    if (userTier === "guest") {
       return null;
     }
 
@@ -195,13 +202,27 @@ export class LibraryService {
   static async getTrackCount(
     userTier: "guest" | "free" | "pro"
   ): Promise<number> {
-    // Guest/free users don't have database tracks to count
-    if (userTier === "guest" || userTier === "free") {
+    // Guest users don't have database tracks to count
+    if (userTier === "guest") {
       return 0;
     }
 
     const tracks = await this.getLibraryTracks(userTier);
     return tracks.length;
+  }
+
+  /**
+   * Get user's current tier (placeholder - should integrate with subscription service)
+   */
+  static async getUserTier(userId: string): Promise<"guest" | "free" | "pro"> {
+    try {
+      // TODO: This should integrate with your subscription service
+      // For now, return 'free' for all authenticated users
+      return "free";
+    } catch (error) {
+      console.error("Error getting user tier:", error);
+      return "free";
+    }
   }
 }
 
@@ -210,7 +231,7 @@ export function pickPlayableKey(
   t: LibraryTrack,
   userTier: "guest" | "free" | "pro"
 ): string {
-  // Guest/free users don't have database tracks, so this function is mainly for pro users
+  // Guest users don't have database tracks, so this function is mainly for free/pro users
   if ((userTier === "guest" || userTier === "free") && t.previewKey) {
     return t.previewKey;
   }

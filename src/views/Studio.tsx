@@ -3,7 +3,8 @@ import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
-import { useDemo } from '../context/DemoContext';
+import { useGuest } from '../context/GuestContext';
+import { useLibrary } from '../context/LibraryContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
@@ -62,7 +63,8 @@ const Studio = () => {
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { user, loading: authLoading } = useAuth();
-  const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
+  const { isGuestMode, currentBundledTrack, loadRandomBundledTrack, isLoading: isGuestLoading, trackGuestEvent } = useGuest();
+  const { isLibraryMode, currentLibraryTrack, loadRandomLibraryTrack, isLoading: isLibraryLoading, trackLibraryEvent, userTier } = useLibrary();
   const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { tier } = useUserTier();
@@ -282,10 +284,10 @@ const Studio = () => {
     let isCancelled = false;
     const loadAssets = async () => {
       try {
-        if (isDemoMode) {
-          // For demo mode, use bundled tracks from DemoContext
-          console.log('Demo mode - using bundled demo tracks from DemoContext');
-          setAvailableAssets([]); // No need to load additional assets in demo mode
+        if (isGuestMode) {
+          // For guest mode, use bundled tracks from GuestContext
+          console.log('Guest mode - using bundled tracks from GuestContext');
+          setAvailableAssets([]); // No need to load additional assets in guest mode
         } else if (user) {
           // Only for logged-in users, load tracks based on their tier
           const libraryTracks = await LibraryService.getLibraryTracks(tier.id);
@@ -319,7 +321,7 @@ const Studio = () => {
     };
     loadAssets();
     return () => { isCancelled = true; };
-  }, [tier.id, isDemoMode, user]);
+  }, [userTier, isGuestMode, user]);
 
   // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
@@ -327,9 +329,9 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-        // In demo mode, use the DemoContext's current track
-        if (isDemoMode && currentDemoTrack) {
-          console.log('Demo mode: Using DemoContext track:', currentDemoTrack.name);
+        // In guest mode, use the GuestContext's current track
+        if (isGuestMode && currentBundledTrack) {
+          console.log('Guest mode: Using GuestContext track:', currentBundledTrack.name);
           
           // Use existing audio context if available
           let context = audioContext;
@@ -353,19 +355,19 @@ const Studio = () => {
             return;
           }
 
-          // Fetch the bundled demo track from DemoContext
-          const response = await fetch(currentDemoTrack.file);
+          // Fetch the bundled track from GuestContext
+          const response = await fetch(currentBundledTrack.file);
           const blob = await response.blob();
-          const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
-            type: `audio/${currentDemoTrack.type}` 
+          const file = new File([blob], `${currentBundledTrack.name}.${currentBundledTrack.type}`, { 
+            type: `audio/${currentBundledTrack.type}` 
           });
           
           // Load the audio file into buffer
           const buffer = await loadAudioBuffer(file, context);
           
-          // Create track using DemoContext metadata
+          // Create track using GuestContext metadata
           const newTrack: Track = {
-            id: currentDemoTrack.id,
+            id: currentBundledTrack.id,
             file,
             buffer,
             mode: 'preview',
@@ -374,7 +376,7 @@ const Studio = () => {
             cuePoints: Array.from({ length: 10 }, (_, i) => 
               buffer.duration * (i / 10)
             ),
-            tempo: currentDemoTrack.bpm || 120,
+            tempo: currentBundledTrack.bpm || 120,
             timeSignature: { numerator: 4, denominator: 4 },
             firstMeasureTime: 0,
             showMeasures: false
@@ -384,9 +386,9 @@ const Studio = () => {
           setCurrentTrackIndex(0);
           setIsTrackLoading(false);
           
-          // Track demo event
-          trackDemoEvent('session_started', { 
-            trackId: currentDemoTrack.id,
+          // Track guest event
+          trackGuestEvent('session_started', { 
+            trackId: currentBundledTrack.id,
             timestamp: Date.now()
           });
           
@@ -487,20 +489,20 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isDemoMode, currentDemoTrack, availableAssets, user, trackDemoEvent]);
+    }, [audioContext, initializeAudio, isGuestMode, currentBundledTrack, availableAssets, user, trackGuestEvent]);
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
-        if (isDemoMode) {
-          // In demo mode, don't auto-load - wait for user interaction
-          console.log('Demo mode: Waiting for user to click load track button');
+        if (isGuestMode) {
+          // In guest mode, don't auto-load - wait for user interaction
+          console.log('Guest mode: Waiting for user to click load track button');
         } else {
           if (availableAssets && availableAssets.length > 0 && user) {
             loadRandomTrack();
           }
         }
       }
-    }, [tracks.length, isManuallyAddingTrack, isDemoMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
+    }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -543,21 +545,21 @@ const Studio = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [tracks, currentTrackIndex]);
 
-        // Handle demo track changes
+        // Handle guest track changes
       useEffect(() => {
-        if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
-          // If the currently loaded track already matches the demo track, do nothing
-          if (tracks[0]?.id === currentDemoTrack.id) return;
+        if (isGuestMode && currentBundledTrack && audioContext && tracks.length > 0) {
+          // If the currently loaded track already matches the bundled track, do nothing
+          if (tracks[0]?.id === currentBundledTrack.id) return;
           
-          // In demo mode, we don't need to update tracks since we're using bundled tracks
-          // Just log the demo event and keep the current track
-          console.log('Demo mode: Demo track changed to:', currentDemoTrack.name);
-          trackDemoEvent('next_track', { 
+          // In guest mode, we don't need to update tracks since we're using bundled tracks
+          // Just log the guest event and keep the current track
+          console.log('Guest mode: Bundled track changed to:', currentBundledTrack.name);
+          trackGuestEvent('next_track', { 
             fromTrackId: tracks[0]?.id,
-            toTrackId: currentDemoTrack.id
+            toTrackId: currentBundledTrack.id
           });
         }
-      }, [isDemoMode, currentDemoTrack, audioContext, tracks.length, trackDemoEvent]);
+      }, [isGuestMode, currentBundledTrack, audioContext, tracks.length, trackGuestEvent]);
 
   // Reset the hasLoadedTrack flag when tracks are cleared
   useEffect(() => {
