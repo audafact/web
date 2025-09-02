@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
@@ -6,8 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useUser } from '../hooks/useUser';
 import { UpgradePrompt } from './UpgradePrompt';
-import { LibraryService } from '../services/libraryService';
-import { LibraryTrack, UserTrack } from '../types/music';
+import { UserTrack } from '../types/music';
 import LibraryTrackItem from './LibraryTrackItem';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
@@ -47,7 +46,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
-  const { tier } = useUser();
+  const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -72,26 +71,19 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
   
 
-  const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
-  const [playingAssets, setPlayingAssets] = useState<{ [key: string]: boolean }>({});
+
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState<{
     show: boolean;
     message: string;
     feature: string;
   }>({ show: false, message: '', feature: '' });
-  const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
-  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { audioRef, isPlaying, play, stop, toggle, isCurrentKey, currentKey } = useSingleAudio();
+  const { isPlaying, toggle, isCurrentKey } = useSingleAudio();
 
-  // Load library tracks when library tab is opened
-  useEffect(() => {
-    if (activeAudioTab === 'library' && libraryTracks.length === 0) {
-      loadLibraryTracks();
-    }
-  }, [activeAudioTab, libraryTracks.length]);
+
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -135,17 +127,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
     loadUserTracks();
   }, [user?.id]); // Only depend on user.id, not the entire user object
 
-  const loadLibraryTracks = useCallback(async () => {
-    setIsLoadingLibrary(true);
-    try {
-      const tracks = await LibraryService.getLibraryTracks(tier.id);
-      setLibraryTracks(tracks);
-    } catch (error) {
-      console.error('Error loading library tracks:', error);
-    } finally {
-      setIsLoadingLibrary(false);
-    }
-  }, [tier.id]);
+
 
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {
@@ -505,17 +487,17 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         
                         {/* Enhanced Library Tracks */}
                         <div className="space-y-3">
-                          {isLoadingLibrary ? (
+                          {userLoading ? (
                             <div className="text-center py-4">
                               <div className="loading-spinner mx-auto"></div>
                               <p className="text-sm audafact-text-secondary mt-2">Loading tracks...</p>
                             </div>
-                          ) : libraryTracks.length === 0 ? (
+                          ) : userLibraryTracks.length === 0 ? (
                             <div className="text-center py-4">
                               <p className="text-sm audafact-text-secondary">No tracks available</p>
                             </div>
                           ) : (
-                            libraryTracks.map((track) => (
+                            userLibraryTracks.map((track) => (
                               <LibraryTrackItem
                                 key={track.id}
                                 track={track}

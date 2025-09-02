@@ -2169,13 +2169,6 @@ const Studio = () => {
     onAddUserTrack: handleAddUserTrack,
   }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack]);
 
-
-
-
-
-
-
-
   
   // Loading state
   if (isLoading || isTrackLoading || userLoading) {
