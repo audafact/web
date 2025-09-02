@@ -3,7 +3,7 @@ import { Save, Check } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { UpgradePrompt } from './UpgradePrompt';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 import { showSignupModal } from '../hooks/useSignupModal';
 
 interface RecordingControlsProps {
@@ -20,7 +20,7 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     stopPerformanceRecording
   } = useRecording();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LibraryTrack } from "../types/music";
 import { trackEvent } from "../services/analyticsService";
-import { useUserTier } from "./useUserTier";
+import { useUser } from "./useUser";
 import { usePreviewFromProvider } from "../audio/usePreviewFromProvider";
 import { signFile } from "../lib/api";
 import { pickPlayableKey } from "@/services/libraryService";
@@ -35,7 +35,7 @@ function cacheGet(key: string): AudioBuffer | null {
 }
 
 export const usePreviewAudio = () => {
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   const {
     loadAndDecode,
     loadFromBuffer,

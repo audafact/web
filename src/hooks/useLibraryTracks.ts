@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { LibraryTrack } from '../types/music';
-import { LibraryService } from '../services/libraryService';
-import { useUserTier } from './useUserTier';
+import { useState, useEffect } from "react";
+import { LibraryTrack } from "../types/music";
+import { LibraryService } from "../services/libraryService";
+import { useUser } from "./useUser";
 
 export interface UseLibraryTracksReturn {
   tracks: LibraryTrack[];
@@ -14,27 +14,30 @@ export interface UseLibraryTracksReturn {
 }
 
 export const useLibraryTracks = (): UseLibraryTracksReturn => {
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rotationInfo, setRotationInfo] = useState<{ weekNumber: number; trackCount: number } | null>(null);
+  const [rotationInfo, setRotationInfo] = useState<{
+    weekNumber: number;
+    trackCount: number;
+  } | null>(null);
 
   const loadTracks = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const [tracksData, rotationData] = await Promise.all([
         LibraryService.getLibraryTracks(tier.id),
-        LibraryService.getCurrentRotationInfo()
+        LibraryService.getCurrentRotationInfo(),
       ]);
-      
+
       setTracks(tracksData);
       setRotationInfo(rotationData);
     } catch (err) {
-      console.error('Error loading library tracks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load tracks');
+      console.error("Error loading library tracks:", err);
+      setError(err instanceof Error ? err.message : "Failed to load tracks");
     } finally {
       setIsLoading(false);
     }
@@ -45,11 +48,11 @@ export const useLibraryTracks = (): UseLibraryTracksReturn => {
   };
 
   const getTracksByGenre = (genre: string): LibraryTrack[] => {
-    return tracks.filter(track => track.genre === genre);
+    return tracks.filter((track) => track.genre === genre);
   };
 
   const getAvailableGenres = (): string[] => {
-    return [...new Set(tracks.map(track => track.genre))];
+    return [...new Set(tracks.map((track) => track.genre))];
   };
 
   // Load tracks when tier changes
@@ -64,6 +67,6 @@ export const useLibraryTracks = (): UseLibraryTracksReturn => {
     rotationInfo,
     refreshTracks,
     getTracksByGenre,
-    getAvailableGenres
+    getAvailableGenres,
   };
-}; 
+};

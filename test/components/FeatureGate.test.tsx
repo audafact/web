@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import FeatureGate from '../../src/components/FeatureGate';
 
 // Mock the hooks
-vi.mock('../../src/hooks/useUserTier', () => ({
-  useUserTier: vi.fn()
+vi.mock('../../src/hooks/useUser', () => ({
+  useUser: vi.fn()
 }));
 
 vi.mock('../../src/hooks/useAccessControl', () => ({
@@ -48,12 +48,12 @@ vi.mock('../../src/services/accessService', () => ({
   }
 }));
 
-import { useUserTier } from '../../src/hooks/useUserTier';
+import { useUser } from '../../src/hooks/useUser';
 import { useAccessControl } from '../../src/hooks/useAccessControl';
 import { showSignupModal } from '../../src/hooks/useSignupModal';
 
 describe('FeatureGate Component', () => {
-  const mockUseUserTier = useUserTier as ReturnType<typeof vi.fn>;
+  const mockuseUser = useUser as ReturnType<typeof vi.fn>;
   const mockUseAccessControl = useAccessControl as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -61,7 +61,7 @@ describe('FeatureGate Component', () => {
   });
 
   it('should render children for users with access', () => {
-    mockUseUserTier.mockReturnValue({
+    mockuseUser.mockReturnValue({
       tier: { id: 'pro', name: 'Pro Creator', features: {}, limits: {} },
       isGuest: false,
       isFree: false,
@@ -90,7 +90,7 @@ describe('FeatureGate Component', () => {
   });
 
   it('should show modal gate for users without access', () => {
-    mockUseUserTier.mockReturnValue({
+    mockuseUser.mockReturnValue({
       tier: { id: 'guest', name: 'Guest', features: {}, limits: {} },
       isGuest: true,
       isFree: false,
@@ -120,7 +120,7 @@ describe('FeatureGate Component', () => {
   });
 
   it('should render hidden gate type correctly', () => {
-    mockUseUserTier.mockReturnValue({
+    mockuseUser.mockReturnValue({
       tier: { id: 'guest', name: 'Guest', features: {}, limits: {} },
       isGuest: true,
       isFree: false,
@@ -149,7 +149,7 @@ describe('FeatureGate Component', () => {
   });
 
   it('should render disabled gate type correctly', () => {
-    mockUseUserTier.mockReturnValue({
+    mockuseUser.mockReturnValue({
       tier: { id: 'guest', name: 'Guest', features: {}, limits: {} },
       isGuest: true,
       isFree: false,
@@ -179,7 +179,7 @@ describe('FeatureGate Component', () => {
   });
 
   it('should call onGateTrigger when gate is triggered', () => {
-    mockUseUserTier.mockReturnValue({
+    mockuseUser.mockReturnValue({
       tier: { id: 'guest', name: 'Guest', features: {}, limits: {} },
       isGuest: true,
       isFree: false,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { FeatureGateProps } from '../types/music';
 import { showSignupModal } from '../hooks/useSignupModal';
@@ -15,7 +15,7 @@ const FeatureGate: React.FC<FeatureGateProps> = ({
   gateType = 'modal',
   onGateTrigger 
 }) => {
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   const { canAccessFeature } = useAccessControl();
   
   const hasAccess = canAccessFeature(feature);

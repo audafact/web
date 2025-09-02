@@ -2,20 +2,20 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import VisualFeatureGate from '../../src/components/VisualFeatureGate';
-import { useUserTier } from '../../src/hooks/useUserTier';
+import { useUser } from '../../src/hooks/useUser';
 import { useAccessControl } from '../../src/hooks/useAccessControl';
 import { useResponsiveDesign } from '../../src/hooks/useResponsiveDesign';
 import { showSignupModal } from '../../src/hooks/useSignupModal';
 import { trackEvent } from '../../src/services/analyticsService';
 
 // Mock the hooks
-vi.mock('../../src/hooks/useUserTier');
+vi.mock('../../src/hooks/useUser');
 vi.mock('../../src/hooks/useAccessControl');
 vi.mock('../../src/hooks/useResponsiveDesign');
 vi.mock('../../src/hooks/useSignupModal');
 vi.mock('../../src/services/analyticsService');
 
-const mockUseUserTier = useUserTier as vi.MockedFunction<typeof useUserTier>;
+const mockuseUser = useUser as vi.MockedFunction<typeof useUser>;
 const mockUseAccessControl = useAccessControl as vi.MockedFunction<typeof useAccessControl>;
 const mockUseResponsiveDesign = useResponsiveDesign as vi.MockedFunction<typeof useResponsiveDesign>;
 const mockShowSignupModal = showSignupModal as vi.MockedFunction<typeof showSignupModal>;
@@ -26,7 +26,7 @@ describe('VisualFeatureGate', () => {
     vi.clearAllMocks();
     
     // Default mock implementations
-    mockUseUserTier.mockReturnValue({ tier: 'free' });
+    mockuseUser.mockReturnValue({ tier: 'free' });
     mockUseAccessControl.mockReturnValue({
       canAccessFeature: vi.fn().mockReturnValue(false),
       getFeatureConfig: vi.fn(),

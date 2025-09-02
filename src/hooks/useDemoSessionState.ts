@@ -1,16 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { DemoSessionState } from '../types/postSignup';
-import { DemoSessionManager } from '../services/demoSessionManager';
-import { useUserTier } from './useUserTier';
+import { useState, useEffect, useCallback } from "react";
+import { DemoSessionState } from "../types/postSignup";
+import { DemoSessionManager } from "../services/demoSessionManager";
+import { useUser } from "./useUser";
 
 export const useDemoSessionState = () => {
-  const { tier } = useUserTier();
-  const [currentState, setCurrentState] = useState<DemoSessionState | null>(null);
+  const { tier } = useUser();
+  const [currentState, setCurrentState] = useState<DemoSessionState | null>(
+    null
+  );
   const demoManager = DemoSessionManager.getInstance();
 
   // Save demo state periodically for guests
   useEffect(() => {
-    if (tier.id === 'guest') {
+    if (tier.id === "guest") {
       const interval = setInterval(() => {
         const state = getCurrentSessionState();
         if (state) {
@@ -18,14 +20,14 @@ export const useDemoSessionState = () => {
           setCurrentState(state);
         }
       }, 30000); // Save every 30 seconds
-      
+
       return () => clearInterval(interval);
     }
   }, [tier.id]);
 
   // Try to restore demo state when user becomes free tier
   useEffect(() => {
-    if (tier.id === 'free') {
+    if (tier.id === "free") {
       const restored = demoManager.restoreDemoState();
       if (restored) {
         // Update current state to reflect restored state
@@ -58,7 +60,7 @@ export const useDemoSessionState = () => {
     currentState,
     saveCurrentState,
     restoreState,
-    clearState
+    clearState,
   };
 };
 
@@ -72,9 +74,9 @@ const getCurrentSessionState = (): DemoSessionState | null => {
     playbackPosition: 0,
     cuePoints: [],
     loopRegions: [],
-    mode: 'preview',
+    mode: "preview",
     volume: 1,
     tempo: 120,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   };
-}; 
+};

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { showSignupModal } from '../hooks/useSignupModal';
@@ -31,7 +31,7 @@ const VisualFeatureGate: React.FC<VisualFeatureGateProps> = ({
   tooltipDelay = 200
 }) => {
   const { isMobile, isTablet } = useResponsiveDesign();
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   const { canAccessFeature } = useAccessControl();
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipCoords, setTooltipCoords] = useState({ x: 0, y: 0 });

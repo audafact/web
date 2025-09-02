@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { useUser } from '../hooks/useUser';
 import { LibraryService } from '../services/libraryService';
 import { LibraryTrack } from '../types/music';
 
@@ -41,13 +42,14 @@ const LibraryContext = createContext<LibraryContextType | null>(null);
 
 export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const { tier, libraryTracks, loading: userLoading } = useUser();
   const [currentLibraryTrack, setCurrentLibraryTrack] = useState<AudioAsset | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [availableLibraryTracks, setAvailableLibraryTracks] = useState<AudioAsset[]>([]);
-  const [userTier, setUserTier] = useState<'free' | 'pro'>('free');
   
   const isLibraryMode = !!user; // Only authenticated users get library access
   const isAuthenticated = !!user;
+  const userTier = tier.id as 'free' | 'pro';
 
   const trackLibraryEvent = useCallback((event: string, properties: any) => {
     if (isLibraryMode) {
@@ -62,43 +64,29 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [isLibraryMode, userTier]);
 
-  const loadRandomLibraryTrack = useCallback(async () => {
-    if (!user) return;
+  const loadRandomLibraryTrack = useCallback(() => {
+    if (!user || !libraryTracks || libraryTracks.length === 0) return;
     
     setIsLoading(true);
     try {
-      // Get tracks based on user tier
-      const tracks = await LibraryService.getLibraryTracks(userTier);
+      // Transform LibraryTrack to AudioAsset using LibraryService
+      const audioAssets: AudioAsset[] = LibraryService.transformToAudioAssets(libraryTracks).map(asset => ({
+        ...asset,
+        genre: libraryTracks.find(t => t.id === asset.id)?.genre || 'Unknown',
+        bpm: libraryTracks.find(t => t.id === asset.id)?.bpm || 0,
+        duration: libraryTracks.find(t => t.id === asset.id)?.duration || 0,
+      }));
       
-      if (tracks && tracks.length > 0) {
-        // Transform LibraryTrack to AudioAsset
-        const audioAssets: AudioAsset[] = tracks.map(track => ({
-          id: track.id,
-          name: track.name,
-          genre: track.genre,
-          bpm: track.bpm,
-          fileKey: track.fileKey,
-          type: track.type,
-          size: track.size,
-          duration: track.duration,
-          is_demo: false
-        }));
-        
-        setAvailableLibraryTracks(audioAssets);
-        
-        const selected = selectRandom(audioAssets);
-        if (selected) {
-          setCurrentLibraryTrack(selected);
-          trackLibraryEvent('track_loaded', {
-            trackId: selected.id,
-            genre: selected.genre,
-            bpm: selected.bpm
-          });
-        }
-      } else {
-        console.log('No library tracks available for user tier:', userTier);
-        setAvailableLibraryTracks([]);
-        setCurrentLibraryTrack(null);
+      setAvailableLibraryTracks(audioAssets);
+      
+      const selected = selectRandom(audioAssets);
+      if (selected) {
+        setCurrentLibraryTrack(selected);
+        trackLibraryEvent('track_loaded', {
+          trackId: selected.id,
+          genre: selected.genre,
+          bpm: selected.bpm
+        });
       }
     } catch (error) {
       console.error('Failed to load library track:', error);
@@ -107,29 +95,29 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsLoading(false);
     }
-  }, [user, userTier, trackLibraryEvent]);
+  }, [user, libraryTracks, trackLibraryEvent]);
 
-  // Determine user tier and load tracks
+  // Load tracks when library tracks are available from useUser hook
   useEffect(() => {
-    if (!user) return;
+    if (!user || userLoading) return;
     
-    // TODO: This should come from user profile or subscription service
-    // For now, assume all authenticated users are 'free' until we implement tier detection
-    const tier = 'free'; // This should be fetched from user profile
-    setUserTier(tier);
-    
-    // Load tracks for the user
-    loadRandomLibraryTrack();
-  }, [user, loadRandomLibraryTrack]);
+    if (libraryTracks && libraryTracks.length > 0) {
+      loadRandomLibraryTrack();
+    } else {
+      console.log('No library tracks available for user tier:', userTier);
+      setAvailableLibraryTracks([]);
+      setCurrentLibraryTrack(null);
+    }
+  }, [user, libraryTracks, userLoading, loadRandomLibraryTrack, userTier]);
   
   // Preload library tracks for authenticated users
   useEffect(() => {
     if (!isLibraryMode) return;
     
-    if (!currentLibraryTrack && availableLibraryTracks.length === 0) {
+    if (!currentLibraryTrack && availableLibraryTracks.length === 0 && !userLoading) {
       loadRandomLibraryTrack();
     }
-  }, [isLibraryMode, currentLibraryTrack, availableLibraryTracks.length, loadRandomLibraryTrack]);
+  }, [isLibraryMode, currentLibraryTrack, availableLibraryTracks.length, loadRandomLibraryTrack, userLoading]);
 
   const value = {
     isLibraryMode,

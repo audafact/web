@@ -10,8 +10,8 @@ vi.mock('../../src/services/analyticsService', () => ({
 }));
 
 // Mock the user tier hook
-vi.mock('../../src/hooks/useUserTier', () => ({
-  useUserTier: () => ({ tier: 'guest' })
+vi.mock('../../src/hooks/useUser', () => ({
+  useUser: () => ({ tier: 'guest' })
 }));
 
 // Mock the post-signup actions hook

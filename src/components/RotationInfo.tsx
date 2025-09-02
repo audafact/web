@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { LibraryService } from '../services/libraryService';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 
 interface RotationInfoProps {
   className?: string;
 }
 
 const RotationInfo: React.FC<RotationInfoProps> = ({ className = '' }) => {
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   const [rotationInfo, setRotationInfo] = useState<{
     weekNumber: number;
     trackCount: number;

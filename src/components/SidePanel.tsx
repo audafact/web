@@ -4,7 +4,7 @@ import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
 import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 import { UpgradePrompt } from './UpgradePrompt';
 import { LibraryService } from '../services/libraryService';
 import { LibraryTrack, UserTrack } from '../types/music';
@@ -47,7 +47,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {

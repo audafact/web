@@ -4,7 +4,7 @@ import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
 import { useDemo } from '../context/DemoContext';
-import { useLibrary } from '../context/LibraryContext';
+
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
@@ -26,7 +26,7 @@ import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 import { LibraryService } from '../services/libraryService';
 import { signFile } from '../lib/api';
 
@@ -62,12 +62,12 @@ const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
-  const { isLibraryMode, currentLibraryTrack, loadRandomLibraryTrack, isLoading: isLibraryLoading, trackLibraryEvent, userTier } = useLibrary();
+
   const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
-  const { tier } = useUserTier();
+  const { user, libraryTracks, loading: userLoading } = useUser();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
@@ -279,49 +279,26 @@ const Studio = () => {
 
 
 
-  // Load library tracks for navigation based on tier
+  // Load library tracks for studio
   useEffect(() => {
-    let isCancelled = false;
-    const loadAssets = async () => {
-      try {
-        if (isDemoMode) {
-          // For demo mode, use bundled tracks from DemoContext
-          console.log('Demo mode - using bundled tracks from DemoContext');
-          setAvailableAssets([]); // No need to load additional assets in demo mode
-        } else if (user) {
-          // Only for logged-in users, load tracks based on their tier
-          const libraryTracks = await LibraryService.getLibraryTracks(tier.id);
-          if (isCancelled) return;
-          if (libraryTracks && libraryTracks.length > 0) {
-            console.log('Raw library tracks from database:', libraryTracks);
-            const mapped: AudioAsset[] = libraryTracks.map(t => ({
-              id: t.id,
-              name: t.name,
-              fileKey: t.fileKey, // LibraryTrack now has fileKey field
-              type: t.type,
-              size: t.size,
-              is_demo: false // Logged-in users don't have demo tracks
-            }));
-            console.log('Mapped available assets:', mapped);
-            console.log('Demo tracks found:', mapped.filter(t => t.is_demo));
-            setAvailableAssets(mapped);
-          } else {
-            console.log('No library tracks found');
-            setAvailableAssets([]);
-          }
-        } else {
-          // Anonymous users (not demo mode, not logged in) - no assets needed
-          console.log('Anonymous user - no library tracks needed');
-          setAvailableAssets([]);
-        }
-      } catch (e) {
-        console.error('Failed to load library tracks:', e);
-        if (!isCancelled) setAvailableAssets([]);
-      }
-    };
-    loadAssets();
-    return () => { isCancelled = true; };
-  }, [userTier, isDemoMode, user]);
+    if (isDemoMode) {
+      // For demo mode, use bundled tracks from DemoContext
+
+      setAvailableAssets([]); // No need to load additional assets in demo mode
+    } else if (user && libraryTracks.length > 0) {
+      // Use library tracks from useUser hook
+      const mapped: AudioAsset[] = LibraryService.transformToAudioAssets(libraryTracks);
+      setAvailableAssets(mapped);
+    } else if (user) {
+      // User is logged in but no library tracks yet (still loading)
+
+      setAvailableAssets([]);
+    } else {
+      // Anonymous users (not demo mode, not logged in) - no assets needed
+
+      setAvailableAssets([]);
+    }
+  }, [libraryTracks, isDemoMode, user]);
 
   // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
@@ -331,7 +308,6 @@ const Studio = () => {
         
                  // In demo mode, use the DemoContext's current track
          if (isDemoMode && currentDemoTrack) {
-           console.log('Demo mode: Using DemoContext track:', currentDemoTrack.name);
           
           // Use existing audio context if available
           let context = audioContext;
@@ -403,8 +379,7 @@ const Studio = () => {
         
         const randomIndex = Math.floor(Math.random() * availableAssets.length);
         const asset = availableAssets[randomIndex];
-        console.log('Selected asset for loading:', asset);
-        console.log('Asset fileKey:', asset.fileKey);
+
         
         // Use existing audio context if available
         let context = audioContext;
@@ -473,7 +448,7 @@ const Studio = () => {
         setTrackLoadRetryCount(0);
         setIsTrackLoading(false);
       } catch (error) {
-        console.error('Error loading random track:', error);
+        console.error('❌ Error loading random track:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
         setIsTrackLoading(false);
         
@@ -493,14 +468,8 @@ const Studio = () => {
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
-        if (isDemoMode) {
-          // In demo mode, don't auto-load - wait for user interaction
-          console.log('Demo mode: Waiting for user to click load track button');
-        } else {
-          if (availableAssets && availableAssets.length > 0 && user) {
-            loadRandomTrack();
-          }
-        }
+        // Don't automatically load tracks - wait for user interaction
+        // This prevents AudioContext initialization issues
       }
     }, [tracks.length, isManuallyAddingTrack, isDemoMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
@@ -553,7 +522,7 @@ const Studio = () => {
           
           // In demo mode, we don't need to update tracks since we're using bundled tracks
           // Just log the demo event and keep the current track
-          console.log('Demo mode: Bundled track changed to:', currentDemoTrack.name);
+
           trackDemoEvent('next_track', { 
             fromTrackId: tracks[0]?.id,
             toTrackId: currentDemoTrack.id
@@ -871,12 +840,12 @@ const Studio = () => {
          if (isDemoMode) {
        // In demo mode, load next bundled track
        loadRandomDemoTrack();
-    } else {
-      // Normal mode - cycle through available assets
-      const assets = availableAssets || [];
-      const nextIndex = (currentTrackIndex + 1) % assets.length;
-      await loadTrackByIndex(nextIndex, true); // true = only update first track
-    }
+            } else {
+          // Normal mode - cycle through available assets
+          const assets = availableAssets || [];
+          const nextIndex = (currentTrackIndex + 1) % assets.length;
+          await loadTrackByIndex(nextIndex, true); // true = only update first track
+        }
   }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack, availableAssets]);
 
   const handlePreviousTrack = useCallback(async () => {
@@ -1032,7 +1001,7 @@ const Studio = () => {
     
     // Demo mode doesn't support adding tracks
     if (isDemoMode) {
-      console.log('Demo mode: Adding tracks not supported');
+
       return;
     }
     
@@ -1637,7 +1606,7 @@ const Studio = () => {
         // Add from library - use the new fileKey-based approach
         if (trackData?.file) {
           // We have fileKey from the drag payload, use it directly
-          console.log('Adding library track with fileKey:', trackData.file);
+
           await handleAddFromLibrary(asset, 'preview');
         } else {
           // Fallback to existing method
@@ -1648,8 +1617,6 @@ const Studio = () => {
       
       // If not found in library, it might be a user track
       // User tracks are now managed through Supabase and the SidePanel
-      console.log('Track not found in library. User should re-add from SidePanel.');
-      
       console.warn('Track not found for drop:', trackId);
     } catch (error) {
       console.error('Error handling drop:', error);
@@ -2060,7 +2027,7 @@ const Studio = () => {
           }
         }
         
-        console.log('handleInitializeAudio - demo mode, using bundled track:', currentDemoTrack.name);
+
         
         // Fetch the bundled track from DemoContext
         const response = await fetch(currentDemoTrack.file);
@@ -2119,7 +2086,7 @@ const Studio = () => {
         throw new Error('Library tracks are still loading. Please wait a moment and try again.');
       }
       
-      console.log('handleInitializeAudio - authenticated user, availableAssets:', availableAssets);
+
       
       // Use all available tracks for authenticated users
       const availableTracks = availableAssets;
@@ -2208,8 +2175,10 @@ const Studio = () => {
 
 
 
+
+  
   // Loading state
-  if (isLoading || isTrackLoading) {
+  if (isLoading || isTrackLoading || userLoading) {
     return (
       <div className="max-w-6xl mx-auto p-6">
         <div className="audafact-card p-8 text-center">
@@ -2542,6 +2511,56 @@ const Studio = () => {
           </div>
         </div>
 
+        {/* Library Mode - User has assets but no tracks loaded */}
+        {!isDemoMode && user && availableAssets.length > 0 && tracks.length === 0 && (
+          <div className="max-w-6xl mx-auto p-6">
+            <div className="audafact-card p-8 text-center">
+              <h1 className="text-2xl font-medium audafact-heading mb-4">
+                Welcome to Your Library
+              </h1>
+              <p className="text-slate-300 mb-8 font-medium">
+                You have {availableAssets.length} tracks available. Click below to load your first track.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={loadRandomTrack}
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  disabled={isTrackLoading}
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    {isTrackLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Load a Random Track
+                      </>
+                    )}
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                </button>
+
+                <button
+                  onClick={toggleSidePanel}
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    Browse Your Library
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </>
     );
