@@ -12,7 +12,7 @@ export class StorageService {
   private static readonly UPLOAD_BUCKET = "user-uploads";
   private static readonly RECORDING_BUCKET = "session-recordings";
   private static readonly LIBRARY_BUCKET = "library-tracks";
-  private static readonly MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+  private static readonly MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
   private static readonly ALLOWED_AUDIO_TYPES = [
     "audio/mpeg",
     "audio/wav",
@@ -113,22 +113,21 @@ export class StorageService {
     title: string | undefined,
     token: string
   ): Promise<{ url: string; key: string }> {
-    const response = await fetch(
-      buildApiUrl(API_CONFIG.ENDPOINTS.SIGN_UPLOAD),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          filename,
-          contentType,
-          sizeBytes,
-          title,
-        }),
-      }
-    );
+    const apiUrl = buildApiUrl(API_CONFIG.ENDPOINTS.SIGN_UPLOAD);
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        filename,
+        contentType,
+        sizeBytes,
+        title,
+      }),
+    });
 
     if (!response.ok) {
       throw new Error(

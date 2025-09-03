@@ -87,7 +87,7 @@ export class DatabaseService {
     try {
       const uploadData = {
         user_id: userId,
-        file_url: serverKey, // Use server key as file_url for R2 storage
+        file_key: serverKey, // Use server key as file_key for R2 storage
         title,
         duration,
         // New hash-based fields
