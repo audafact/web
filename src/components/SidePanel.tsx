@@ -23,6 +23,90 @@ interface AudioAsset {
   fileUrl?: string;
 }
 
+interface UploadButtonProps {
+  user: any;
+  canPerformAction: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => Promise<boolean>;
+  getUpgradeMessage: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => string;
+  showSignupModal: (action: string) => void;
+  setShowUpgradePrompt: (state: { show: boolean; message: string; feature: string }) => void;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+}
+
+const UploadButton: React.FC<UploadButtonProps> = ({
+  user,
+  canPerformAction,
+  getUpgradeMessage,
+  showSignupModal,
+  setShowUpgradePrompt,
+  fileInputRef
+}) => {
+  const [canUpload, setCanUpload] = useState<boolean | null>(null);
+  const [upgradeMessage, setUpgradeMessage] = useState<string>('');
+
+  useEffect(() => {
+    const checkUploadCapacity = async () => {
+      if (!user) {
+        setCanUpload(true); // Guest users can attempt upload (will show signup)
+        return;
+      }
+      
+      const uploadAllowed = await canPerformAction('upload');
+      setCanUpload(uploadAllowed);
+      
+      if (!uploadAllowed) {
+        setUpgradeMessage(getUpgradeMessage('upload'));
+      }
+    };
+
+    checkUploadCapacity();
+  }, [user, canPerformAction, getUpgradeMessage]);
+
+  const handleClick = async () => {
+    // Check if user is authenticated
+    if (!user) {
+      showSignupModal('upload');
+      return;
+    }
+    
+    // Check upload limits for authenticated users
+    const uploadAllowed = await canPerformAction('upload');
+    if (!uploadAllowed) {
+      setShowUpgradePrompt({
+        show: true,
+        message: getUpgradeMessage('upload'),
+        feature: 'Track Upload'
+      });
+      return;
+    }
+    
+    // For authenticated users with upload capacity, open file browser
+    fileInputRef.current?.click();
+  };
+
+  const isDisabled = user && canUpload === false;
+  const tooltipText = isDisabled ? upgradeMessage : 'Upload another track to your collection';
+
+  return (
+    <div className="pt-3 border-t border-audafact-divider">
+      <button
+        onClick={handleClick}
+        disabled={isDisabled}
+        className={`w-full px-3 py-2 text-sm border border-audafact-divider rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 ${
+          isDisabled 
+            ? 'text-audafact-text-secondary opacity-50 cursor-not-allowed' 
+            : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2'
+        }`}
+        title={tooltipText}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+        </svg>
+        Upload Another Track
+      </button>
+    </div>
+  );
+};
+
 
 
 interface SidePanelProps {
@@ -81,9 +165,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { isPlaying, toggle, isCurrentKey } = useSingleAudio();
-
-
+  const { isPlaying, isLoading, toggle, isCurrentKey } = useSingleAudio();
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -402,7 +484,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Mobile and Tablet overlay */}
       {isOpen && (
         <div 
-          className="fixed top-15 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed top-16 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-[50] lg:hidden"
           onClick={onToggle}
         />
       )}
@@ -410,7 +492,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Sidebar */}
       <div 
         data-sidepanel
-        className={`fixed top-16 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 overflow-hidden flex flex-col ${
+        className={`fixed top-16 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-[60] overflow-hidden flex flex-col ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         } w-full lg:w-[400px]`}
       >
@@ -596,6 +678,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         <div className="space-y-3">
                           {userTracks.map((track) => {
                             const isThisUserTrackPlaying = isPlaying && isCurrentKey(track.fileKey);
+                            const isThisUserTrackLoading = isLoading && isCurrentKey(track.fileKey);
 
                             return (
                               <div
@@ -621,11 +704,20 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         handlePreviewPlay(track, true); // single-audio hook handles toggle
                                       }}
                                       className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                      title={isThisUserTrackPlaying ? "Pause Preview" : "Play Preview"}
+                                      title={isThisUserTrackLoading ? "Loading..." : isThisUserTrackPlaying ? "Pause Preview" : "Play Preview"}
+                                      disabled={isThisUserTrackLoading}
                                     >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653Z" />
-                                      </svg>
+                                      {isThisUserTrackLoading ? (
+                                        <div className="loading-spinner w-4 h-4"></div>
+                                      ) : (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          {isThisUserTrackPlaying ? (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+                                          ) : (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653Z" />
+                                          )}
+                                        </svg>
+                                      )}
                                     </button>
                                     {/* Track Info */}
                                     <div className="flex-1 min-w-0">
@@ -670,6 +762,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               </div>
                             );
                           })}
+                          
+                          {/* Upload Button - Less prominent when tracks exist */}
+                          <UploadButton
+                            user={user}
+                            canPerformAction={canPerformAction}
+                            getUpgradeMessage={getUpgradeMessage}
+                            showSignupModal={showSignupModal}
+                            setShowUpgradePrompt={setShowUpgradePrompt}
+                            fileInputRef={fileInputRef}
+                          />
                         </div>
                       ) : null}
                     </div>

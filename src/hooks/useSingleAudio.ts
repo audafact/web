@@ -11,6 +11,7 @@ export function useSingleAudio() {
   const currentKindRef = useRef<Playable["kind"] | null>(null);
   const currentKeyRef = useRef<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   function ensureAudio() {
     if (!audioRef.current) {
@@ -24,7 +25,7 @@ export function useSingleAudio() {
     return audioRef.current!;
   }
 
-  function stop() {
+  function stop(clearKey = true) {
     const el = audioRef.current;
     if (el) {
       try {
@@ -35,6 +36,9 @@ export function useSingleAudio() {
       } catch {}
     }
     setIsPlaying(false);
+    if (clearKey) {
+      setIsLoading(false);
+    }
     // Revoke only blob URLs we created
     if (
       currentKindRef.current === "blob" &&
@@ -43,33 +47,42 @@ export function useSingleAudio() {
       URL.revokeObjectURL(currentUrlRef.current);
     }
     currentUrlRef.current = null;
-    currentKindRef.current = null;
-    currentKeyRef.current = null;
+    if (clearKey) {
+      currentKindRef.current = null;
+      currentKeyRef.current = null;
+    }
   }
 
   async function play(src: Playable) {
     const el = ensureAudio();
-    // Stop previous sound + cleanup
-    stop();
+    // Stop previous sound + cleanup, but preserve key if it's the same track
+    const isSameKey = src.kind === "key" && currentKeyRef.current === src.key;
+    stop(!isSameKey);
 
-    let url: string;
-    if (src.kind === "key") {
-      url = await getSignedUrl(src.key);
-      currentKindRef.current = "key";
-      currentKeyRef.current = src.key;
-    } else {
-      url = URL.createObjectURL(src.blob);
-      currentKindRef.current = "blob";
-      currentKeyRef.current = null;
+    if (!isLoading) {
+      setIsLoading(true);
     }
 
-    currentUrlRef.current = url;
-    el.src = url;
-
+    let url: string;
     try {
+      if (src.kind === "key") {
+        url = await getSignedUrl(src.key);
+        currentKindRef.current = "key";
+        currentKeyRef.current = src.key;
+      } else {
+        url = URL.createObjectURL(src.blob);
+        currentKindRef.current = "blob";
+        currentKeyRef.current = null;
+      }
+
+      currentUrlRef.current = url;
+      el.src = url;
+
       await el.play();
       setIsPlaying(true);
+      setIsLoading(false);
     } catch (err) {
+      setIsLoading(false);
       if (
         currentKindRef.current === "blob" &&
         currentUrlRef.current?.startsWith("blob:")
@@ -93,8 +106,16 @@ export function useSingleAudio() {
     ) {
       stop();
     } else {
+      // Set loading state and current key immediately for UI feedback
+      setIsLoading(true);
+      if (src.kind === "key") {
+        currentKeyRef.current = src.key;
+      }
       play(src).catch((e) => {
         console.error("Audio play failed:", e);
+        setIsLoading(false);
+        // Reset current key on error
+        currentKeyRef.current = null;
       });
     }
   }
@@ -105,5 +126,14 @@ export function useSingleAudio() {
 
   useEffect(() => () => stop(), []);
 
-  return { audioRef, isPlaying, play, stop, toggle, isCurrentKey, currentKey: currentKeyRef.current };
+  return {
+    audioRef,
+    isPlaying,
+    isLoading,
+    play,
+    stop,
+    toggle,
+    isCurrentKey,
+    currentKey: currentKeyRef.current,
+  };
 }

@@ -221,6 +221,79 @@ const Studio = () => {
     localStorage.removeItem(`cuePoints-${trackId}`);
   };
 
+  // --- Studio State Persistence (for authorized users only) ---
+  const getStudioStateKey = () => user ? `studioState-${user.id}` : null;
+  
+  const saveStudioStateToLocal = () => {
+    const stateKey = getStudioStateKey();
+    if (!stateKey || tracks.length === 0) return; // Only save for authorized users with tracks
+    
+    try {
+      const studioState = {
+        tracks: tracks.map(track => ({
+          id: track.id,
+          fileName: track.file.name,
+          fileSize: track.file.size,
+          fileType: track.file.type,
+          mode: track.mode,
+          loopStart: track.loopStart,
+          loopEnd: track.loopEnd,
+          cuePoints: track.cuePoints,
+          tempo: track.tempo,
+          timeSignature: track.timeSignature,
+          firstMeasureTime: track.firstMeasureTime,
+          showMeasures: showMeasures[track.id] || false,
+          showCueThumbs: showCueThumbs[track.id] || false,
+          zoomLevel: zoomLevels[track.id] || 1,
+          playbackSpeed: playbackSpeeds[track.id] || 1,
+          volume: volume[track.id] || 1,
+          lowpassFreq: lowpassFreqs[track.id] || 20000,
+          highpassFreq: highpassFreqs[track.id] || 20,
+          filterEnabled: filterEnabled[track.id] || false,
+          expandedControls: expandedControls[track.id] || false
+        })),
+        selectedCueTrackId,
+        currentTrackIndex,
+        timestamp: Date.now(),
+        version: 1 // For future migrations
+      };
+      
+      localStorage.setItem(stateKey, JSON.stringify(studioState));
+      console.log('Studio state saved for user:', user?.id);
+    } catch (error) {
+      console.warn('Failed to save studio state:', error);
+    }
+  };
+  
+  const loadStudioStateFromLocal = (): any | null => {
+    const stateKey = getStudioStateKey();
+    if (!stateKey) return null;
+    
+    try {
+      const saved = localStorage.getItem(stateKey);
+      if (!saved) return null;
+      
+      const studioState = JSON.parse(saved);
+      console.log('Studio state loaded for user:', user?.id);
+      return studioState;
+    } catch (error) {
+      console.warn('Failed to load studio state:', error);
+      return null;
+    }
+  };
+  
+  const clearStudioStateFromLocal = () => {
+    const stateKey = getStudioStateKey();
+    if (!stateKey) return;
+    
+    try {
+      localStorage.removeItem(stateKey);
+      console.log('Studio state cleared for user:', user?.id);
+    } catch (error) {
+      console.warn('Failed to clear studio state:', error);
+    }
+  };
+
   // --- PATCH: Settings persistence ---
   const saveTrackSettingsToLocal = (trackId: string, settings: any) => {
     localStorage.setItem(`trackSettings-${trackId}`, JSON.stringify(settings));
@@ -249,6 +322,104 @@ const Studio = () => {
     const selected = loadSelectedCueTrackIdFromLocal();
     if (selected) setSelectedCueTrackId(selected);
   }, []);
+
+  // --- Studio State Restoration ---
+  const restoreStudioStateFromLocal = async () => {
+    if (!user || isDemoMode) return false; // Only restore for authorized users, not in demo mode
+    
+    const savedState = loadStudioStateFromLocal();
+    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) return false;
+    
+    try {
+      console.log('Restoring studio state with', savedState.tracks.length, 'tracks');
+      
+      // Use existing audio context if available
+      let context = audioContext;
+      if (!context) {
+        try {
+          context = await initializeAudio();
+          setIsAudioInitialized(true);
+        } catch (initError) {
+          console.error('Error initializing audio context during restore:', initError);
+          setNeedsUserInteraction(true);
+          return false;
+        }
+      }
+      
+      if (!context) {
+        setNeedsUserInteraction(true);
+        return false;
+      }
+      
+      // Restore tracks by finding them in available assets
+      const restoredTracks: Track[] = [];
+      const assets = availableAssets || [];
+      
+      for (const savedTrack of savedState.tracks) {
+        try {
+          // Find the asset by ID
+          const asset = assets.find(a => a.id === savedTrack.id);
+          if (!asset) {
+            console.warn('Asset not found for saved track:', savedTrack.id);
+            continue;
+          }
+          
+          // Get signed URL and fetch the audio
+          const signedUrl = await signFile(asset.fileKey);
+          const response = await fetch(signedUrl);
+          const blob = await response.blob();
+          const file = new File([blob], savedTrack.fileName, { type: savedTrack.fileType });
+          
+          // Load the audio buffer
+          const buffer = await loadAudioBuffer(file, context);
+          
+          // Recreate the track with saved settings
+          const restoredTrack: Track = {
+            id: savedTrack.id,
+            file,
+            buffer,
+            mode: savedTrack.mode,
+            loopStart: savedTrack.loopStart,
+            loopEnd: savedTrack.loopEnd,
+            cuePoints: savedTrack.cuePoints,
+            tempo: savedTrack.tempo,
+            timeSignature: savedTrack.timeSignature,
+            firstMeasureTime: savedTrack.firstMeasureTime,
+            showMeasures: savedTrack.showMeasures
+          };
+          
+          restoredTracks.push(restoredTrack);
+          
+          // Restore UI states
+          setShowMeasures(prev => ({ ...prev, [savedTrack.id]: savedTrack.showMeasures }));
+          setShowCueThumbs(prev => ({ ...prev, [savedTrack.id]: savedTrack.showCueThumbs }));
+          setZoomLevels(prev => ({ ...prev, [savedTrack.id]: savedTrack.zoomLevel }));
+          setPlaybackSpeeds(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackSpeed }));
+          setVolume(prev => ({ ...prev, [savedTrack.id]: savedTrack.volume }));
+          setLowpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.lowpassFreq }));
+          setHighpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.highpassFreq }));
+          setFilterEnabled(prev => ({ ...prev, [savedTrack.id]: savedTrack.filterEnabled }));
+          setExpandedControls(prev => ({ ...prev, [savedTrack.id]: savedTrack.expandedControls }));
+          
+        } catch (error) {
+          console.warn('Failed to restore track:', savedTrack.id, error);
+        }
+      }
+      
+      if (restoredTracks.length > 0) {
+        setTracks(restoredTracks);
+        setCurrentTrackIndex(savedState.currentTrackIndex || 0);
+        setSelectedCueTrackId(savedState.selectedCueTrackId || null);
+        console.log('Successfully restored', restoredTracks.length, 'tracks');
+        return true;
+      }
+      
+    } catch (error) {
+      console.error('Error restoring studio state:', error);
+    }
+    
+    return false;
+  };
 
   // Note: We're not implementing localStorage persistence for studio tracks
   // because:
@@ -299,6 +470,29 @@ const Studio = () => {
       setAvailableAssets([]);
     }
   }, [libraryTracks, isDemoMode, user]);
+
+  // Attempt to restore studio state when user and assets are available
+  useEffect(() => {
+    if (!user || isDemoMode || isTrackLoading || userLoading) return;
+    if (!availableAssets || availableAssets.length === 0) return;
+    if (tracks.length > 0) return; // Already have tracks loaded
+    if (hasLoadedTrack.current) return; // Already attempted to load
+    
+    const attemptRestore = async () => {
+      try {
+        const restored = await restoreStudioStateFromLocal();
+        if (restored) {
+          hasLoadedTrack.current = true;
+          setIsInitializingAudio(false);
+          console.log('Studio state restored successfully');
+        }
+      } catch (error) {
+        console.warn('Failed to restore studio state:', error);
+      }
+    };
+    
+    attemptRestore();
+  }, [user, isDemoMode, availableAssets, tracks.length, isTrackLoading, userLoading]);
 
   // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
@@ -1206,6 +1400,57 @@ const Studio = () => {
   useEffect(() => {
     saveSelectedCueTrackIdToLocal(selectedCueTrackId);
   }, [selectedCueTrackId]);
+
+  // Save studio state when tracks or settings change (for authorized users)
+  useEffect(() => {
+    if (!user || isDemoMode) return; // Only save for authorized users, not in demo mode
+    if (tracks.length === 0) return; // Don't save empty state
+    
+    // Debounce the save operation to avoid excessive localStorage writes
+    const timeoutId = setTimeout(() => {
+      saveStudioStateToLocal();
+    }, 1000); // Save after 1 second of inactivity
+    
+    return () => clearTimeout(timeoutId);
+  }, [
+    user, 
+    isDemoMode, 
+    tracks, 
+    selectedCueTrackId, 
+    currentTrackIndex,
+    showMeasures,
+    showCueThumbs,
+    zoomLevels,
+    playbackSpeeds,
+    volume,
+    lowpassFreqs,
+    highpassFreqs,
+    filterEnabled,
+    expandedControls
+  ]);
+
+  // Clear studio state when user logs out
+  useEffect(() => {
+    if (!user) {
+      // User logged out, clear any saved state
+      clearStudioStateFromLocal();
+    }
+  }, [user]);
+
+  // Save state before page unload (refresh/navigation)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (user && !isDemoMode && tracks.length > 0) {
+        saveStudioStateToLocal();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [user, isDemoMode, tracks.length]);
 
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     if (!context) throw new Error('Audio context not initialized');
@@ -2173,39 +2418,49 @@ const Studio = () => {
   // Loading state
   if (isLoading || isTrackLoading || userLoading) {
     return (
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="audafact-card p-8 text-center">
-          <h1 className="text-2xl font-medium audafact-heading mb-4">
-            Loading Audafact Studio
-          </h1>
-          <p className="audafact-text-secondary mb-8">
-            Loading audio track...
-          </p>
-          <div className="flex justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-audafact-accent-cyan"></div>
+      <>
+        {/* SidePanel for loading state */}
+        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        
+        <div className="max-w-6xl mx-auto p-6">
+          <div className="audafact-card p-8 text-center">
+            <h1 className="text-2xl font-medium audafact-heading mb-4">
+              Loading Audafact Studio
+            </h1>
+            <p className="audafact-text-secondary mb-8">
+              Loading audio track...
+            </p>
+            <div className="flex justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-audafact-accent-cyan"></div>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="bg-audafact-surface-1 border border-audafact-alert-red rounded-lg p-8 text-center">
-          <h1 className="text-2xl font-medium text-audafact-alert-red mb-4">
-            Error Loading Track
-          </h1>
-          <p className="text-audafact-alert-red mb-8">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="bg-audafact-alert-red text-audafact-text-primary px-4 py-2 rounded-md hover:bg-opacity-90 transition-colors"
-          >
-            Try Again
-          </button>
+      <>
+        {/* SidePanel for error state */}
+        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        
+        <div className="max-w-6xl mx-auto p-6">
+          <div className="bg-audafact-surface-1 border border-audafact-alert-red rounded-lg p-8 text-center">
+            <h1 className="text-2xl font-medium text-audafact-alert-red mb-4">
+              Error Loading Track
+            </h1>
+            <p className="text-audafact-alert-red mb-8">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-audafact-alert-red text-audafact-text-primary px-4 py-2 rounded-md hover:bg-opacity-90 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -2213,6 +2468,9 @@ const Studio = () => {
   if (needsUserInteraction) {
     return (
       <>
+        {/* SidePanel for needsUserInteraction state */}
+        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        
         <div 
           className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
             (user || isDemoMode) && isSidePanelOpen 
@@ -2260,6 +2518,9 @@ const Studio = () => {
   if (tracks.length === 0) {
     return (
       <>
+        {/* SidePanel for no tracks state (welcome panel) */}
+        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        
         <div 
           className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
             (user || isDemoMode) && isSidePanelOpen 
@@ -2358,9 +2619,31 @@ const Studio = () => {
                     </h1>
                     
                     <div className="max-w-2xl mx-auto">
-                      <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                        Start creating by:
-                      </p>
+                      {availableAssets.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-lg text-slate-300 mb-2 leading-relaxed">
+                            You have {availableAssets.length} tracks available. Start creating by:
+                          </p>
+                          {(() => {
+                            const savedState = loadStudioStateFromLocal();
+                            return savedState && savedState.tracks && savedState.tracks.length > 0 ? (
+                              <div className="bg-audafact-accent-cyan bg-opacity-10 border border-audafact-accent-cyan border-opacity-30 rounded-lg p-3 mb-4">
+                                <p className="text-sm text-audafact-accent-cyan flex items-center gap-2">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  Previous session found with {savedState.tracks.length} track{savedState.tracks.length !== 1 ? 's' : ''}. Load a track to restore your session.
+                                </p>
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      )}
+                      {availableAssets.length === 0 && (
+                        <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                          Start creating by:
+                        </p>
+                      )}
                       
                       <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
                         <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Looping segments</span>
@@ -2384,7 +2667,27 @@ const Studio = () => {
 
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                       <button
-                        onClick={handleInitializeAudio}
+                        onClick={async () => {
+                          // Check if there's a saved state to restore
+                          const savedState = loadStudioStateFromLocal();
+                          if (savedState && savedState.tracks && savedState.tracks.length > 0) {
+                            // Restore saved state instead of loading random track
+                            try {
+                              setIsInitializingAudio(true);
+                              const restored = await restoreStudioStateFromLocal();
+                              if (restored) {
+                                hasLoadedTrack.current = true;
+                                setIsInitializingAudio(false);
+                                console.log('Restored previous session');
+                                return;
+                              }
+                            } catch (error) {
+                              console.warn('Failed to restore session, falling back to random track:', error);
+                            }
+                          }
+                          // Fallback to loading random track
+                          handleInitializeAudio();
+                        }}
                         className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                         disabled={isInitializingAudio || availableAssets.length === 0}
                       >
@@ -2399,17 +2702,44 @@ const Studio = () => {
                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                               Loading Library...
                             </>
-                          ) : (
-                            <>
-                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                              </svg>
-                              Load a Random Track
-                            </>
-                          )}
+                          ) : (() => {
+                            const savedState = loadStudioStateFromLocal();
+                            return savedState && savedState.tracks && savedState.tracks.length > 0 ? (
+                              <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Restore Previous Session
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
+                                Load a Random Track
+                              </>
+                            );
+                          })()}
                         </span>
                         <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                       </button>
+
+                      {(() => {
+                        const savedState = loadStudioStateFromLocal();
+                        return savedState && savedState.tracks && savedState.tracks.length > 0 ? (
+                          <button
+                            onClick={handleInitializeAudio}
+                            className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400"
+                          >
+                            <span className="relative z-10 flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                              </svg>
+                              Load Random Track
+                            </span>
+                          </button>
+                        ) : null;
+                      })()}
 
                       <button
                         onClick={toggleSidePanel}
@@ -2504,56 +2834,7 @@ const Studio = () => {
           </div>
         </div>
 
-        {/* Library Mode - User has assets but no tracks loaded */}
-        {!isDemoMode && user && availableAssets.length > 0 && tracks.length === 0 && (
-          <div className="max-w-6xl mx-auto p-6">
-            <div className="audafact-card p-8 text-center">
-              <h1 className="text-2xl font-medium audafact-heading mb-4">
-                Welcome to Your Library
-              </h1>
-              <p className="text-slate-300 mb-8 font-medium">
-                You have {availableAssets.length} tracks available. Click below to load your first track.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <button
-                  onClick={loadRandomTrack}
-                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  disabled={isTrackLoading}
-                >
-                  <span className="relative z-10 flex items-center gap-2">
-                    {isTrackLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                        </svg>
-                        Load a Random Track
-                      </>
-                    )}
-                  </span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                </button>
 
-                <button
-                  onClick={toggleSidePanel}
-                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
-                >
-                  <span className="relative z-10 flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                    Browse Your Library
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
       </>
     );
@@ -2563,6 +2844,9 @@ const Studio = () => {
     <>
       {/* Demo Mode Indicator */}
       {isDemoMode && <DemoModeIndicator />}
+      
+      {/* SidePanel - Render at top level to avoid stacking context issues */}
+      {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
       
       <div 
         className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
@@ -3069,8 +3353,7 @@ const Studio = () => {
         ))}
       </div>
 
-      {/* SidePanel - Single instance for all states */}
-      {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+
       
 
       

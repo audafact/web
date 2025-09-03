@@ -316,8 +316,6 @@ export class StorageService {
     }
   }
 
-
-
   /**
    * List files in a bucket for a specific user
    */
@@ -469,8 +467,6 @@ export class StorageService {
       return { data: null, error };
     }
   }
-
-
 
   /**
    * Get a signed URL for a library track (if needed for private access)
