@@ -316,14 +316,7 @@ export class StorageService {
     }
   }
 
-  /**
-   * Get a public URL for a file (for public buckets)
-   */
-  static getPublicUrl(bucket: string, filePath: string): string {
-    const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
 
-    return data.publicUrl;
-  }
 
   /**
    * List files in a bucket for a specific user
@@ -390,15 +383,14 @@ export class StorageService {
       }
 
       const file = files[0];
-      const publicUrl = this.getPublicUrl(bucket, filePath);
-
+      // Note: This method is deprecated - use Worker API for new implementations
       // Get audio duration (this would need to be implemented with Web Audio API)
-      const duration = await this.getAudioDuration(publicUrl);
+      const duration = 0; // TODO: Implement duration detection if needed
 
       return {
         id: file.id,
         name: file.name,
-        url: publicUrl,
+        url: "", // Deprecated - use Worker API for URL generation
         duration: duration || 0,
         size: file.metadata?.size || 0,
         type: file.metadata?.type || "audio/mpeg",
@@ -478,12 +470,7 @@ export class StorageService {
     }
   }
 
-  /**
-   * Get the public URL for a library track
-   */
-  static getLibraryTrackUrl(trackId: string, fileType: string): string {
-    return this.getPublicUrl(this.LIBRARY_BUCKET, `${trackId}.${fileType}`);
-  }
+
 
   /**
    * Get a signed URL for a library track (if needed for private access)
