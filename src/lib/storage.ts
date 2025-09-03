@@ -1,6 +1,6 @@
 import { supabase } from "@/services/supabase";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
+const API_BASE = "https://audafact-api.david-g-cortinas.workers.dev"; // Production Worker for now
 
 async function authHeader() {
   const { data } = await supabase.auth.getSession();

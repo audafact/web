@@ -12,7 +12,10 @@ export default defineConfig({
   // Environment variable configuration
   define: {
     "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
-      process.env.VITE_API_BASE_URL || "https://api.audafact.com"
+      process.env.VITE_API_BASE_URL ||
+        (process.env.NODE_ENV === "development"
+          ? "http://localhost:8787"
+          : "https://api.audafact.com")
     ),
   },
   build: {

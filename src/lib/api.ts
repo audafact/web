@@ -1,7 +1,7 @@
 // web/src/lib/api.ts
 import { supabase } from "@/services/supabase";
 
-const API_BASE = "https://audafact-api.david-g-cortinas.workers.dev"; // Hardcoded for testing
+const API_BASE = "https://audafact-api.david-g-cortinas.workers.dev"; // Production Worker for now
 
 export async function signFile(key: string): Promise<string> {
   const { data: s } = await supabase.auth.getSession();
