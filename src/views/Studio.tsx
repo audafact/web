@@ -226,7 +226,10 @@ const Studio = () => {
   
   const saveStudioStateToLocal = () => {
     const stateKey = getStudioStateKey();
-    if (!stateKey || tracks.length === 0) return; // Only save for authorized users with tracks
+    if (!stateKey || tracks.length === 0) {
+      console.log('Not saving studio state:', { stateKey: !!stateKey, tracksLength: tracks.length });
+      return; // Only save for authorized users with tracks
+    }
     
     try {
       const studioState = {
@@ -250,16 +253,27 @@ const Studio = () => {
           lowpassFreq: lowpassFreqs[track.id] || 20000,
           highpassFreq: highpassFreqs[track.id] || 20,
           filterEnabled: filterEnabled[track.id] || false,
-          expandedControls: expandedControls[track.id] || false
+          expandedControls: expandedControls[track.id] || false,
+          playbackTime: playbackTimes[track.id] || 0
         })),
         selectedCueTrackId,
         currentTrackIndex,
+        lastUsedVolume,
         timestamp: Date.now(),
         version: 1 // For future migrations
       };
       
       localStorage.setItem(stateKey, JSON.stringify(studioState));
-      console.log('Studio state saved for user:', user?.id);
+      console.log('Studio state saved for user:', user?.id, 'with', tracks.length, 'tracks');
+      console.log('Saved track settings:', tracks.map(track => ({
+        id: track.id,
+        mode: track.mode,
+        loopStart: track.loopStart,
+        loopEnd: track.loopEnd,
+        volume: volume[track.id],
+        playbackSpeed: playbackSpeeds[track.id],
+        zoomLevel: zoomLevels[track.id]
+      })));
     } catch (error) {
       console.warn('Failed to save studio state:', error);
     }
@@ -325,10 +339,16 @@ const Studio = () => {
 
   // --- Studio State Restoration ---
   const restoreStudioStateFromLocal = async () => {
-    if (!user || isDemoMode) return false; // Only restore for authorized users, not in demo mode
+    if (!user || isDemoMode) {
+      console.log('Not restoring studio state:', { user: !!user, isDemoMode });
+      return false; // Only restore for authorized users, not in demo mode
+    }
     
     const savedState = loadStudioStateFromLocal();
-    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) return false;
+    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) {
+      console.log('No saved state to restore:', { savedState: !!savedState, tracks: savedState?.tracks?.length });
+      return false;
+    }
     
     try {
       console.log('Restoring studio state with', savedState.tracks.length, 'tracks');
@@ -388,9 +408,39 @@ const Studio = () => {
             showMeasures: savedTrack.showMeasures
           };
           
+          // Save the restored settings to individual track settings to prevent override
+          const trackSettings = {
+            mode: savedTrack.mode,
+            loopStart: savedTrack.loopStart,
+            loopEnd: savedTrack.loopEnd,
+            cuePoints: savedTrack.cuePoints,
+            tempo: savedTrack.tempo,
+            timeSignature: savedTrack.timeSignature,
+            firstMeasureTime: savedTrack.firstMeasureTime,
+            showMeasures: savedTrack.showMeasures,
+            showCueThumbs: savedTrack.showCueThumbs,
+            zoomLevel: savedTrack.zoomLevel,
+            playbackSpeed: savedTrack.playbackSpeed,
+            volume: savedTrack.volume,
+            lowpassFreq: savedTrack.lowpassFreq,
+            highpassFreq: savedTrack.highpassFreq,
+            filterEnabled: savedTrack.filterEnabled
+          };
+          saveTrackSettingsToLocal(savedTrack.id, trackSettings);
+          saveCuePointsToLocal(savedTrack.id, savedTrack.cuePoints);
+          
           restoredTracks.push(restoredTrack);
           
           // Restore UI states
+          console.log('Restoring settings for track:', savedTrack.id, {
+            mode: savedTrack.mode,
+            loopStart: savedTrack.loopStart,
+            loopEnd: savedTrack.loopEnd,
+            volume: savedTrack.volume,
+            playbackSpeed: savedTrack.playbackSpeed,
+            zoomLevel: savedTrack.zoomLevel
+          });
+          
           setShowMeasures(prev => ({ ...prev, [savedTrack.id]: savedTrack.showMeasures }));
           setShowCueThumbs(prev => ({ ...prev, [savedTrack.id]: savedTrack.showCueThumbs }));
           setZoomLevels(prev => ({ ...prev, [savedTrack.id]: savedTrack.zoomLevel }));
@@ -400,6 +450,7 @@ const Studio = () => {
           setHighpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.highpassFreq }));
           setFilterEnabled(prev => ({ ...prev, [savedTrack.id]: savedTrack.filterEnabled }));
           setExpandedControls(prev => ({ ...prev, [savedTrack.id]: savedTrack.expandedControls }));
+          setPlaybackTimes(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackTime || 0 }));
           
         } catch (error) {
           console.warn('Failed to restore track:', savedTrack.id, error);
@@ -410,6 +461,7 @@ const Studio = () => {
         setTracks(restoredTracks);
         setCurrentTrackIndex(savedState.currentTrackIndex || 0);
         setSelectedCueTrackId(savedState.selectedCueTrackId || null);
+        setLastUsedVolume(savedState.lastUsedVolume || 1);
         console.log('Successfully restored', restoredTracks.length, 'tracks');
         return true;
       }
@@ -473,11 +525,24 @@ const Studio = () => {
 
   // Attempt to restore studio state when user and assets are available
   useEffect(() => {
-    if (!user || isDemoMode || isTrackLoading || userLoading) return;
-    if (!availableAssets || availableAssets.length === 0) return;
-    if (tracks.length > 0) return; // Already have tracks loaded
-    if (hasLoadedTrack.current) return; // Already attempted to load
+    if (!user || isDemoMode || isTrackLoading || userLoading) {
+      console.log('Skipping restoration:', { user: !!user, isDemoMode, isTrackLoading, userLoading });
+      return;
+    }
+    if (!availableAssets || availableAssets.length === 0) {
+      console.log('No assets available for restoration');
+      return;
+    }
+    if (tracks.length > 0) {
+      console.log('Tracks already loaded, skipping restoration');
+      return; // Already have tracks loaded
+    }
+    if (hasLoadedTrack.current) {
+      console.log('Already attempted to load, skipping restoration');
+      return; // Already attempted to load
+    }
     
+    console.log('Attempting to restore studio state...');
     const attemptRestore = async () => {
       try {
         const restored = await restoreStudioStateFromLocal();
@@ -485,6 +550,8 @@ const Studio = () => {
           hasLoadedTrack.current = true;
           setIsInitializingAudio(false);
           console.log('Studio state restored successfully');
+        } else {
+          console.log('Restoration failed or no saved state found');
         }
       } catch (error) {
         console.warn('Failed to restore studio state:', error);
@@ -1403,11 +1470,19 @@ const Studio = () => {
 
   // Save studio state when tracks or settings change (for authorized users)
   useEffect(() => {
-    if (!user || isDemoMode) return; // Only save for authorized users, not in demo mode
-    if (tracks.length === 0) return; // Don't save empty state
+    if (!user || isDemoMode) {
+      console.log('Not saving state - user or demo mode check failed:', { user: !!user, isDemoMode });
+      return; // Only save for authorized users, not in demo mode
+    }
+    if (tracks.length === 0) {
+      console.log('Not saving state - no tracks loaded');
+      return; // Don't save empty state
+    }
     
+    console.log('Scheduling state save in 1 second...');
     // Debounce the save operation to avoid excessive localStorage writes
     const timeoutId = setTimeout(() => {
+      console.log('Executing scheduled state save...');
       saveStudioStateToLocal();
     }, 1000); // Save after 1 second of inactivity
     
@@ -1426,7 +1501,9 @@ const Studio = () => {
     lowpassFreqs,
     highpassFreqs,
     filterEnabled,
-    expandedControls
+    expandedControls,
+    playbackTimes,
+    lastUsedVolume
   ]);
 
   // Clear studio state when user logs out
