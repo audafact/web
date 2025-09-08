@@ -705,7 +705,7 @@ const Studio = () => {
              id: currentGuestTrack.id,
              file,
              buffer,
-             mode: 'preview',
+             mode: 'cue',
              loopStart: 0,
              loopEnd: buffer.duration,
              cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -719,6 +719,8 @@ const Studio = () => {
           
           setTracks([newTrack]);
           setCurrentTrackIndex(0);
+          setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
+          setSelectedCueTrackId(newTrack.id);
           setIsTrackLoading(false);
           
           // Track demo event
@@ -779,7 +781,7 @@ const Studio = () => {
           id: trackId,
           file,
           buffer,
-          mode: settings.mode || 'preview',
+          mode: settings.mode || 'cue',
           loopStart: settings.loopStart || 0,
           loopEnd: settings.loopEnd || buffer.duration,
           cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -794,8 +796,9 @@ const Studio = () => {
         setTracks([newTrack]);
         setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
-        setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
+        setShowCueThumbs(prev => ({ ...prev, [trackId]: settings.showCueThumbs !== undefined ? !!settings.showCueThumbs : true }));
         setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
+        setSelectedCueTrackId(trackId);
         setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
         const trackVolume = newTrack.mode === 'preview' 
           ? lastUsedVolumeRef.current 
@@ -1291,7 +1294,7 @@ const Studio = () => {
         id: trackId,
         file,
         buffer,
-        mode: settings.mode || 'preview', // Default to preview mode
+        mode: settings.mode || 'cue', // Default to cue mode
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -1321,8 +1324,9 @@ const Studio = () => {
       }
       setCurrentTrackIndex(safeIndex);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
-      setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: settings.showCueThumbs !== undefined ? !!settings.showCueThumbs : true }));
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
+      setSelectedCueTrackId(trackId);
       // Reset playback speed but keep volume
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
       // Set volume based on mode
@@ -1427,7 +1431,7 @@ const Studio = () => {
         id: trackId,
         file,
         buffer,
-        mode: 'preview', // New tracks always start as preview
+        mode: 'cue', // New tracks always start as cue
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -1453,11 +1457,12 @@ const Studio = () => {
       
       // Initialize states for the new track
       setShowMeasures(prev => ({ ...prev, [trackId]: false }));
-      setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
       setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
       setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+      setSelectedCueTrackId(trackId);
       
       // Animation delay
       setTimeout(() => {
@@ -2146,7 +2151,7 @@ const Studio = () => {
   };
 
   // SidePanel handlers
-  const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
+  const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     try {
       setIsManuallyAddingTrack(true);
       setIsLoading(true);
@@ -2197,9 +2202,10 @@ const Studio = () => {
       setPlaybackSpeeds(prev => ({ ...prev, [newTrack.id]: 1 }));
       setVolume(prev => ({ ...prev, [newTrack.id]: lastUsedVolumeRef.current }));
       setShowMeasures(prev => ({ ...prev, [newTrack.id]: false }));
-      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      setSelectedCueTrackId(newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2221,7 +2227,7 @@ const Studio = () => {
     }
   };
 
-  const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
+  const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     try {
       setIsManuallyAddingTrack(true);
       setIsLoading(true);
@@ -2292,9 +2298,10 @@ const Studio = () => {
       setPlaybackSpeeds(prev => ({ ...prev, [newTrack.id]: 1 }));
       setVolume(prev => ({ ...prev, [newTrack.id]: lastUsedVolumeRef.current }));
       setShowMeasures(prev => ({ ...prev, [newTrack.id]: false }));
-      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      setSelectedCueTrackId(newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2372,9 +2379,10 @@ const Studio = () => {
       setPlaybackSpeeds(prev => ({ ...prev, [newTrack.id]: 1 }));
       setVolume(prev => ({ ...prev, [newTrack.id]: lastUsedVolumeRef.current }));
       setShowMeasures(prev => ({ ...prev, [newTrack.id]: false }));
-      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: false }));
+      setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
+      setSelectedCueTrackId(newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2463,7 +2471,7 @@ const Studio = () => {
           id: trackId,
           file,
           buffer,
-          mode: 'preview',
+          mode: 'cue',
           loopStart: 0,
           loopEnd: buffer.duration,
           cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -2478,11 +2486,12 @@ const Studio = () => {
         setTracks([newTrack]);
         setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: false }));
-        setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
+        setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
         setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
         setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
         setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+        setSelectedCueTrackId(trackId);
         
         // Track demo event
         trackGuestEvent('session_started', { 
@@ -2538,7 +2547,7 @@ const Studio = () => {
         id: trackId,
         file,
         buffer,
-        mode: settings.mode || 'preview',
+        mode: settings.mode || 'cue',
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
