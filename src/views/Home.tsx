@@ -1,11 +1,27 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
+import { useEffect } from 'react';
 
 const Home = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { isMobile } = useResponsiveDesign();
+
+  // Check if user just verified their email
+  useEffect(() => {
+    if (user) {
+      const emailVerifiedAt = user.email_confirmed_at;
+      const now = new Date();
+      const verifiedAt = emailVerifiedAt ? new Date(emailVerifiedAt) : null;
+      
+      // If verified within the last 5 minutes, redirect to verification page
+      if (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 5 * 60 * 1000) {
+        navigate('/auth/verify', { replace: true });
+        return;
+      }
+    }
+  }, [user, navigate]);
 
   const handleLaunchDemo = () => {
     navigate('/studio');

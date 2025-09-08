@@ -3,6 +3,8 @@ import { lazy, Suspense } from 'react';
 import Layout from '../components/Layout';
 import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
+import { EmailVerification } from '../auth/EmailVerification';
+import { CheckEmailPage } from '../auth/CheckEmailPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 
 // Lazy load views for better performance
@@ -73,5 +75,13 @@ export const router = createBrowserRouter([
   {
     path: '/auth/callback',
     element: <AuthCallback />,
+  },
+  {
+    path: '/auth/verify',
+    element: <EmailVerification />,
+  },
+  {
+    path: '/auth/check-email',
+    element: <CheckEmailPage />,
   },
 ]); 

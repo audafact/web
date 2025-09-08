@@ -1,5 +1,5 @@
-import { supabase } from '../services/supabase';
-import { User } from '@supabase/supabase-js';
+import { supabase } from "../services/supabase";
+import { User } from "@supabase/supabase-js";
 
 export interface AuthResponse {
   success: boolean;
@@ -9,11 +9,19 @@ export interface AuthResponse {
 
 export const authService = {
   // Sign up with email and password
-  async signUp(email: string, password: string): Promise<AuthResponse> {
+  async signUp(
+    email: string,
+    password: string,
+    captchaToken?: string
+  ): Promise<AuthResponse> {
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          ...(captchaToken ? { captchaToken } : {}),
+        },
       });
 
       if (error) {
@@ -30,7 +38,7 @@ export const authService = {
     } catch (error) {
       return {
         success: false,
-        error: 'An unexpected error occurred during sign up',
+        error: "An unexpected error occurred during sign up",
       };
     }
   },
@@ -57,7 +65,7 @@ export const authService = {
     } catch (error) {
       return {
         success: false,
-        error: 'An unexpected error occurred during sign in',
+        error: "An unexpected error occurred during sign in",
       };
     }
   },
@@ -80,7 +88,7 @@ export const authService = {
     } catch (error) {
       return {
         success: false,
-        error: 'An unexpected error occurred during sign out',
+        error: "An unexpected error occurred during sign out",
       };
     }
   },
@@ -89,7 +97,7 @@ export const authService = {
   async resetPassword(email: string): Promise<AuthResponse> {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       });
 
       if (error) {
@@ -105,7 +113,7 @@ export const authService = {
     } catch (error) {
       return {
         success: false,
-        error: 'An unexpected error occurred during password reset',
+        error: "An unexpected error occurred during password reset",
       };
     }
   },
@@ -131,7 +139,7 @@ export const authService = {
     } catch (error) {
       return {
         success: false,
-        error: 'An unexpected error occurred while updating password',
+        error: "An unexpected error occurred while updating password",
       };
     }
   },
@@ -145,10 +153,10 @@ export const authService = {
   async signInWithGoogle(): Promise<AuthResponse> {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
       });
 
       if (error) {
@@ -165,8 +173,8 @@ export const authService = {
     } catch (error) {
       return {
         success: false,
-        error: 'An unexpected error occurred during Google sign in',
+        error: "An unexpected error occurred during Google sign in",
       };
     }
   },
-}; 
+};

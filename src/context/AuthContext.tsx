@@ -9,7 +9,7 @@ import { PostSignupFlowHandler } from '../services/postSignupFlowHandler';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<AuthResponse>;
+  signUp: (email: string, password: string, captchaToken?: string) => Promise<AuthResponse>;
   signIn: (email: string, password: string) => Promise<AuthResponse>;
   signInWithGoogle: () => Promise<AuthResponse>;
   signOut: () => Promise<AuthResponse>;
@@ -76,8 +76,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string): Promise<AuthResponse> => {
-    return await authService.signUp(email, password);
+  const signUp = async (email: string, password: string, captchaToken?: string): Promise<AuthResponse> => {
+    return await authService.signUp(email, password, captchaToken);
   };
 
   const signIn = async (email: string, password: string): Promise<AuthResponse> => {

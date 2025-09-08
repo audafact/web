@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
@@ -14,8 +15,46 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   const { signIn, signUp } = useAuth();
+
+  // Get Turnstile site key from environment variables
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+
+  // Initialize Turnstile widget
+  useEffect(() => {
+    if (mode === 'signup' && turnstileSiteKey && turnstileRef.current) {
+      // Clear any existing widget
+      turnstileRef.current.innerHTML = '';
+      
+      // Initialize Turnstile widget
+      const widgetId = window.turnstile?.render(turnstileRef.current, {
+        sitekey: turnstileSiteKey,
+        callback: (token: string) => {
+          setCaptchaToken(token);
+        },
+        'error-callback': () => {
+          setCaptchaToken(null);
+          setError('CAPTCHA verification failed. Please try again.');
+        },
+        'expired-callback': () => {
+          setCaptchaToken(null);
+        },
+        'timeout-callback': () => {
+          setCaptchaToken(null);
+        }
+      });
+
+      return () => {
+        if (widgetId && window.turnstile) {
+          window.turnstile.remove(widgetId);
+        }
+      };
+    }
+  }, [mode, turnstileSiteKey]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,15 +81,29 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
       return;
     }
 
+    if (mode === 'signup' && !captchaToken) {
+      setError('Please complete the CAPTCHA verification');
+      setLoading(false);
+      return;
+    }
+
     try {
       const result = mode === 'signin' 
         ? await signIn(email, password)
-        : await signUp(email, password);
+        : await signUp(email, password, captchaToken || undefined);
 
       if (result.success) {
-        setMessage(mode === 'signin' ? 'Signed in successfully!' : 'Account created! Please check your email to verify your account.');
-        if (onSuccess) {
-          onSuccess();
+        if (mode === 'signin') {
+          setMessage('Signed in successfully!');
+          if (onSuccess) {
+            onSuccess();
+          }
+        } else {
+          // For signup, redirect to check email page
+          navigate('/auth/check-email', { 
+            state: { email },
+            replace: true 
+          });
         }
       } else {
         setError(result.error || 'An error occurred');
@@ -113,6 +166,15 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
               placeholder="Confirm your password"
               required
             />
+          </div>
+        )}
+
+        {mode === 'signup' && turnstileSiteKey && (
+          <div>
+            <label className="block text-sm font-medium audafact-text-secondary mb-2">
+              Security Verification
+            </label>
+            <div ref={turnstileRef} className="flex justify-center"></div>
           </div>
         )}
 
