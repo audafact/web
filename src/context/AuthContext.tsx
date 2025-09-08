@@ -40,7 +40,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Set analytics user
       if (session?.user) {
-        analytics.setUser(session.user.id, 'free'); // Default to free tier
+        // Get user tier from metadata or default to free
+        const userTier = session.user.user_metadata?.tier || 'free';
+        analytics.setUser(session.user.id, userTier);
       }
     });
 
@@ -50,7 +52,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Update analytics user
       if (session?.user) {
-        analytics.setUser(session.user.id, 'free'); // Default to free tier
+        // Get user tier from metadata or default to free
+        const userTier = session.user.user_metadata?.tier || 'free';
+        analytics.setUser(session.user.id, userTier);
         
         // Handle post-signup flow for new signups
         if (event === 'SIGNED_IN') {

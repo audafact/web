@@ -21,6 +21,11 @@ import { testR2MigrationInBrowser, getCurrentJWT, testJWTWithWorker } from './te
 (window as any).getCurrentJWT = getCurrentJWT;
 (window as any).testJWTWithWorker = testJWTWithWorker;
 
+// Import analytics test utilities
+import './utils/testAnalytics';
+import './utils/debugAnalytics';
+import './utils/debugAnalyticsWorker';
+
 function App() { 
   // Lazy load analytics service after app is mounted
   React.useEffect(() => {

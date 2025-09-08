@@ -8,6 +8,7 @@ export const API_CONFIG = {
   // Endpoints
   ENDPOINTS: {
     SIGN_UPLOAD: "/api/sign-upload",
+    ANALYTICS: "/api/analytics",
   },
 
   // Timeouts
