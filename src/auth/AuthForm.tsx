@@ -26,7 +26,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
 
   // Initialize Turnstile widget
   useEffect(() => {
-    if (mode === 'signup' && turnstileSiteKey && turnstileRef.current) {
+    if ((mode === 'signup' || mode === 'signin') && turnstileSiteKey && turnstileRef.current) {
       // Clear any existing widget
       turnstileRef.current.innerHTML = '';
       
@@ -81,7 +81,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
       return;
     }
 
-    if (mode === 'signup' && !captchaToken) {
+    if ((mode === 'signup' || mode === 'signin') && !captchaToken) {
       setError('Please complete the CAPTCHA verification');
       setLoading(false);
       return;
@@ -89,7 +89,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
 
     try {
       const result = mode === 'signin' 
-        ? await signIn(email, password)
+        ? await signIn(email, password, captchaToken || undefined)
         : await signUp(email, password, captchaToken || undefined);
 
       if (result.success) {
@@ -169,7 +169,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
           </div>
         )}
 
-        {mode === 'signup' && turnstileSiteKey && (
+        {(mode === 'signup' || mode === 'signin') && turnstileSiteKey && (
           <div>
             <label className="block text-sm font-medium audafact-text-secondary mb-2">
               Security Verification

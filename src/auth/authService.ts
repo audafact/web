@@ -44,11 +44,18 @@ export const authService = {
   },
 
   // Sign in with email and password
-  async signIn(email: string, password: string): Promise<AuthResponse> {
+  async signIn(
+    email: string,
+    password: string,
+    captchaToken?: string
+  ): Promise<AuthResponse> {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: {
+          ...(captchaToken ? { captchaToken } : {}),
+        },
       });
 
       if (error) {
@@ -94,10 +101,14 @@ export const authService = {
   },
 
   // Reset password
-  async resetPassword(email: string): Promise<AuthResponse> {
+  async resetPassword(
+    email: string,
+    captchaToken?: string
+  ): Promise<AuthResponse> {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/callback`,
+        ...(captchaToken ? { captchaToken } : {}),
       });
 
       if (error) {

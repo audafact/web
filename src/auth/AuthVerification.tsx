@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useDemo } from '../context/DemoContext';
 
-export const EmailVerification = () => {
+export const AuthVerification = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isVerified, setIsVerified] = useState(false);
@@ -12,7 +12,7 @@ export const EmailVerification = () => {
   const { loadRandomDemoTrack } = useDemo();
 
   useEffect(() => {
-    const handleEmailVerification = async () => {
+    const handleAuthVerification = async () => {
       try {
         // Check if we have verification data in the hash or search params
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
@@ -78,7 +78,7 @@ export const EmailVerification = () => {
       }
     };
 
-    handleEmailVerification();
+    handleAuthVerification();
   }, [navigate, searchParams]);
 
   const handleStartDemo = () => {
@@ -146,7 +146,7 @@ export const EmailVerification = () => {
             </div>
             
             <h1 className="text-3xl font-extrabold audafact-heading mb-2">
-              Email Verified!
+              Verified!
             </h1>
             <p className="text-lg audafact-text-secondary mb-6">
               Welcome to Audafact! Your account has been successfully created and verified.

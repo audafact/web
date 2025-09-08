@@ -80,8 +80,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return await authService.signUp(email, password, captchaToken);
   };
 
-  const signIn = async (email: string, password: string): Promise<AuthResponse> => {
-    return await authService.signIn(email, password);
+  const signIn = async (email: string, password: string, captchaToken?: string): Promise<AuthResponse> => {
+    return await authService.signIn(email, password, captchaToken);
   };
 
   const signOut = async (): Promise<AuthResponse> => {
@@ -92,8 +92,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return result;
   };
 
-  const resetPassword = async (email: string): Promise<AuthResponse> => {
-    return await authService.resetPassword(email);
+  const resetPassword = async (email: string, captchaToken?: string): Promise<AuthResponse> => {
+    return await authService.resetPassword(email, captchaToken);
   };
 
   const updatePassword = async (password: string): Promise<AuthResponse> => {

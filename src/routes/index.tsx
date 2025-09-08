@@ -3,7 +3,7 @@ import { lazy, Suspense } from 'react';
 import Layout from '../components/Layout';
 import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
-import { EmailVerification } from '../auth/EmailVerification';
+import { AuthVerification } from '../auth/AuthVerification';
 import { CheckEmailPage } from '../auth/CheckEmailPage';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 
@@ -78,7 +78,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/auth/verify',
-    element: <EmailVerification />,
+    element: <AuthVerification />,
   },
   {
     path: '/auth/check-email',
