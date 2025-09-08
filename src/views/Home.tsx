@@ -1,12 +1,13 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
-import { useEffect } from 'react';
+import { useEffect, useMemo, memo, useState } from 'react';
 
 const Home = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { isMobile } = useResponsiveDesign();
+  const [isScrolling, setIsScrolling] = useState(false);
 
   // Check if user just verified their email
   useEffect(() => {
@@ -23,9 +24,89 @@ const Home = () => {
     }
   }, [user, navigate]);
 
+  // Scroll detection to pause animations during scroll
+  useEffect(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    
+    const handleScroll = () => {
+      setIsScrolling(true);
+      document.body.classList.add('scrolling');
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        setIsScrolling(false);
+        document.body.classList.remove('scrolling');
+      }, 150); // Resume animations 150ms after scroll stops
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+      document.body.classList.remove('scrolling');
+    };
+  }, []);
+
   const handleLaunchDemo = () => {
     navigate('/studio');
   };
+
+  // Memoize vinyl groove elements to prevent unnecessary re-renders
+  const vinylGrooves = useMemo(() => {
+    // Reduce number of grooves for better performance
+    const grooveCount = isMobile ? 6 : 12;
+    return [...Array(grooveCount)].map((_, i) => (
+      <div
+        key={i}
+        className="vinyl-groove absolute top-1/2 left-1/2 rounded-full border border-slate-500"
+        style={{
+          width: `${(isMobile ? 140 : 200) + i * (isMobile ? 8 : 12)}px`,
+          height: `${(isMobile ? 140 : 200) + i * (isMobile ? 8 : 12)}px`,
+          animation: isScrolling 
+            ? 'none' 
+            : `vinyl-spin ${(isMobile ? 16 : 24) + i * 0.8}s linear infinite`,
+          animationDelay: `${i * 0.15}s`
+        }}
+      />
+    ));
+  }, [isMobile, isScrolling]);
+
+  // Memoize feature cards to prevent unnecessary re-renders
+  const featureCards = useMemo(() => [
+    {
+      icon: '🔄',
+      title: 'loop xtractor',
+      description: 'Select and loop any segment of your tracks with precision. Perfect for creating beats and samples with surgical accuracy.'
+    },
+    {
+      icon: '🎯',
+      title: 'xcuevator',
+      description: 'Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation.'
+    },
+    {
+      icon: '📊',
+      title: 'waveform visualization',
+      description: 'See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision waveform analysis.'
+    },
+    {
+      icon: '🎼',
+      title: 'curated library',
+      description: 'Access our handpicked collection of custom AI-generated tracks, purpose-built for effortless looping, precise slicing, and creative flipping into sample-based music.'
+    }
+  ], []);
+
+  // Memoized FeatureCard component
+  const FeatureCard = memo(({ icon, title, description }: { icon: string; title: string; description: string }) => (
+    <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
+      </div>
+      <div className="relative z-10">
+        <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">{icon}</div>
+        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
+        <p className="text-slate-300 leading-relaxed">{description}</p>
+      </div>
+    </div>
+  ));
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -40,19 +121,8 @@ const Home = () => {
             </div>
             
             {/* Animated groove lines */}
-            <div className="absolute inset-0 opacity-10">
-              {[...Array(isMobile ? 10 : 20)].map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-500"
-                  style={{
-                    width: `${(isMobile ? 140 : 200) + i * (isMobile ? 6 : 8)}px`,
-                    height: `${(isMobile ? 140 : 200) + i * (isMobile ? 6 : 8)}px`,
-                    animation: `vinyl-spin ${(isMobile ? 14 : 20) + i * 0.5}s linear infinite`,
-                    animationDelay: `${i * 0.1}s`
-                  }}
-                ></div>
-              ))}
+            <div className="vinyl-animation absolute inset-0 opacity-10">
+              {vinylGrooves}
             </div>
 
             {/* Main content */}
@@ -135,61 +205,14 @@ const Home = () => {
       {/* Features Section */}
       <section className="py-5">
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-          {/* Loop Feature */}
-          <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
-            </div>
-            <div className="relative z-10">
-              <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">🔄</div>
-              <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">loop xtractor</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Select and loop any segment of your tracks with precision. Perfect for creating beats and samples with surgical accuracy.
-              </p>
-            </div>
-          </div>
-
-          {/* Cue Feature */}
-          <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
-            </div>
-            <div className="relative z-10">
-              <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">🎯</div>
-              <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">xcuevator</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation.
-              </p>
-            </div>
-          </div>
-
-          {/* Visual Feature */}
-          <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
-            </div>
-            <div className="relative z-10">
-              <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">📊</div>
-              <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">waveform visualization</h3>
-              <p className="text-slate-300 leading-relaxed">
-                See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision waveform analysis.
-              </p>
-            </div>
-          </div>
-
-          {/* Library Feature */}
-          <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
-            </div>
-            <div className="relative z-10">
-              <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">🎼</div>
-              <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">curated library</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Access our handpicked collection of custom AI-generated tracks, purpose-built for effortless looping, precise slicing, and creative flipping into sample-based music.
-              </p>
-            </div>
-          </div>
+          {featureCards.map((feature, index) => (
+            <FeatureCard
+              key={index}
+              icon={feature.icon}
+              title={feature.title}
+              description={feature.description}
+            />
+          ))}
         </div>
       </section>
 

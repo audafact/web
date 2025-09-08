@@ -18,6 +18,12 @@
     overscroll-behavior: none;
     overflow-x: hidden;
   }
+
+  /* Performance optimizations for smooth scrolling */
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }
 
 /* Hide scrollbars for webkit browsers */
@@ -157,20 +163,19 @@
   }
 }
 
-  .audafact-accent-cyan {
-    @apply text-audafact-accent-cyan;
-  }
+.audafact-accent-cyan {
+  @apply text-audafact-accent-cyan;
+}
 
-  .audafact-waveform-bg {
-    @apply bg-audafact-surface-1 border border-audafact-divider;
-    background-image: linear-gradient(
-        rgba(139, 148, 158, 0.1) 1px,
-        transparent 1px
-      ),
-      linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px);
-    background-size: 20px 20px;
-  }
-
+.audafact-waveform-bg {
+  @apply bg-audafact-surface-1 border border-audafact-divider;
+  background-image: linear-gradient(
+      rgba(139, 148, 158, 0.1) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
 
 /* Keep only the hidden class as it might be used elsewhere */
 .hidden {
@@ -183,21 +188,21 @@
   --lock-bg: rgba(0, 0, 0, 0.8);
   --lock-color: #ffffff;
   --lock-hover: rgba(0, 0, 0, 0.9);
-  
+
   /* Disabled colors */
   --disabled-bg: #f3f4f6;
   --disabled-color: #9ca3af;
   --disabled-border: #d1d5db;
-  
+
   /* Overlay colors */
   --overlay-bg: rgba(255, 255, 255, 0.9);
   --overlay-text: #6b7280;
-  
+
   /* Mobile overlay colors */
   --mobile-overlay-bg: rgba(0, 0, 0, 0.1);
   --mobile-overlay-hover: rgba(0, 0, 0, 0.2);
   --mobile-overlay-text: #374151;
-  
+
   /* Tooltip colors */
   --tooltip-bg: rgba(0, 0, 0, 0.9);
   --tooltip-color: #ffffff;
@@ -315,7 +320,7 @@
 }
 
 .feature-tooltip::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 100%;
   left: 50%;
@@ -413,7 +418,7 @@
     background: #000000;
     border: 2px solid #ffffff;
   }
-  
+
   .feature-tooltip {
     background: #000000;
     border: 2px solid #ffffff;
@@ -741,13 +746,110 @@
   }
 }
 
-/* Vinyl record spinning animation for the welcome panel */
+/* Vinyl record spinning animation for the welcome panel - GPU optimized */
 @keyframes vinyl-spin {
   from {
-    transform: translate(-50%, -50%) rotate(0deg);
+    transform: translate3d(-50%, -50%, 0) rotate(0deg);
   }
   to {
-    transform: translate(-50%, -50%) rotate(360deg);
+    transform: translate3d(-50%, -50%, 0) rotate(360deg);
+  }
+}
+
+/* Performance-optimized vinyl animation classes */
+.vinyl-animation {
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+.vinyl-groove {
+  will-change: transform;
+  transform: translate3d(-50%, -50%, 0);
+  backface-visibility: hidden;
+}
+
+/* Performance-optimized hover effects */
+.audafact-card {
+  will-change: transform, box-shadow;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  contain: layout style paint;
+}
+
+.audafact-card:hover {
+  will-change: transform, box-shadow;
+}
+
+/* Optimize button transitions */
+button {
+  will-change: transform, background-color;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  contain: layout style paint;
+}
+
+button:hover {
+  will-change: transform, background-color;
+}
+
+/* Optimize scroll performance */
+section {
+  contain: layout style;
+}
+
+/* Optimize vinyl animations */
+.vinyl-animation {
+  contain: layout style paint;
+}
+
+.vinyl-groove {
+  contain: layout style paint;
+}
+
+/* Disable animations during scroll for better performance */
+.scrolling .vinyl-groove {
+  animation-play-state: paused !important;
+}
+
+.scrolling .audafact-card {
+  transition: none !important;
+}
+
+.scrolling button {
+  transition: none !important;
+}
+
+.scrolling .audafact-card:hover {
+  transform: none !important;
+  box-shadow: inherit !important;
+}
+
+.scrolling button:hover {
+  transform: none !important;
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .vinyl-groove {
+    animation: none !important;
+  }
+
+  .audafact-card {
+    transition: none !important;
+  }
+
+  .audafact-card:hover {
+    transform: none !important;
+  }
+
+  button {
+    transition: none !important;
+  }
+
+  button:hover {
+    transform: none !important;
   }
 }
 
@@ -761,40 +863,40 @@
     top: -6px;
     right: -6px;
   }
-  
+
   .feature-tooltip {
     font-size: 12px;
     padding: 6px 10px;
     max-width: 150px;
   }
-  
+
   .mobile-gate-content {
     font-size: 11px;
   }
-  
+
   .mobile-gate-icon {
     font-size: 14px;
   }
-  
+
   .locked-overlay-content {
     font-size: 12px;
   }
-  
+
   .locked-overlay-icon {
     font-size: 20px;
   }
-  
+
   /* Library panel responsive styles */
   .library-panel {
     width: 100%;
     right: -100%;
   }
-  
+
   .track-item {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .track-actions {
     flex-direction: row;
     justify-content: flex-end;
@@ -809,15 +911,15 @@
     top: -4px;
     right: -4px;
   }
-  
+
   .mobile-gate-content {
     font-size: 10px;
   }
-  
+
   .mobile-gate-icon {
     font-size: 12px;
   }
-  
+
   .feature-tooltip {
     font-size: 11px;
     padding: 5px 8px;
@@ -1480,6 +1582,10 @@
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
