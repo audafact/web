@@ -88,6 +88,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const result = await authService.signOut();
     if (result.success) {
       setUser(null);
+      window.location.href = '/';
     }
     return result;
   };
