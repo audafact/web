@@ -41,7 +41,7 @@ export const AuthCallback = () => {
               
               // If this is a signup type OR if email was verified very recently (within 2 minutes)
               if (type === 'signup' || (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 2 * 60 * 1000)) {
-                navigate('/auth/verify', { replace: true });
+                navigate('/studio?verified=true&type=signup', { replace: true });
                 return;
               }
               

@@ -3,7 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { AudioProvider } from './context/AudioContext';
 import { SidePanelProvider } from './context/SidePanelContext';
 import { RecordingProvider } from './context/RecordingContext';
-import { DemoProvider } from './context/DemoContext';
+import { GuestProvider } from './context/GuestContext';
 import { LibraryProvider } from './context/LibraryContext';
 import { GlobalModalManager } from './components/GlobalModalManager';
 import SuccessMessageManager from './components/SuccessMessageManager';
@@ -37,7 +37,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <DemoProvider>
+        <GuestProvider>
           <LibraryProvider>
             <AudioProvider>
               <SidePanelProvider>
@@ -49,7 +49,7 @@ function App() {
               </SidePanelProvider>
             </AudioProvider>
           </LibraryProvider>
-        </DemoProvider>
+        </GuestProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

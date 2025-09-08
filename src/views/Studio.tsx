@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
-import { useDemo } from '../context/DemoContext';
+import { useGuest } from '../context/GuestContext';
 
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
@@ -59,11 +60,12 @@ interface AudioAsset {
 
 
 const Studio = () => {
+  const [searchParams] = useSearchParams();
   const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { loading: authLoading } = useAuth();
-  const { isDemoMode, currentDemoTrack, loadRandomDemoTrack, isLoading: isDemoLoading, trackDemoEvent } = useDemo();
+  const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
 
   const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
@@ -76,8 +78,104 @@ const Studio = () => {
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
+  // Demo mode detection from URL parameters (for backward compatibility)
+  const isDemoMode = searchParams.get('demo') === 'true';
+  
+  // Verification state detection from URL parameters
+  const isVerified = searchParams.get('verified') === 'true';
+  
   // Ref to prevent multiple track loads
   const hasLoadedTrack = useRef(false);
+
+  // Handle demo mode initialization
+  useEffect(() => {
+    if (isDemoMode && !isGuestMode && user) {
+      // User clicked "Launch Demo" from AuthVerification
+      // Track this as a demo event
+      trackGuestEvent('demo_launched', { 
+        userId: user.id,
+        timestamp: Date.now(),
+        source: 'auth_verification'
+      });
+      
+      // Clear the demo parameter from URL after tracking
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('demo');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, [isDemoMode, isGuestMode, user, trackGuestEvent]);
+
+  // Determine if we should show demo mode indicator (only for URL-based demo mode)
+  const shouldShowDemoIndicator = isDemoMode;
+
+  // Verification UI state
+  const [showVerificationUI, setShowVerificationUI] = useState(false);
+  const [isVerificationLoading, setIsVerificationLoading] = useState(false);
+
+  // Handle verification state - show modal immediately when Studio renders
+  useEffect(() => {
+    if (isVerified && user && !isGuestMode) {
+      console.log('Showing verification UI for user:', user.id);
+      setShowVerificationUI(true);
+      // Clear verification parameters from URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('verified');
+      newUrl.searchParams.delete('type');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, [isVerified, user, isGuestMode]);
+
+  // Verification handlers
+  const handleStartDemo = async () => {
+    console.log('Starting demo tutorial from verification UI');
+    setIsVerificationLoading(true);
+    
+    // First, ensure we have a track loaded and audio context initialized
+    if (tracks.length === 0) {
+      try {
+        // Initialize audio and load a track first
+        await handleInitializeAudio();
+        // Wait a bit for the track to load, then start onboarding
+        setTimeout(() => {
+          setShowVerificationUI(false);
+          setIsVerificationLoading(false);
+          onboarding.startOnboarding();
+        }, 1500);
+      } catch (error) {
+        console.error('Failed to initialize audio for tutorial:', error);
+        // Still try to start onboarding even if audio fails
+        setTimeout(() => {
+          setShowVerificationUI(false);
+          setIsVerificationLoading(false);
+          onboarding.startOnboarding();
+        }, 500);
+      }
+    } else {
+      // Track already loaded, start onboarding immediately
+      setShowVerificationUI(false);
+      setIsVerificationLoading(false);
+      setTimeout(() => {
+        onboarding.startOnboarding();
+      }, 500);
+    }
+  };
+
+  const handleStartCreating = async () => {
+    console.log('Starting normal creation from verification UI');
+    setIsVerificationLoading(true);
+    
+    // If no tracks are loaded, load one to get started
+    if (tracks.length === 0) {
+      try {
+        await handleInitializeAudio();
+      } catch (error) {
+        console.error('Failed to initialize audio for creation:', error);
+      }
+    }
+    
+    setShowVerificationUI(false);
+    setIsVerificationLoading(false);
+  };
 
   // Onboarding handlers
   const onboardingHandlers = {
@@ -339,8 +437,8 @@ const Studio = () => {
 
   // --- Studio State Restoration ---
   const restoreStudioStateFromLocal = async () => {
-    if (!user || isDemoMode) {
-      console.log('Not restoring studio state:', { user: !!user, isDemoMode });
+    if (!user || isGuestMode) {
+      console.log('Not restoring studio state:', { user: !!user, isGuestMode });
       return false; // Only restore for authorized users, not in demo mode
     }
     
@@ -504,8 +602,8 @@ const Studio = () => {
 
   // Load library tracks for studio
   useEffect(() => {
-    if (isDemoMode) {
-      // For demo mode, use bundled tracks from DemoContext
+    if (isGuestMode) {
+      // For demo mode, use bundled tracks from DemoProvider
 
       setAvailableAssets([]); // No need to load additional assets in demo mode
     } else if (user && libraryTracks.length > 0) {
@@ -521,12 +619,12 @@ const Studio = () => {
 
       setAvailableAssets([]);
     }
-  }, [libraryTracks, isDemoMode, user]);
+  }, [libraryTracks, isGuestMode, user]);
 
   // Attempt to restore studio state when user and assets are available
   useEffect(() => {
-    if (!user || isDemoMode || isTrackLoading || userLoading) {
-      console.log('Skipping restoration:', { user: !!user, isDemoMode, isTrackLoading, userLoading });
+    if (!user || isGuestMode || isTrackLoading || userLoading) {
+      console.log('Skipping restoration:', { user: !!user, isGuestMode, isTrackLoading, userLoading });
       return;
     }
     if (!availableAssets || availableAssets.length === 0) {
@@ -559,7 +657,7 @@ const Studio = () => {
     };
     
     attemptRestore();
-  }, [user, isDemoMode, availableAssets, tracks.length, isTrackLoading, userLoading]);
+  }, [user, isGuestMode, availableAssets, tracks.length, isTrackLoading, userLoading]);
 
   // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
@@ -567,8 +665,8 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-                 // In demo mode, use the DemoContext's current track
-         if (isDemoMode && currentDemoTrack) {
+                 // In demo mode, use the DemoProvider's current track
+         if (isGuestMode && currentGuestTrack) {
           
           // Use existing audio context if available
           let context = audioContext;
@@ -592,19 +690,19 @@ const Studio = () => {
             return;
           }
 
-                     // Fetch the bundled track from DemoContext
-           const response = await fetch(currentDemoTrack.file);
+                     // Fetch the bundled track from DemoProvider
+           const response = await fetch(currentGuestTrack.file);
            const blob = await response.blob();
-           const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
-             type: `audio/${currentDemoTrack.type}` 
+           const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
+             type: `audio/${currentGuestTrack.type}` 
            });
            
            // Load the audio file into buffer
            const buffer = await loadAudioBuffer(file, context);
            
-           // Create track using DemoContext metadata
+           // Create track using DemoProvider metadata
            const newTrack: Track = {
-             id: currentDemoTrack.id,
+             id: currentGuestTrack.id,
              file,
              buffer,
              mode: 'preview',
@@ -613,7 +711,7 @@ const Studio = () => {
              cuePoints: Array.from({ length: 10 }, (_, i) => 
                buffer.duration * (i / 10)
              ),
-             tempo: currentDemoTrack.bpm || 120,
+             tempo: currentGuestTrack.bpm || 120,
              timeSignature: { numerator: 4, denominator: 4 },
              firstMeasureTime: 0,
              showMeasures: false
@@ -624,8 +722,8 @@ const Studio = () => {
           setIsTrackLoading(false);
           
           // Track demo event
-          trackDemoEvent('session_started', { 
-            trackId: currentDemoTrack.id,
+          trackGuestEvent('session_started', { 
+            trackId: currentGuestTrack.id,
             timestamp: Date.now()
           });
           
@@ -725,14 +823,14 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isDemoMode, currentDemoTrack, availableAssets, user, trackDemoEvent]);
+    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, availableAssets, user, trackGuestEvent]);
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
         // Don't automatically load tracks - wait for user interaction
         // This prevents AudioContext initialization issues
       }
-    }, [tracks.length, isManuallyAddingTrack, isDemoMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
+    }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
   // Keyboard navigation for track switching
   useEffect(() => {
@@ -777,19 +875,19 @@ const Studio = () => {
 
         // Handle demo track changes
       useEffect(() => {
-        if (isDemoMode && currentDemoTrack && audioContext && tracks.length > 0) {
+        if (isGuestMode && currentGuestTrack && audioContext && tracks.length > 0) {
           // If the currently loaded track already matches the bundled track, do nothing
-          if (tracks[0]?.id === currentDemoTrack.id) return;
+          if (tracks[0]?.id === currentGuestTrack.id) return;
           
           // In demo mode, we don't need to update tracks since we're using bundled tracks
           // Just log the demo event and keep the current track
 
-          trackDemoEvent('next_track', { 
+          trackGuestEvent('next_track', { 
             fromTrackId: tracks[0]?.id,
-            toTrackId: currentDemoTrack.id
+            toTrackId: currentGuestTrack.id
           });
         }
-      }, [isDemoMode, currentDemoTrack, audioContext, tracks.length, trackDemoEvent]);
+      }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
 
   // Reset the hasLoadedTrack flag when tracks are cleared
   useEffect(() => {
@@ -870,7 +968,7 @@ const Studio = () => {
     }
     
     // Show add track gesture indicator if valid gesture and can add track - disabled in demo mode
-    if (isVerticalSwipeDown && canAddTrack && !isAddingTrack && !isDemoMode) {
+    if (isVerticalSwipeDown && canAddTrack && !isAddingTrack && !isGuestMode) {
       setShowAddTrackGesture(true);
       e.preventDefault(); // Prevent browser pulldown gestures
     } else {
@@ -987,7 +1085,7 @@ const Studio = () => {
       }, 1000);
     } else if (isValidVerticalSwipe && deltaY < 0) {
       // Swiped down (finger moved down) - add track - disabled in demo mode
-      if (canAddTrack && !isAddingTrack && !isDemoMode) {
+      if (canAddTrack && !isAddingTrack && !isGuestMode) {
         const gestureKey = `swipe-down-${now}`;
         
         // Prevent duplicate gestures
@@ -1081,7 +1179,7 @@ const Studio = () => {
       
       // Reset gesture processing flag after a delay
       setTimeout(() => setIsGestureProcessing(false), 1000);
-    } else if (isVerticalGesture && e.deltaY < 0 && canAddTrack && !isAddingTrack && !isDemoMode) {
+    } else if (isVerticalGesture && e.deltaY < 0 && canAddTrack && !isAddingTrack && !isGuestMode) {
       // Scrolling down - add track (negative deltaY = down) - disabled in demo mode
       e.preventDefault();
       setLastGestureTime(now);
@@ -1095,34 +1193,34 @@ const Studio = () => {
 
   // Track navigation functions
   const handleNextTrack = useCallback(async () => {
-    if (isTrackLoading || isDemoLoading) return; // Disable during loading
+    if (isTrackLoading || isGuestLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
-         if (isDemoMode) {
+         if (isGuestMode) {
        // In demo mode, load next bundled track
-       loadRandomDemoTrack();
+       loadRandomGuestTrack();
             } else {
           // Normal mode - cycle through available assets
           const assets = availableAssets || [];
           const nextIndex = (currentTrackIndex + 1) % assets.length;
           await loadTrackByIndex(nextIndex, true); // true = only update first track
         }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack, availableAssets]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets]);
 
   const handlePreviousTrack = useCallback(async () => {
-    if (isTrackLoading || isDemoLoading) return; // Disable during loading
+    if (isTrackLoading || isGuestLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
-    if (isDemoMode) {
+    if (isGuestMode) {
       // In demo mode, load next bundled track (since we don't have previous bundled track concept)
-      loadRandomDemoTrack();
+      loadRandomGuestTrack();
     } else {
       // Normal mode - cycle through available assets
       const assets = availableAssets || [];
       const prevIndex = currentTrackIndex === 0 ? assets.length - 1 : currentTrackIndex - 1;
       await loadTrackByIndex(prevIndex, true); // true = only update first track
     }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isDemoLoading, isDemoMode, loadRandomDemoTrack, availableAssets]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets]);
 
   const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
     try {
@@ -1261,7 +1359,7 @@ const Studio = () => {
     if (!canAddTrack || isAddingTrack) return;
     
     // Demo mode doesn't support adding tracks
-    if (isDemoMode) {
+    if (isGuestMode) {
 
       return;
     }
@@ -1470,8 +1568,8 @@ const Studio = () => {
 
   // Save studio state when tracks or settings change (for authorized users)
   useEffect(() => {
-    if (!user || isDemoMode) {
-      console.log('Not saving state - user or demo mode check failed:', { user: !!user, isDemoMode });
+    if (!user || isGuestMode) {
+      console.log('Not saving state - user or demo mode check failed:', { user: !!user, isGuestMode });
       return; // Only save for authorized users, not in demo mode
     }
     if (tracks.length === 0) {
@@ -1489,7 +1587,7 @@ const Studio = () => {
     return () => clearTimeout(timeoutId);
   }, [
     user, 
-    isDemoMode, 
+    isGuestMode, 
     tracks, 
     selectedCueTrackId, 
     currentTrackIndex,
@@ -1517,7 +1615,7 @@ const Studio = () => {
   // Save state before page unload (refresh/navigation)
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (user && !isDemoMode && tracks.length > 0) {
+      if (user && !isGuestMode && tracks.length > 0) {
         saveStudioStateToLocal();
       }
     };
@@ -1527,7 +1625,7 @@ const Studio = () => {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [user, isDemoMode, tracks.length]);
+  }, [user, isGuestMode, tracks.length]);
 
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     if (!context) throw new Error('Audio context not initialized');
@@ -2305,14 +2403,14 @@ const Studio = () => {
         await resumeAudioContext();
         setNeedsUserInteraction(false);
         // Retry loading the track after audio context is resumed
-        if (isDemoMode && currentDemoTrack && tracks.length === 0) {
+        if (isGuestMode && currentGuestTrack && tracks.length === 0) {
           loadRandomTrack();
         }
       } catch (error) {
         console.error('Failed to resume audio context:', error);
       }
     }
-  }, [needsUserInteraction, audioContext, resumeAudioContext, isDemoMode, currentDemoTrack, tracks.length, loadRandomTrack]);
+  }, [needsUserInteraction, audioContext, resumeAudioContext, isGuestMode, currentGuestTrack, tracks.length, loadRandomTrack]);
 
   // Add this useEffect to handle user interactions:
   useEffect(() => {
@@ -2339,27 +2437,27 @@ const Studio = () => {
       const context = await initializeAudio();
       setIsAudioInitialized(true);
       
-      if (isDemoMode) {
-        // For demo mode, use DemoContext bundled tracks
-        if (!currentDemoTrack) {
+      if (isGuestMode) {
+        // For demo mode, use DemoProvider bundled tracks
+        if (!currentGuestTrack) {
           // Load a bundled track first if none is loaded
-          await loadRandomDemoTrack();
-          if (!currentDemoTrack) {
+          await loadRandomGuestTrack();
+          if (!currentGuestTrack) {
             throw new Error('Failed to load bundled track. Please try again.');
           }
         }
         
 
         
-        // Fetch the bundled track from DemoContext
-        const response = await fetch(currentDemoTrack.file);
+        // Fetch the bundled track from DemoProvider
+        const response = await fetch(currentGuestTrack.file);
         const blob = await response.blob();
-        const file = new File([blob], `${currentDemoTrack.name}.${currentDemoTrack.type}`, { 
-          type: `audio/${currentDemoTrack.type}` 
+        const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
+          type: `audio/${currentGuestTrack.type}` 
         });
         
         const buffer = await loadAudioBuffer(file, context);
-        const trackId = currentDemoTrack.id;
+        const trackId = currentGuestTrack.id;
         
         const newTrack: Track = {
           id: trackId,
@@ -2371,7 +2469,7 @@ const Studio = () => {
           cuePoints: Array.from({ length: 10 }, (_, i) => 
             buffer.duration * (i / 10)
           ),
-          tempo: currentDemoTrack.bpm || 120,
+          tempo: currentGuestTrack.bpm || 120,
           timeSignature: { numerator: 4, denominator: 4 },
           firstMeasureTime: 0,
           showMeasures: false
@@ -2387,8 +2485,8 @@ const Studio = () => {
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
         
         // Track demo event
-        trackDemoEvent('session_started', { 
-          trackId: currentDemoTrack.id,
+        trackGuestEvent('session_started', { 
+          trackId: currentGuestTrack.id,
           timestamp: Date.now()
         });
         
@@ -2497,7 +2595,7 @@ const Studio = () => {
     return (
       <>
         {/* SidePanel for loading state */}
-        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
         
         <div className="max-w-6xl mx-auto p-6">
           <div className="audafact-card p-8 text-center">
@@ -2521,7 +2619,7 @@ const Studio = () => {
     return (
       <>
         {/* SidePanel for error state */}
-        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
         
         <div className="max-w-6xl mx-auto p-6">
           <div className="bg-audafact-surface-1 border border-audafact-alert-red rounded-lg p-8 text-center">
@@ -2546,11 +2644,96 @@ const Studio = () => {
     return (
       <>
         {/* SidePanel for needsUserInteraction state */}
-        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
+        
+        {/* Verification UI - Show even during audio initialization if needed */}
+        {showVerificationUI && (
+          <div className="fixed inset-0 z-50 bg-audafact-surface-1 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="max-w-2xl w-full audafact-card-enhanced p-8 text-center">
+              {/* Success Icon */}
+              <div className="mb-6">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple mb-4 shadow-lg">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Main Content */}
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
+                Welcome to Audafact!
+              </h1>
+              
+              <div className="max-w-xl mx-auto">
+                <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                  Your email has been verified successfully. You're now ready to start creating amazing music with Audafact Studio.
+                </p>
+                
+                <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Access your full library</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create seamless loops</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Set custom cue points</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Real-time mixing</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📤 Upload your samples</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎙️ Record performances</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Interactive tutorial</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={handleStartCreating}
+                  disabled={isVerificationLoading}
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    {isVerificationLoading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Start Creating
+                      </>
+                    )}
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                </button>
+
+                <button
+                  onClick={handleStartDemo}
+                  disabled={isVerificationLoading}
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    {isVerificationLoading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Start Tutorial
+                      </>
+                    )}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         
         <div 
           className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
-            (user || isDemoMode) && isSidePanelOpen 
+            (user || isGuestMode) && isSidePanelOpen 
               ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
               : 'max-w-6xl'
           }`}
@@ -2595,12 +2778,97 @@ const Studio = () => {
   if (tracks.length === 0) {
     return (
       <>
+        {/* Verification UI - Show even when no tracks are loaded */}
+        {showVerificationUI && (
+          <div className="fixed inset-0 z-50 bg-audafact-surface-1 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="max-w-2xl w-full audafact-card-enhanced p-8 text-center">
+              {/* Success Icon */}
+              <div className="mb-6">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple mb-4 shadow-lg">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Main Content */}
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
+                Welcome to Audafact!
+              </h1>
+              
+              <div className="max-w-xl mx-auto">
+                <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                  Your email has been verified successfully. You're now ready to start creating amazing music with Audafact Studio.
+                </p>
+                
+                <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Access your full library</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create seamless loops</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Set custom cue points</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Real-time mixing</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📤 Upload your samples</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎙️ Record performances</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Interactive tutorial</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={handleStartCreating}
+                  disabled={isVerificationLoading}
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    {isVerificationLoading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Start Creating
+                      </>
+                    )}
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                </button>
+
+                <button
+                  onClick={handleStartDemo}
+                  disabled={isVerificationLoading}
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    {isVerificationLoading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Start Tutorial
+                      </>
+                    )}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {/* SidePanel for no tracks state (welcome panel) */}
-        {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
         
         <div 
           className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
-            (user || isDemoMode) && isSidePanelOpen 
+            (user || isGuestMode) && isSidePanelOpen 
               ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
               : 'max-w-6xl'
           }`}
@@ -2610,7 +2878,7 @@ const Studio = () => {
           onDrop={handleDrop}
         >
           {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
-          {(user || isDemoMode) && !isSidePanelOpen && isDragOver && (
+          {(user || isGuestMode) && !isSidePanelOpen && isDragOver && (
             <div
               className="fixed inset-0 z-40 bg-transparent"
               onDragOver={handleDragOver}
@@ -2621,7 +2889,7 @@ const Studio = () => {
           )}
           
           {/* Full-screen drag and drop overlay - only active when dragging and SidePanel is open */}
-          {(user || isDemoMode) && isDragOver && isSidePanelOpen && (
+          {(user || isGuestMode) && isDragOver && isSidePanelOpen && (
             <div
               className="fixed inset-0 z-40 bg-transparent"
               onDragOver={handleDragOver}
@@ -2692,14 +2960,26 @@ const Studio = () => {
                   // Registered Users Content
                   <>
                     <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
-                      Welcome Back to Audafact Studio
+                      {isDemoMode ? 'Welcome to Audafact Studio Demo' : 'Welcome Back to Audafact Studio'}
                     </h1>
                     
                     <div className="max-w-2xl mx-auto">
+                      {isDemoMode && (
+                        <div className="mb-4">
+                          <div className="bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-opacity-10 border border-audafact-accent-cyan border-opacity-30 rounded-lg p-4 mb-4">
+                            <p className="text-sm text-audafact-accent-cyan flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              You're in demo mode! Explore the full features of Audafact Studio with your library tracks.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                       {availableAssets.length > 0 && (
                         <div className="mb-4">
                           <p className="text-lg text-slate-300 mb-2 leading-relaxed">
-                            You have {availableAssets.length} tracks available. Start creating by:
+                            {isDemoMode ? 'Explore your library and start creating:' : `You have ${availableAssets.length} tracks available. Start creating by:`}
                           </p>
                           {(() => {
                             const savedState = loadStudioStateFromLocal();
@@ -2860,22 +3140,22 @@ const Studio = () => {
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                       <button
                         onClick={async () => {
-                          if (currentDemoTrack) {
+                          if (currentGuestTrack) {
                             loadRandomTrack();
                           } else {
                             // If no current bundled track, load a random one first
-                            await loadRandomDemoTrack();
+                            await loadRandomGuestTrack();
                             // Then load the track
-                            if (currentDemoTrack) {
+                            if (currentGuestTrack) {
                               loadRandomTrack();
                             }
                           }
                         }}
                         className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                        disabled={isDemoLoading}
+                        disabled={isGuestLoading}
                       >
                         <span className="relative z-10 flex items-center gap-2">
-                          {isDemoLoading ? (
+                          {isGuestLoading ? (
                             <>
                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                               Loading...
@@ -2920,14 +3200,79 @@ const Studio = () => {
   return (
     <>
       {/* Demo Mode Indicator */}
-      {isDemoMode && <DemoModeIndicator />}
+      {shouldShowDemoIndicator && <DemoModeIndicator />}
+      
+      {/* Verification UI - Show when user has just verified their email */}
+      {showVerificationUI && (
+        <div className="fixed inset-0 z-50 bg-audafact-surface-1 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-2xl w-full audafact-card-enhanced p-8 text-center">
+            {/* Success Icon */}
+            <div className="mb-6">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple mb-4 shadow-lg">
+                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
+              Welcome to Audafact!
+            </h1>
+            
+            <div className="max-w-xl mx-auto">
+              <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                Your email has been verified successfully. You're now ready to start creating amazing music with Audafact Studio.
+              </p>
+              
+              <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Access your full library</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create seamless loops</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Set custom cue points</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Real-time mixing</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📤 Upload your samples</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎙️ Record performances</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Interactive tutorial</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={handleStartCreating}
+                className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                  </svg>
+                  Start Creating
+                </span>
+                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </button>
+
+              <button
+                onClick={handleStartDemo}
+                className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Start Tutorial
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* SidePanel - Render at top level to avoid stacking context issues */}
-      {(user || isDemoMode) && <SidePanel {...memoizedSidePanelProps} />}
+      {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
       
       <div 
         className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
-          (user || isDemoMode) && isSidePanelOpen 
+          (user || isGuestMode) && isSidePanelOpen 
             ? 'lg:ml-[400px] lg:max-w-[calc(100vw-400px)] lg:bg-audafact-surface-2 lg:bg-opacity-30' 
             : 'max-w-6xl'
         }`}
@@ -2940,9 +3285,9 @@ const Studio = () => {
         onDrop={handleDrop}
       >
         {/* Demo Track Info */}
-        {/* {isDemoMode && <DemoTrackInfo track={currentDemoTrack} />} */}
+        {/* {isGuestMode && <DemoTrackInfo track={currentGuestTrack} />} */}
         {/* Full-page drag and drop overlay - covers entire viewport when SidePanel is closed */}
-        {(user || isDemoMode) && !isSidePanelOpen && isDragOver && (
+        {(user || isGuestMode) && !isSidePanelOpen && isDragOver && (
           <div
             className="fixed inset-0 z-40 bg-transparent"
             onDragOver={handleDragOver}
@@ -2953,7 +3298,7 @@ const Studio = () => {
         )}
         
         {/* Full-screen drag and drop overlay - only active when dragging and SidePanel is open */}
-        {(user || isDemoMode) && isDragOver && isSidePanelOpen && (
+        {(user || isGuestMode) && isDragOver && isSidePanelOpen && (
           <div
             className="fixed inset-0 z-40 bg-transparent"
             onDragOver={handleDragOver}
@@ -3044,13 +3389,13 @@ const Studio = () => {
                 {/* Add Track Button */}
                 <button
                   onClick={addNewTrack}
-                  disabled={!canAddTrack || isAddingTrack || isTrackLoading || isDemoMode}
+                  disabled={!canAddTrack || isAddingTrack || isTrackLoading || isGuestMode}
                   className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
-                    !canAddTrack || isAddingTrack || isTrackLoading || isDemoMode
+                    !canAddTrack || isAddingTrack || isTrackLoading || isGuestMode
                       ? 'text-audafact-text-secondary cursor-not-allowed'
                       : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                   } ${addTrackAnimation ? 'animate-pulse' : ''}`}
-                  title={isDemoMode ? 'Add tracks not available in demo mode' : (canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks')}
+                  title={isGuestMode ? 'Add tracks not available in demo mode' : (canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks')}
                 >
                   <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -3379,7 +3724,7 @@ const Studio = () => {
                 isPlaying={playbackStates[track.id] || false}
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
-                isDemoMode={isDemoMode}
+                isGuestMode={isGuestMode}
               />
               
 

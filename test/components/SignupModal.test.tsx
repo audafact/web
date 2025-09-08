@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import SignupModal from '../../src/components/SignupModal';
 import { AuthProvider } from '../../src/context/AuthContext';
-import { DemoProvider } from '../../src/context/DemoContext';
+import { GuestProvider } from '../../src/context/DemoProvider';
 
 // Mock the analytics service
 vi.mock('../../src/services/analyticsService', () => ({
@@ -22,19 +22,19 @@ vi.mock('../../src/hooks/usePostSignupActions', () => ({
   })
 }));
 
-// Mock the DemoContext
-vi.mock('../../src/context/DemoContext', () => ({
-  DemoProvider: ({ children }: any) => <div data-testid="demo-provider">{children}</div>,
-  useDemo: () => ({
-    isDemoMode: false,
+// Mock the GuestProvider
+vi.mock('../../src/context/GuestProvider', () => ({
+  GuestProvider: ({ children }: any) => <div data-testid="guest-provider">{children}</div>,
+  useGuest: () => ({
+    isGuestMode: false,
     isAuthenticated: false,
-    currentDemoTrack: null,
+    currentGuestTrack: null,
     isLoading: false,
-    loadRandomDemoTrack: vi.fn(),
-    trackDemoEvent: vi.fn(),
-    demoTracks: []
+    loadRandomGuestTrack: vi.fn(),
+    trackGuestEvent: vi.fn(),
+    guestTracks: []
   }),
-  useDemoMode: () => false
+  useGuestMode: () => false
 }));
 
 // Mock the Modal component

@@ -2,7 +2,7 @@
 //
 // NOTE: This service now provides business logic for library tracks.
 // Data fetching is handled by the useUser hook.
-// - Guest users: No tracks (bundled tracks via DemoContext)
+// - Guest users: No tracks (bundled tracks via DemoProvider)
 // - Free users: 10 monthly revolving tracks from library_tracks
 // - Pro users: All available tracks from library_tracks
 //

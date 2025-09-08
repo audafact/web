@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { useDemo } from '../context/DemoContext';
 
 export const AuthVerification = () => {
   const [loading, setLoading] = useState(true);
@@ -9,7 +8,6 @@ export const AuthVerification = () => {
   const [isVerified, setIsVerified] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { loadRandomDemoTrack } = useDemo();
 
   useEffect(() => {
     const handleAuthVerification = async () => {
@@ -82,8 +80,7 @@ export const AuthVerification = () => {
   }, [navigate, searchParams]);
 
   const handleStartDemo = () => {
-    // Load a demo track and navigate to studio
-    loadRandomDemoTrack();
+    // Navigate to studio in demo mode (no need to load guest track for authenticated users)
     navigate('/studio?demo=true', { replace: true });
   };
 
