@@ -4,8 +4,9 @@ import { supabase } from "@/services/supabase";
 const API_BASE = "https://audafact-api.david-g-cortinas.workers.dev"; // Production Worker for now
 
 export async function signFile(key: string): Promise<string> {
-  const { data: s } = await supabase.auth.getSession();
-  const token = s.session?.access_token;
+  const sessionResult = await supabase.auth.getSession();
+  const { data: s } = sessionResult || {};
+  const token = s?.session?.access_token;
   if (!token) throw new Error("Not signed in");
 
   const r = await fetch(
