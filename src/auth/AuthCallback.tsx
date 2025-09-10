@@ -17,6 +17,7 @@ export const AuthCallback = () => {
           const hashParams = new URLSearchParams(window.location.hash.substring(1));
           const accessToken = hashParams.get('access_token');
           const refreshToken = hashParams.get('refresh_token');
+          const type = hashParams.get('type');
           
           if (accessToken) {
             // Set the session manually with the tokens from the hash
@@ -32,6 +33,19 @@ export const AuthCallback = () => {
             }
 
             if (data.session?.user) {
+              // Check if this is a fresh email verification
+              const user = data.session.user;
+              const emailVerifiedAt = user.email_confirmed_at;
+              const now = new Date();
+              const verifiedAt = emailVerifiedAt ? new Date(emailVerifiedAt) : null;
+              
+              // If this is a signup type OR if email was verified very recently (within 2 minutes)
+              if (type === 'signup' || (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 2 * 60 * 1000)) {
+                navigate('/studio?verified=true&type=signup', { replace: true });
+                return;
+              }
+              
+              // Otherwise, go directly to studio
               navigate('/studio', { replace: true });
               return;
             }

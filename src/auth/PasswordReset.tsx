@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export const PasswordReset = () => {
@@ -6,8 +6,45 @@ export const PasswordReset = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
 
   const { resetPassword } = useAuth();
+
+  // Get Turnstile site key from environment variables
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+
+  // Initialize Turnstile widget
+  useEffect(() => {
+    if (turnstileSiteKey && turnstileRef.current) {
+      // Clear any existing widget
+      turnstileRef.current.innerHTML = '';
+      
+      // Initialize Turnstile widget
+      const widgetId = window.turnstile?.render(turnstileRef.current, {
+        sitekey: turnstileSiteKey,
+        callback: (token: string) => {
+          setCaptchaToken(token);
+        },
+        'error-callback': () => {
+          setCaptchaToken(null);
+          setError('CAPTCHA verification failed. Please try again.');
+        },
+        'expired-callback': () => {
+          setCaptchaToken(null);
+        },
+        'timeout-callback': () => {
+          setCaptchaToken(null);
+        }
+      });
+
+      return () => {
+        if (widgetId && window.turnstile) {
+          window.turnstile.remove(widgetId);
+        }
+      };
+    }
+  }, [turnstileSiteKey]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,12 +58,19 @@ export const PasswordReset = () => {
       return;
     }
 
+    if (!captchaToken) {
+      setError('Please complete the CAPTCHA verification');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const result = await resetPassword(email);
+      const result = await resetPassword(email, captchaToken);
 
       if (result.success) {
         setMessage('Password reset email sent! Please check your inbox.');
         setEmail('');
+        setCaptchaToken(null);
       } else {
         setError(result.error || 'An error occurred');
       }
@@ -56,6 +100,15 @@ export const PasswordReset = () => {
             required
           />
         </div>
+
+        {turnstileSiteKey && (
+          <div>
+            <label className="block text-sm font-medium audafact-text-secondary mb-2">
+              Security Verification
+            </label>
+            <div ref={turnstileRef} className="flex justify-center"></div>
+          </div>
+        )}
 
         {error && (
           <div className="text-audafact-alert-red text-sm bg-audafact-surface-2 border border-audafact-alert-red p-3 rounded-lg">

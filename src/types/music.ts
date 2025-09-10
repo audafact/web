@@ -11,7 +11,7 @@ export interface Measure {
 // Database Types
 export interface User {
   id: string;
-  access_tier: 'free' | 'pro' | 'enterprise';
+  access_tier: "free" | "pro" | "enterprise";
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
@@ -20,10 +20,19 @@ export interface User {
 export interface Upload {
   id: string;
   user_id: string;
-  file_url: string;
-  title: string;
+  file_key: string;
+  content_type: string;
+  size_bytes: number;
+  title?: string;
   duration?: number;
   created_at: string;
+  updated_at: string;
+  // Legacy fields for backward compatibility
+  file_url?: string;
+  full_hash?: string;
+  short_hash?: string;
+  server_key?: string;
+  original_name?: string;
 }
 
 export interface Session {
@@ -33,7 +42,7 @@ export interface Session {
   track_ids: string[];
   cuepoints: any[];
   loop_regions: any[];
-  mode: 'loop' | 'chop';
+  mode: "loop" | "chop";
   created_at: string;
   updated_at: string;
 }
@@ -59,8 +68,6 @@ export interface StorageFile {
   last_accessed_at: string;
   metadata: Record<string, any>;
 }
-
-
 
 export interface UploadResponse {
   data: StorageFile | null;
@@ -103,14 +110,14 @@ export interface UsageLimits {
 }
 
 export interface UserTier {
-  id: 'guest' | 'free' | 'pro';
+  id: "guest" | "free" | "pro";
   name: string;
   features: FeatureAccess;
   limits: UsageLimits;
 }
 
 export interface FeatureGateConfig {
-  gateType: 'modal' | 'tooltip' | 'disabled' | 'hidden';
+  gateType: "modal" | "tooltip" | "disabled" | "hidden";
   message: string;
   ctaText: string;
   upgradeRequired: boolean;
@@ -120,7 +127,7 @@ export interface FeatureGateProps {
   feature: string;
   children: React.ReactNode;
   fallback?: React.ReactNode;
-  gateType?: 'modal' | 'tooltip' | 'disabled' | 'hidden';
+  gateType?: "modal" | "tooltip" | "disabled" | "hidden";
   onGateTrigger?: (feature: string) => void;
 }
 
@@ -133,12 +140,17 @@ export interface LibraryTrack {
   bpm: number;
   key?: string;
   duration: number;
-  file: string;
-  type: 'wav' | 'mp3';
+  fileKey: string; // Transformed from database field file_key
+  previewKey?: string; // Transformed from database field preview_key
+  type: "wav" | "mp3";
   size: string;
   tags: string[];
-  isProOnly?: boolean;
-  previewUrl?: string;
+  isProOnly?: boolean; // Transformed from database field is_pro_only
+  previewUrl?: string; // Transformed from database field preview_url
+  // Additional fields for enhanced functionality
+  rotationWeek?: number; // Transformed from database field rotation_week
+  isActive?: boolean; // Transformed from database field is_active
+  isDemo?: boolean; // Transformed from database field is_demo
 }
 
 export interface LibraryPanelProps {
@@ -156,4 +168,16 @@ export interface LibraryTrackItemProps {
   onAddToStudio: () => void;
   canAddToStudio: boolean;
   isProOnly: boolean;
+}
+
+// Unified UserTrack interface for uploaded tracks
+export interface UserTrack {
+  id: string;
+  name: string;
+  file: File | null;
+  fileKey: string;
+  type: string;
+  size: string;
+  url?: string;
+  uploadedAt: number;
 }

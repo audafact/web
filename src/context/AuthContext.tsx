@@ -9,7 +9,7 @@ import { PostSignupFlowHandler } from '../services/postSignupFlowHandler';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<AuthResponse>;
+  signUp: (email: string, password: string, captchaToken?: string) => Promise<AuthResponse>;
   signIn: (email: string, password: string) => Promise<AuthResponse>;
   signInWithGoogle: () => Promise<AuthResponse>;
   signOut: () => Promise<AuthResponse>;
@@ -40,7 +40,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Set analytics user
       if (session?.user) {
-        analytics.setUser(session.user.id, 'free'); // Default to free tier
+        // Get user tier from metadata or default to free
+        const userTier = session.user.user_metadata?.tier || 'free';
+        analytics.setUser(session.user.id, userTier);
       }
     });
 
@@ -50,7 +52,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       // Update analytics user
       if (session?.user) {
-        analytics.setUser(session.user.id, 'free'); // Default to free tier
+        // Get user tier from metadata or default to free
+        const userTier = session.user.user_metadata?.tier || 'free';
+        analytics.setUser(session.user.id, userTier);
         
         // Handle post-signup flow for new signups
         if (event === 'SIGNED_IN') {
@@ -76,24 +80,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string): Promise<AuthResponse> => {
-    return await authService.signUp(email, password);
+  const signUp = async (email: string, password: string, captchaToken?: string): Promise<AuthResponse> => {
+    return await authService.signUp(email, password, captchaToken);
   };
 
-  const signIn = async (email: string, password: string): Promise<AuthResponse> => {
-    return await authService.signIn(email, password);
+  const signIn = async (email: string, password: string, captchaToken?: string): Promise<AuthResponse> => {
+    return await authService.signIn(email, password, captchaToken);
   };
 
   const signOut = async (): Promise<AuthResponse> => {
     const result = await authService.signOut();
     if (result.success) {
       setUser(null);
+      window.location.href = '/';
     }
     return result;
   };
 
-  const resetPassword = async (email: string): Promise<AuthResponse> => {
-    return await authService.resetPassword(email);
+  const resetPassword = async (email: string, captchaToken?: string): Promise<AuthResponse> => {
+    return await authService.resetPassword(email, captchaToken);
   };
 
   const updatePassword = async (password: string): Promise<AuthResponse> => {

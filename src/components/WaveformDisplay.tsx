@@ -36,7 +36,7 @@ interface WaveformDisplayProps {
   // Scroll state callback
   onScrollStateChange?: (isScrolling: boolean) => void;
   // Demo mode
-  isDemoMode?: boolean;
+  isGuestMode?: boolean;
 }
 
 const WaveformDisplay = ({
@@ -69,7 +69,7 @@ const WaveformDisplay = ({
   // Scroll state callback
   onScrollStateChange,
   // Demo mode
-  isDemoMode = false,
+  isGuestMode = false,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -435,7 +435,7 @@ const WaveformDisplay = ({
           start: clampedStart,
           end: regionEnd,
           color: 'rgba(255, 77, 79, 0.3)',
-          drag: !isDemoMode, // Disable dragging in demo mode
+          drag: !isGuestMode, // Disable dragging in demo mode
           resize: false,
           id: `cue-${trackId || 'default'}-${index}`,
           // Add visual styling for better interaction
@@ -474,7 +474,7 @@ const WaveformDisplay = ({
         }
 
         // Add demo mode event listeners to the region itself (cue points only)
-        if (isDemoMode) {
+        if (isGuestMode) {
           region.on('mousedown', (e: any) => {
             e.preventDefault();
             e.stopPropagation();
@@ -499,7 +499,7 @@ const WaveformDisplay = ({
 
       currentRegionsRef.current = newRegions;
     }
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isDemoMode]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isGuestMode]);
 
   // Improved function to add thumb element to a region
   // Alternative approach: Use WaveSurfer's internal region management
@@ -527,7 +527,7 @@ const WaveformDisplay = ({
     const hitbox = document.createElement('div');
     
     // Set cursor and pointer events based on demo mode
-    const cursor = isDemoMode ? 'pointer' : 'grab';
+    const cursor = isGuestMode ? 'pointer' : 'grab';
     const pointerEvents = 'auto';
     
     hitbox.style.cssText = `
@@ -568,7 +568,7 @@ const WaveformDisplay = ({
     thumb.textContent = index === 9 ? '0' : (index + 1).toString();
 
     // Add lock icon in demo mode
-    if (isDemoMode) {
+    if (isGuestMode) {
       const lockIcon = document.createElement('div');
       lockIcon.style.cssText = `
         position: absolute;
@@ -595,7 +595,7 @@ const WaveformDisplay = ({
     regionElement.appendChild(hitbox);
 
     // Add event listeners based on demo mode
-    if (isDemoMode) {
+    if (isGuestMode) {
       // In demo mode, prevent dragging and show signup modal on click
       hitbox.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -622,7 +622,7 @@ const WaveformDisplay = ({
 
     // Store reference to the hitbox (which contains the thumb) for cleanup
     region.thumbElement = hitbox;
-  }, [trackId, isDemoMode]);
+  }, [trackId, isGuestMode]);
 
   // Function to remove thumbs from regions
   const removeThumbsFromRegions = useCallback(() => {

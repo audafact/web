@@ -1,6 +1,16 @@
-import { supabase } from './supabase';
-import { LibraryTrack } from '../types/music';
+// services/libraryService.ts
+//
+// NOTE: This service now provides business logic for library tracks.
+// Data fetching is handled by the useUser hook.
+// - Guest users: No tracks (bundled tracks via DemoProvider)
+// - Free users: 10 monthly revolving tracks from library_tracks
+// - Pro users: All available tracks from library_tracks
+//
+import { supabase } from "./supabase";
+import { LibraryTrack } from "../types/music";
+import { normalizeLegacyUrlToKey } from "@/utils/media";
 
+/** DB row shape (reflects your table incl. new key columns) */
 export interface DatabaseLibraryTrack {
   id: string;
   track_id: string;
@@ -10,164 +20,171 @@ export interface DatabaseLibraryTrack {
   bpm: number | null;
   key: string | null;
   duration: number | null;
+
+  // legacy URL columns (kept for fallback)
   file_url: string;
-  type: 'wav' | 'mp3';
+  preview_url: string | null;
+
+  // NEW: object keys in R2 (preferred)
+  file_key: string;
+  preview_key: string | null;
+
+  type: "wav" | "mp3";
   size: string | null;
+
+  // optional metadata
+  content_hash?: string | null;
+  size_bytes?: number | null;
+  content_type?: string | null;
+
   tags: string[];
   is_pro_only: boolean;
-  preview_url: string | null;
   rotation_week: number | null;
+  is_active?: boolean;
 }
 
 export class LibraryService {
   /**
-   * Get library tracks based on user tier
-   * Free users get 10 rotating tracks, pro users get all tracks
+   * Transform database tracks to app tracks.
+   * IMPORTANT: we return keys (fileKey/previewKey) not public URLs.
    */
-  static async getLibraryTracks(userTier: 'guest' | 'free' | 'pro'): Promise<LibraryTrack[]> {
-    try {
-      let query = supabase
-        .from('library_tracks')
-        .select('*')
-        .eq('is_active', true);
+  static transformDatabaseTracks(
+    dbTracks: DatabaseLibraryTrack[]
+  ): LibraryTrack[] {
+    return dbTracks.map((t) => {
+      const fileKey =
+        t.file_key && t.file_key.length > 0
+          ? t.file_key
+          : normalizeLegacyUrlToKey(t.file_url, { isPreview: false });
 
-      // For free users, only get tracks for current rotation week
-      if (userTier === 'free') {
-        query = query.eq('is_pro_only', false);
-        // We'll filter by rotation week in the database function
-        const { data, error } = await supabase.rpc('get_free_user_tracks');
-        if (error) throw error;
-        return this.transformDatabaseTracks(data || []);
-      }
+      const previewKey =
+        t.preview_key && t.preview_key.length > 0
+          ? t.preview_key
+          : t.preview_url
+          ? normalizeLegacyUrlToKey(t.preview_url, { isPreview: true })
+          : undefined;
 
-      // For pro users, get all tracks
-      if (userTier === 'pro') {
-        const { data, error } = await supabase.rpc('get_pro_user_tracks');
-        if (error) throw error;
-        return this.transformDatabaseTracks(data || []);
-      }
-
-      // For guests, get free tracks for current rotation week
-      const { data, error } = await supabase.rpc('get_free_user_tracks');
-      if (error) throw error;
-      return this.transformDatabaseTracks(data || []);
-    } catch (error) {
-      console.error('Error fetching library tracks:', error);
-      return [];
-    }
+      return {
+        id: t.track_id,
+        name: t.name,
+        artist: t.artist ?? undefined,
+        genre: t.genre,
+        bpm: t.bpm ?? 0,
+        key: t.key ?? undefined,
+        duration: t.duration ?? 0,
+        fileKey,
+        previewKey,
+        type: t.type,
+        size: t.size ?? "Unknown",
+        tags: t.tags,
+        isProOnly: t.is_pro_only,
+        previewUrl: t.preview_url ?? undefined,
+        rotationWeek: t.rotation_week ?? undefined,
+        isActive: t.is_active ?? undefined,
+        isDemo: false, // Default to false since is_demo doesn't exist in DatabaseLibraryTrack
+      };
+    });
   }
 
-  /**
-   * Get tracks by genre
-   */
-  static async getTracksByGenre(genre: string, userTier: 'guest' | 'free' | 'pro'): Promise<LibraryTrack[]> {
-    const tracks = await this.getLibraryTracks(userTier);
-    return tracks.filter(track => track.genre === genre);
+  /** Transform LibraryTrack[] to AudioAsset[] for Studio component */
+  static transformToAudioAssets(tracks: LibraryTrack[]): Array<{
+    id: string;
+    name: string;
+    fileKey: string;
+    type: "wav" | "mp3";
+    size: string;
+    is_demo: boolean;
+  }> {
+    return tracks.map((t) => ({
+      id: t.id,
+      name: t.name,
+      fileKey: t.fileKey,
+      type: t.type,
+      size: t.size,
+      is_demo: false,
+    }));
   }
 
-  /**
-   * Get available genres for current user tier
-   */
-  static async getAvailableGenres(userTier: 'guest' | 'free' | 'pro'): Promise<string[]> {
-    const tracks = await this.getLibraryTracks(userTier);
-    return [...new Set(tracks.map(track => track.genre))];
+  /** Get tracks by genre (client-side filter) */
+  static filterByGenre(tracks: LibraryTrack[], genre: string): LibraryTrack[] {
+    return tracks.filter((t) => t.genre === genre);
   }
 
-  /**
-   * Get track by ID
-   */
-  static async getTrackById(trackId: string, userTier: 'guest' | 'free' | 'pro'): Promise<LibraryTrack | null> {
-    const tracks = await this.getLibraryTracks(userTier);
-    return tracks.find(track => track.id === trackId) || null;
+  /** Available genres from tracks */
+  static getAvailableGenres(tracks: LibraryTrack[]): string[] {
+    return [...new Set(tracks.map((t) => t.genre))];
   }
 
-  /**
-   * Get current rotation week info
-   */
-  static async getCurrentRotationInfo(): Promise<{ 
-    weekNumber: number; 
+  /** Get a single track by id (track_id) */
+  static getTrackById(
+    tracks: LibraryTrack[],
+    trackId: string
+  ): LibraryTrack | null {
+    return tracks.find((t) => t.id === trackId) ?? null;
+  }
+
+  /** Rotation week info via RPC */
+  static async getCurrentRotationInfo(): Promise<{
+    weekNumber: number;
     trackCount: number;
     nextRotationDate: string;
     daysUntilRotation: number;
   }> {
     try {
-      const { data, error } = await supabase.rpc('get_rotation_info');
+      const { data, error } = await supabase.rpc("get_rotation_info");
       if (error) throw error;
-      
       if (data && data.length > 0) {
-        const info = data[0];
+        const info = data[0] as any;
         return {
           weekNumber: info.current_week,
           trackCount: info.current_track_count,
           nextRotationDate: info.next_rotation_date,
-          daysUntilRotation: info.days_until_rotation
+          daysUntilRotation: info.days_until_rotation,
         };
       }
-      
-      return { weekNumber: 1, trackCount: 0, nextRotationDate: '', daysUntilRotation: 0 };
+      return {
+        weekNumber: 1,
+        trackCount: 0,
+        nextRotationDate: "",
+        daysUntilRotation: 0,
+      };
     } catch (error) {
-      console.error('Error getting rotation info:', error);
-      return { weekNumber: 1, trackCount: 0, nextRotationDate: '', daysUntilRotation: 0 };
+      console.error("Error getting rotation info:", error);
+      return {
+        weekNumber: 1,
+        trackCount: 0,
+        nextRotationDate: "",
+        daysUntilRotation: 0,
+      };
     }
   }
 
   /**
-   * Transform database track to LibraryTrack format
+   * Count tracks (client side)
    */
-  private static transformDatabaseTracks(dbTracks: DatabaseLibraryTrack[]): LibraryTrack[] {
-    return dbTracks.map(dbTrack => ({
-      id: dbTrack.track_id,
-      name: dbTrack.name,
-      artist: dbTrack.artist || undefined,
-      genre: dbTrack.genre,
-      bpm: dbTrack.bpm || 0,
-      key: dbTrack.key || undefined,
-      duration: dbTrack.duration || 0,
-      file: this.getLibraryTrackUrl(dbTrack.track_id, dbTrack.type), // Generate storage URL
-      type: dbTrack.type,
-      size: dbTrack.size || 'Unknown',
-      tags: dbTrack.tags,
-      isProOnly: dbTrack.is_pro_only,
-      previewUrl: dbTrack.preview_url || undefined
-    }));
-  }
-
-  /**
-   * Get the storage URL for a library track
-   */
-  private static getLibraryTrackUrl(trackId: string, fileType: string): string {
-    const { data } = supabase.storage
-      .from('library-tracks')
-      .getPublicUrl(`${trackId}.${fileType}`);
-    
-    return data.publicUrl;
-  }
-
-  /**
-   * Fetch audio file from URL
-   */
-  static async fetchAudioFile(fileUrl: string): Promise<File> {
-    try {
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio file: ${response.statusText}`);
-      }
-      
-      const blob = await response.blob();
-      const fileName = fileUrl.split('/').pop() || 'audio.wav';
-      
-      return new File([blob], fileName, { type: blob.type });
-    } catch (error) {
-      console.error('Error fetching audio file:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get track count for current user tier
-   */
-  static async getTrackCount(userTier: 'guest' | 'free' | 'pro'): Promise<number> {
-    const tracks = await this.getLibraryTracks(userTier);
+  static getTrackCount(tracks: LibraryTrack[]): number {
     return tracks.length;
   }
-} 
+
+  /**
+   * Choose preview vs original by tier at call sites
+   */
+  static pickPlayableKey(
+    track: LibraryTrack,
+    userTier: "guest" | "free" | "pro"
+  ): string {
+    // Guest users don't have database tracks, so this function is mainly for free/pro users
+    if ((userTier === "guest" || userTier === "free") && track.previewKey) {
+      return track.previewKey;
+    }
+    return track.fileKey;
+  }
+}
+
+/** Export the helper function for backward compatibility */
+export function pickPlayableKey(
+  t: LibraryTrack,
+  userTier: "guest" | "free" | "pro"
+): string {
+  return LibraryService.pickPlayableKey(t, userTier);
+}
