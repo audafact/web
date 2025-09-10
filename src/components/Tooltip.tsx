@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface TooltipProps {
   content: string | React.ReactNode;
@@ -23,33 +24,54 @@ const Tooltip: React.FC<TooltipProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [finalPosition, setFinalPosition] = useState(position);
   const timeoutRef = useRef<NodeJS.Timeout>();
   const triggerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
   
   const showTooltip = (e: React.MouseEvent | React.FocusEvent) => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
+      const tooltipHeight = 40; // Approximate tooltip height
+      const tooltipWidth = 200; // Approximate tooltip width
+      const spacing = 12; // Space between tooltip and trigger
+      const viewportPadding = 0; // Padding from viewport edges
+      
       let x = rect.left + rect.width / 2;
       let y = rect.top;
+      let finalPosition = position;
       
-      switch (position) {
-        case 'top':
-          y = rect.top - 10;
-          break;
-        case 'bottom':
-          y = rect.bottom + 10;
-          break;
-        case 'left':
-          x = rect.left - 10;
-          y = rect.top + rect.height / 2;
-          break;
-        case 'right':
-          x = rect.right + 10;
-          y = rect.top + rect.height / 2;
-          break;
+      // Check if tooltip would be cut off at the top
+      if (position === 'top' && rect.top - tooltipHeight - spacing < 0) {
+        // Switch to bottom if tooltip would go off-screen
+        y = rect.bottom + spacing;
+        finalPosition = 'bottom';
+      } else if (position === 'top') {
+        y = rect.top - tooltipHeight - spacing - 8; // Extra spacing for top tooltips
+        finalPosition = 'top';
+      } else if (position === 'bottom') {
+        y = rect.bottom + spacing;
+        finalPosition = 'bottom';
+      } else if (position === 'left') {
+        // For left tooltips, we need to position the RIGHT edge of the tooltip
+        // at rect.left - spacing, so left edge = rect.left - spacing - actualWidth
+        // But since we don't know actual width yet, we'll position it and adjust with CSS
+        x = rect.left - spacing;
+        y = rect.top + rect.height / 2;
+        finalPosition = 'left';
+      } else if (position === 'right') {
+        x = rect.right + spacing;
+        y = rect.top + rect.height / 2;
+        finalPosition = 'right';
       }
       
+      // Ensure tooltip stays within viewport bounds
+      x = Math.max(viewportPadding, Math.min(x, window.innerWidth - tooltipWidth - viewportPadding));
+      y = Math.max(viewportPadding, Math.min(y, window.innerHeight - tooltipHeight - viewportPadding));
+      
       setTooltipPosition({ x, y });
+      setFinalPosition(finalPosition);
     }
     
     if (delay > 0) {
@@ -68,14 +90,48 @@ const Tooltip: React.FC<TooltipProps> = ({
   
   const toggleTooltip = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setTooltipPosition({
-        x: rect.left + rect.width / 2,
-        y: rect.top - 10
-      });
+    if (isVisible) {
+      // If tooltip is visible, hide it
+      setIsVisible(false);
+    } else {
+      // If tooltip is not visible, show it with proper positioning
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        const tooltipHeight = 40; // Approximate tooltip height
+        const tooltipWidth = 200; // Approximate tooltip width
+        const spacing = 12; // Space between tooltip and trigger
+        
+        let x = rect.left + rect.width / 2;
+        let y = rect.top;
+        let finalPosition = position;
+        
+        // Check if tooltip would be cut off at the top
+        if (position === 'top' && rect.top - tooltipHeight - spacing < 0) {
+          // Switch to bottom if tooltip would go off-screen
+          y = rect.bottom + spacing;
+          finalPosition = 'bottom';
+        } else if (position === 'top') {
+          y = rect.top - tooltipHeight - spacing - 8; // Extra spacing for top tooltips
+          finalPosition = 'top';
+        } else if (position === 'bottom') {
+          y = rect.bottom + spacing;
+          finalPosition = 'bottom';
+        } else if (position === 'left') {
+          // For left tooltips, we need to position the RIGHT edge of the tooltip
+          x = rect.left - spacing;
+          y = rect.top + rect.height / 2;
+          finalPosition = 'left';
+        } else if (position === 'right') {
+          x = rect.right + spacing;
+          y = rect.top + rect.height / 2;
+          finalPosition = 'right';
+        }
+        
+        setTooltipPosition({ x, y });
+        setFinalPosition(finalPosition);
+        setIsVisible(true);
+      }
     }
-    setIsVisible(!isVisible);
   };
   
   const eventHandlers = {
@@ -93,12 +149,23 @@ const Tooltip: React.FC<TooltipProps> = ({
   };
   
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (trigger === 'click' && isVisible && triggerRef.current && !triggerRef.current.contains(event.target as Node)) {
+        setIsVisible(false);
+      }
+    };
+
+    if (trigger === 'click' && isVisible) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [trigger, isVisible]);
   
   return (
     <div className={`tooltip-container ${className}`}>
@@ -110,21 +177,28 @@ const Tooltip: React.FC<TooltipProps> = ({
         {children}
       </div>
       
-      {isVisible && (
+      {isVisible && createPortal(
         <div
-          className={`feature-tooltip tooltip-${position}`}
+          ref={tooltipRef}
+          className={`feature-tooltip tooltip-${finalPosition}`}
           style={{
+            position: 'fixed',
             left: tooltipPosition.x,
             top: tooltipPosition.y,
             transform: position === 'top' || position === 'bottom' 
               ? 'translateX(-50%)' 
-              : 'translateY(-50%)',
+              : position === 'right' 
+                ? 'translateY(-50%)' 
+              : position === 'left'
+                ? 'translateX(-100%) translateY(-50%)'
+                : 'none',
             maxWidth: `${maxWidth}px`,
             zIndex
           }}
         >
           {content}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

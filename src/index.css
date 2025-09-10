@@ -312,8 +312,9 @@
   font-size: 14px;
   z-index: 1000;
   pointer-events: none;
-  white-space: nowrap;
+  white-space: normal;
   max-width: 200px;
+  word-wrap: break-word;
   box-shadow: var(--tooltip-shadow);
   line-height: 1.4;
   font-weight: 400;

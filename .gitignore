@@ -123,3 +123,6 @@ ehthumbs.db/
 *.backup
 *.tar.gz
 *.jar
+
+*storybook.log
+storybook-static
