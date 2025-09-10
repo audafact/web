@@ -1,43 +1,63 @@
-import { defineConfig, devices } from "@playwright/experimental-ct-react";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { defineConfig, devices } from '@playwright/experimental-ct-react';
 
 export default defineConfig({
-  testDir: "./tests/playwright/components",
+  testDir: './tests/playwright/components',
+  /* Run tests in files in parallel */
   fullyParallel: true,
+  /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
+  /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
+  /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
-  reporter: "html",
+  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  reporter: [
+    ['html'],
+    ['json', { outputFile: 'test-results/component-results.json' }],
+    ['junit', { outputFile: 'test-results/component-results.xml' }],
+  ],
+  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    trace: "on-first-retry",
-    // Component testing specific options
-    ctPort: 3100,
+    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    trace: 'on-first-retry',
+    /* Take screenshot on failure */
+    screenshot: 'only-on-failure',
+    /* Record video on failure */
+    video: 'retain-on-failure',
+    // Use the custom Vite config for component testing
     ctViteConfig: {
-      resolve: {
-        alias: {
-          "@": path.resolve(__dirname, "src"),
-        },
-      },
-      define: {
-        "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(
-          "https://mock-project.supabase.co"
-        ),
-        "import.meta.env.VITE_SUPABASE_ANON_KEY":
-          JSON.stringify("mock-anon-key"),
-        "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
-          "https://audafact-api.david-g-cortinas.workers.dev"
-        ),
-      },
+      configFile: './vite-ct.config.ts',
     },
   },
+
+  /* Configure projects for major browsers */
   projects: [
     {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 5'] },
+    },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 12'] },
     },
   ],
+
+  /* Run your local dev server before starting the tests */
+  // webServer: {
+  //   command: 'npm run dev',
+  //   url: 'http://127.0.0.1:5173',
+  //   reuseExistingServer: !process.env.CI,
+  // },
 });
