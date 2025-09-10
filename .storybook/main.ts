@@ -7,7 +7,9 @@ const __dirname = path.dirname(__filename);
 
 const config: StorybookConfig = {
   stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
-  addons: ["@storybook/addon-essentials"],
+  addons: [
+    "@storybook/addon-essentials",
+  ],
   framework: {
     name: "@storybook/react-vite",
     options: {},
@@ -32,6 +34,26 @@ const config: StorybookConfig = {
       "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
         "https://audafact-api.david-g-cortinas.workers.dev"
       ),
+    };
+
+    // Fix for missing "./test" specifier in storybook package
+    (config.resolve as any).fallback = {
+      ...(config.resolve as any).fallback,
+      "storybook/test": false,
+    };
+
+    // Additional Vite configuration to handle the build issue
+    config.build = {
+      ...config.build,
+      rollupOptions: {
+        ...config.build?.rollupOptions,
+        external: (id) => {
+          if (id.includes("storybook/test")) {
+            return true;
+          }
+          return false;
+        },
+      },
     };
 
     return config;
