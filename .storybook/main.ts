@@ -2,14 +2,19 @@ import type { StorybookConfig } from "@storybook/react-vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Get __dirname for ES modules
+const getDirname = () => {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    return path.dirname(__filename);
+  } catch {
+    return process.cwd();
+  }
+};
 
 const config: StorybookConfig = {
   stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
-  addons: [
-    "@storybook/addon-essentials",
-  ],
+  addons: ["@storybook/addon-essentials"],
   framework: {
     name: "@storybook/react-vite",
     options: {},
@@ -17,11 +22,12 @@ const config: StorybookConfig = {
   viteFinal: async (config) => {
     // Configure path aliases
     config.resolve = config.resolve || {};
+    const storybookDir = getDirname();
     config.resolve.alias = {
       ...config.resolve.alias,
-      "@": path.resolve(__dirname, "../src"),
+      "@": path.resolve(storybookDir, "../src"),
       // Mock hooks for Storybook
-      "@/hooks/useUser": path.resolve(__dirname, "./mocks/useUser.ts"),
+      "@/hooks/useUser": path.resolve(storybookDir, "./mocks/useUser.ts"),
     };
 
     // Configure environment variables
