@@ -15,6 +15,9 @@ export default defineConfig({
       process.env.VITE_API_BASE_URL ||
         "https://audafact-api.david-g-cortinas.workers.dev"
     ),
+    "import.meta.env.VITE_TURNSTILE_SITE_KEY": JSON.stringify(
+      process.env.VITE_TURNSTILE_SITE_KEY || ""
+    ),
   },
   build: {
     sourcemap: true,
