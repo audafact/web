@@ -3,7 +3,9 @@ export const API_CONFIG = {
   // Base URL for the API service
   BASE_URL:
     import.meta.env.VITE_API_BASE_URL ||
-    "https://audafact-api.david-g-cortinas.workers.dev",
+    (import.meta.env.MODE === "staging"
+      ? "http://localhost:5173/api/staging" // Use proxy for staging
+      : "https://audafact-api.david-g-cortinas.workers.dev"),
 
   // Endpoints
   ENDPOINTS: {
