@@ -1,7 +1,10 @@
 // web/src/lib/api.ts
 import { supabase } from "@/services/supabase";
 
-const API_BASE = "https://audafact-api.david-g-cortinas.workers.dev"; // Production Worker for now
+const API_BASE =
+  import.meta.env.MODE === "staging"
+    ? "http://localhost:5173/api/staging" // Use proxy for staging
+    : "https://audafact-api.david-g-cortinas.workers.dev";
 
 export async function signFile(key: string): Promise<string> {
   const sessionResult = await supabase.auth.getSession();

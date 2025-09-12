@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:staging": "VITE_MODE=staging npm run dev",
     "build": "vite build",
+    "build:staging": "NODE_ENV=staging vite build",
+    "preview:staging": "NODE_ENV=staging vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest",
     "test:ui": "vitest --ui",

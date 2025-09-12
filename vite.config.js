@@ -56,6 +56,32 @@ export default defineConfig({
     hmr: {
       overlay: false,
     },
+    // Proxy for staging API to bypass CORS
+    proxy: {
+      "/api/staging": {
+        target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/staging/, "/api"),
+        configure: (proxy, options) => {
+          proxy.on("proxyReq", (proxyReq, req, res) => {
+            // Add CORS headers to the proxy request
+            proxyReq.setHeader("Origin", "http://localhost:5173");
+          });
+          proxy.on("proxyRes", (proxyRes, req, res) => {
+            // Add CORS headers to the response
+            proxyRes.headers["Access-Control-Allow-Origin"] =
+              "http://localhost:5173";
+            proxyRes.headers["Access-Control-Allow-Methods"] =
+              "GET,POST,OPTIONS";
+            proxyRes.headers["Access-Control-Allow-Headers"] =
+              "authorization,content-type,range";
+            proxyRes.headers["Access-Control-Expose-Headers"] =
+              "etag,content-range,accept-ranges,x-ratelimit-limit,x-ratelimit-remaining,x-ratelimit-reset";
+            proxyRes.headers["Vary"] = "Origin";
+          });
+        },
+      },
+    },
   },
   // Optimize dependencies
   optimizeDeps: {
