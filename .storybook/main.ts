@@ -1,0 +1,68 @@
+import type { StorybookConfig } from "@storybook/react-vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Get __dirname for ES modules
+const getDirname = () => {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    return path.dirname(__filename);
+  } catch {
+    return process.cwd();
+  }
+};
+
+const config: StorybookConfig = {
+  stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
+  addons: ["@storybook/addon-essentials"],
+  framework: {
+    name: "@storybook/react-vite",
+    options: {},
+  },
+  viteFinal: async (config) => {
+    // Configure path aliases
+    config.resolve = config.resolve || {};
+    const storybookDir = getDirname();
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@": path.resolve(storybookDir, "../src"),
+      // Mock hooks for Storybook
+      "@/hooks/useUser": path.resolve(storybookDir, "./mocks/useUser.ts"),
+    };
+
+    // Configure environment variables
+    config.define = {
+      ...config.define,
+      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(
+        "https://mock-project.supabase.co"
+      ),
+      "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify("mock-anon-key"),
+      "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
+        "https://audafact-api.david-g-cortinas.workers.dev"
+      ),
+    };
+
+    // Fix for missing "./test" specifier in storybook package
+    (config.resolve as any).fallback = {
+      ...(config.resolve as any).fallback,
+      "storybook/test": false,
+    };
+
+    // Additional Vite configuration to handle the build issue
+    config.build = {
+      ...config.build,
+      rollupOptions: {
+        ...config.build?.rollupOptions,
+        external: (id) => {
+          if (id.includes("storybook/test")) {
+            return true;
+          }
+          return false;
+        },
+      },
+    };
+
+    return config;
+  },
+};
+export default config;

@@ -1,0 +1,40 @@
+<testsuites id="" name="" tests="15" failures="0" skipped="0" errors="0" time="26.737755999999997">
+<testsuite name="smoke.spec.ts" timestamp="2025-09-10T20:44:49.445Z" hostname="smoke-tests" tests="3" failures="0" skipped="0" time="11.795" errors="0">
+<testcase name="Smoke Tests › should load the application without errors" classname="smoke.spec.ts" time="4.127">
+</testcase>
+<testcase name="Smoke Tests › should navigate to auth page" classname="smoke.spec.ts" time="3.74">
+</testcase>
+<testcase name="Smoke Tests › should have working navigation" classname="smoke.spec.ts" time="3.928">
+</testcase>
+</testsuite>
+<testsuite name="mobile.spec.ts" timestamp="2025-09-10T20:44:49.445Z" hostname="mobile-tests" tests="4" failures="0" skipped="0" time="16.115" errors="0">
+<testcase name="Mobile Smoke Tests › should load on mobile devices" classname="mobile.spec.ts" time="5.107">
+</testcase>
+<testcase name="Mobile Smoke Tests › should have responsive navigation" classname="mobile.spec.ts" time="3.714">
+</testcase>
+<testcase name="Mobile Smoke Tests › should handle touch interactions" classname="mobile.spec.ts" time="4.185">
+</testcase>
+<testcase name="Mobile Smoke Tests › should navigate to auth page on mobile" classname="mobile.spec.ts" time="3.109">
+</testcase>
+</testsuite>
+<testsuite name="performance.spec.ts" timestamp="2025-09-10T20:44:49.445Z" hostname="performance-tests" tests="4" failures="0" skipped="0" time="21.783" errors="0">
+<testcase name="Performance Smoke Tests › should load within acceptable time" classname="performance.spec.ts" time="3.125">
+</testcase>
+<testcase name="Performance Smoke Tests › should not have memory leaks" classname="performance.spec.ts" time="5.748">
+</testcase>
+<testcase name="Performance Smoke Tests › should handle multiple page loads" classname="performance.spec.ts" time="9.144">
+</testcase>
+<testcase name="Performance Smoke Tests › should not have excessive network requests" classname="performance.spec.ts" time="3.766">
+</testcase>
+</testsuite>
+<testsuite name="accessibility.spec.ts" timestamp="2025-09-10T20:44:49.445Z" hostname="accessibility-tests" tests="4" failures="0" skipped="0" time="11.506" errors="0">
+<testcase name="Accessibility Smoke Tests › should have proper page structure" classname="accessibility.spec.ts" time="3.06">
+</testcase>
+<testcase name="Accessibility Smoke Tests › should have accessible buttons and links" classname="accessibility.spec.ts" time="3.002">
+</testcase>
+<testcase name="Accessibility Smoke Tests › should have proper form elements" classname="accessibility.spec.ts" time="2.588">
+</testcase>
+<testcase name="Accessibility Smoke Tests › should handle keyboard navigation" classname="accessibility.spec.ts" time="2.856">
+</testcase>
+</testsuite>
+</testsuites>

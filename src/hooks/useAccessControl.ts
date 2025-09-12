@@ -1,23 +1,27 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { useUserTier } from './useUserTier';
-import { AccessService, AccessStatus, EnhancedAccessService } from '../services/accessService';
+import { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { useUser } from "./useUser";
+import {
+  AccessService,
+  AccessStatus,
+  EnhancedAccessService,
+} from "../services/accessService";
 
 export const useAccessControl = () => {
   const { user } = useAuth();
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshAccessStatus = async () => {
     if (!user?.id) return;
-    
+
     setLoading(true);
     try {
       const status = await AccessService.getUserAccessStatus(user.id, tier.id);
       setAccessStatus(status);
     } catch (error) {
-      console.error('Error fetching access status:', error);
+      console.error("Error fetching access status:", error);
     } finally {
       setLoading(false);
     }
@@ -33,10 +37,10 @@ export const useAccessControl = () => {
       refreshAccessStatus();
     };
 
-    window.addEventListener('recordingSaved', handleRecordingSaved);
-    
+    window.addEventListener("recordingSaved", handleRecordingSaved);
+
     return () => {
-      window.removeEventListener('recordingSaved', handleRecordingSaved);
+      window.removeEventListener("recordingSaved", handleRecordingSaved);
     };
   }, [refreshAccessStatus]);
 
@@ -44,17 +48,24 @@ export const useAccessControl = () => {
     return EnhancedAccessService.canAccessFeature(feature, tier);
   };
 
-  const canPerformAction = async (action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download'): Promise<boolean> => {
+  const canPerformAction = async (
+    action:
+      | "upload"
+      | "save_session"
+      | "record"
+      | "add_library_track"
+      | "download"
+  ): Promise<boolean> => {
     if (!user?.id) return false;
-    
+
     // Handle add_library_track separately since it's not in the feature access map
-    if (action === 'add_library_track') {
-      return tier.id !== 'guest'; // Only guests are blocked from adding library tracks
+    if (action === "add_library_track") {
+      return tier.id !== "guest"; // Only guests are blocked from adding library tracks
     }
-    
+
     const hasFeatureAccess = canAccessFeature(action);
     if (!hasFeatureAccess) return false;
-    
+
     return EnhancedAccessService.checkUsageLimits(user.id, tier, action);
   };
 
@@ -70,6 +81,6 @@ export const useAccessControl = () => {
     canAccessFeature,
     canPerformAction,
     getUpgradeMessage,
-    tier
+    tier,
   };
 };

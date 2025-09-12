@@ -1,0 +1,9 @@
+{
+  "projectToken": "",
+  "buildScriptName": "build-storybook",
+  "storybookBuildDir": "storybook-static",
+  "exitZeroOnChanges": true,
+  "exitZeroOnErrors": true,
+  "autoAcceptChanges": false,
+  "ignoreLastBuildOnBranch": "main"
+}

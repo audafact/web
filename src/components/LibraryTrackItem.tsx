@@ -1,6 +1,6 @@
 import React from 'react';
 import { LibraryTrackItemProps } from '../types/music';
-import { useUserTier } from '../hooks/useUserTier';
+import { useUser } from '../hooks/useUser';
 
 const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
   track,
@@ -10,7 +10,7 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
   canAddToStudio,
   isProOnly
 }) => {
-  const { tier } = useUserTier();
+  const { tier } = useUser();
   
   const handleAddToStudio = () => {
     if (tier.id === 'guest') {
@@ -35,7 +35,7 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
       type: 'library-track',
       name: track.name,
       id: track.id,
-      file: track.file,
+      file: track.fileKey,
       trackType: track.type
     }));
     e.dataTransfer.effectAllowed = 'copy';

@@ -4,32 +4,110 @@ import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
 import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
-import { useUserTier } from '../hooks/useUserTier';
-import { usePreviewAudio } from '../hooks/usePreviewAudio';
+import { useUser } from '../hooks/useUser';
 import { UpgradePrompt } from './UpgradePrompt';
-import { LibraryService } from '../services/libraryService';
-import { LibraryTrack } from '../types/music';
+import { UserTrack } from '../types/music';
 import LibraryTrackItem from './LibraryTrackItem';
 import { showSignupModal } from '../hooks/useSignupModal';
+import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
+import { deleteByKey } from '@/lib/storage';
+import { useSingleAudio } from '@/hooks/useSingleAudio';
 
 interface AudioAsset {
   id: string;
   name: string;
-  file: string;
+  fileKey: string;
   type: 'wav' | 'mp3';
   size: string;
   duration?: number;
+  fileUrl?: string;
 }
 
-interface UserTrack {
-  id: string;
-  name: string;
-  file: File | null;
-  type: string;
-  size: string;
-  url: string;
-  uploadedAt: number;
+interface UploadButtonProps {
+  user: any;
+  canPerformAction: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => Promise<boolean>;
+  getUpgradeMessage: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => string;
+  showSignupModal: (action: string) => void;
+  setShowUpgradePrompt: (state: { show: boolean; message: string; feature: string }) => void;
+  fileInputRef: React.RefObject<HTMLInputElement>;
 }
+
+const UploadButton: React.FC<UploadButtonProps> = ({
+  user,
+  canPerformAction,
+  getUpgradeMessage,
+  showSignupModal,
+  setShowUpgradePrompt,
+  fileInputRef
+}) => {
+  const [canUpload, setCanUpload] = useState<boolean | null>(null);
+  const [upgradeMessage, setUpgradeMessage] = useState<string>('');
+
+  useEffect(() => {
+    const checkUploadCapacity = async () => {
+      if (!user) {
+        setCanUpload(true); // Guest users can attempt upload (will show signup)
+        return;
+      }
+      
+      const uploadAllowed = await canPerformAction('upload');
+      setCanUpload(uploadAllowed);
+      
+      if (!uploadAllowed) {
+        setUpgradeMessage(getUpgradeMessage('upload'));
+      }
+    };
+
+    checkUploadCapacity();
+  }, [user, canPerformAction, getUpgradeMessage]);
+
+  const handleClick = async () => {
+    // Check if user is authenticated
+    if (!user) {
+      showSignupModal('upload');
+      return;
+    }
+    
+    // Check upload limits for authenticated users
+    const uploadAllowed = await canPerformAction('upload');
+    if (!uploadAllowed) {
+      setShowUpgradePrompt({
+        show: true,
+        message: getUpgradeMessage('upload'),
+        feature: 'Track Upload'
+      });
+      return;
+    }
+    
+    // For authenticated users with upload capacity, open file browser
+    fileInputRef.current?.click();
+  };
+
+  const isDisabled = user && canUpload === false;
+  const tooltipText = isDisabled ? upgradeMessage : 'Upload another track to your collection';
+
+  return (
+    <div className="pt-3 border-t border-audafact-divider">
+      <button
+        onClick={handleClick}
+        disabled={isDisabled}
+        className={`w-full px-3 py-2 text-sm border border-audafact-divider rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 ${
+          isDisabled 
+            ? 'text-audafact-text-secondary opacity-50 cursor-not-allowed' 
+            : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2'
+        }`}
+        title={tooltipText}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+        </svg>
+        Upload Another Track
+      </button>
+    </div>
+  );
+};
+
+
 
 interface SidePanelProps {
   isOpen: boolean;
@@ -48,11 +126,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onAddUserTrack,
   initialMode
 }) => {
+
   const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
-  const { tier } = useUserTier();
-  const { togglePreview, isPreviewing } = usePreviewAudio();
+  const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
   
   // Collapsible menu state
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -77,63 +155,50 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
   
 
-  const [previewAudios, setPreviewAudios] = useState<{ [key: string]: HTMLAudioElement }>({});
-  const [playingAssets, setPlayingAssets] = useState<{ [key: string]: boolean }>({});
+
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState<{
     show: boolean;
     message: string;
     feature: string;
   }>({ show: false, message: '', feature: '' });
-  const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
-  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load library tracks when library tab is opened
-  useEffect(() => {
-    if (activeAudioTab === 'library' && libraryTracks.length === 0) {
-      loadLibraryTracks();
-    }
-  }, [activeAudioTab]);
+  const { isPlaying, isLoading, toggle, isCurrentKey } = useSingleAudio();
 
   // Load user tracks from database on mount
   useEffect(() => {
+    
     const loadUserTracks = async () => {
       if (!user) {
+
         setUserTracks([]);
         return;
       }
 
       try {
+
         const uploads = await DatabaseService.getUserUploads(user.id);
         const userTracksData = await Promise.all(
           uploads.map(async (upload) => {
-            // Get file info from storage to get actual size and type
-            let fileSize = '0MB';
-            let fileType = 'audio/mpeg';
-            
-            try {
-              const fileInfo = await StorageService.getAudioFileInfo('user-uploads', upload.file_url);
-              if (fileInfo) {
-                fileSize = StorageService.formatFileSize(fileInfo.size);
-                fileType = fileInfo.type;
-              }
-            } catch (error) {
-              console.error('Error getting file info for:', upload.file_url, error);
-            }
-            
+            const fileKey =
+              upload.file_key ??
+              (upload.file_url ? normalizeLegacyUrlToKey(upload.file_url, { userIdHint: upload.user_id }) : ""); // adjust if you have user_id
+
             return {
               id: upload.id,
-              name: upload.title,
-              file: null as File | null,
-              type: fileType,
-              size: fileSize,
-              url: upload.file_url, // This is now the file path
-              uploadedAt: new Date(upload.created_at).getTime()
-            };
+              name: upload.title || `Track ${upload.id}`, // Ensure name is always a string
+              file: null as File | null,            // only used pre-upload
+              fileKey,                              // ← use this everywhere for signing/playing/deleting
+              type: upload.content_type ?? "audio/mpeg",
+              size: toPrettySize(upload.size_bytes),
+              uploadedAt: new Date(upload.created_at).getTime(),
+            } satisfies UserTrack;
           })
         );
-        
+
+
         setUserTracks(userTracksData);
       } catch (error) {
         console.error('Error loading user tracks from database:', error);
@@ -142,19 +207,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
     };
 
     loadUserTracks();
-  }, [user]);
+  }, [user?.id]); // Only depend on user.id, not the entire user object
 
-  const loadLibraryTracks = async () => {
-    setIsLoadingLibrary(true);
-    try {
-      const tracks = await LibraryService.getLibraryTracks(tier.id);
-      setLibraryTracks(tracks);
-    } catch (error) {
-      console.error('Error loading library tracks:', error);
-    } finally {
-      setIsLoadingLibrary(false);
-    }
-  };
+
 
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {
@@ -237,20 +292,6 @@ const SidePanel: React.FC<SidePanelProps> = ({
       localStorage.removeItem('sidePanelActiveSessionsTab');
     }
   }, [activeSessionsTab]);
-  
-
-
-  // Cleanup audio on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(previewAudios).forEach(audio => {
-        if (audio) {
-          audio.pause();
-          audio.currentTime = 0;
-        }
-      });
-    };
-  }, [previewAudios]);
 
   // Audio assets are now loaded from the library service
   // The audioAssets array is no longer needed as we use libraryTracks from Supabase
@@ -287,51 +328,57 @@ const SidePanel: React.FC<SidePanelProps> = ({
       return;
     }
 
-    try {
-      // Upload file to Supabase storage
-      const uploadResult = await StorageService.uploadAudioFile(file, user.id, file.name);
+      try {
+        // Upload file using refactored StorageService with R2 storage
+        const uploadResult = await StorageService.uploadAudioFile(file, user.id, file.name);
 
-      if (uploadResult.error) {
-        console.error('Upload error:', uploadResult.error);
-        throw uploadResult.error;
-      }
+        if (uploadResult.error) {
+          console.error('Upload error:', uploadResult.error);
+          throw uploadResult.error;
+        }
 
-      if (uploadResult.data) {
-        // Create database record - store the file path, not the URL
-        const uploadRecord = await DatabaseService.createUpload({
-          user_id: user.id,
-          file_url: uploadResult.data.name, // Store the file path, not the URL
-          title: file.name,
-          duration: await getAudioDuration(file)
-        });
+        if (uploadResult.data) {
+          // Create database record with hash-based metadata
+          const uploadRecord = await DatabaseService.createHashBasedUpload(
+            user.id,
+            uploadResult.data.metadata.title || file.name,
+            uploadResult.data.metadata.serverKey,
+            uploadResult.data.metadata.fullHash,
+            uploadResult.data.metadata.shortHash,
+            uploadResult.data.metadata.sizeBytes,
+            uploadResult.data.metadata.contentType,
+            uploadResult.data.metadata.originalName || file.name,
+            await getAudioDuration(file)
+          );
 
-        if (uploadRecord) {
-          // Create user track object
-          const userTrack: UserTrack = {
-            id: uploadRecord.id,
-            name: file.name,
-            file: file,
-            type: file.type,
-            size: `${(file.size / (1024 * 1024)).toFixed(1)}MB`,
-            url: uploadResult.data.name, // Store the file path, not the URL
-            uploadedAt: Date.now()
-          };
+          if (uploadRecord) {
+            // Create user track object
+            const userTrack: UserTrack = {
+              id: uploadRecord.id,
+              name: uploadResult.data.metadata.title || file.name,
+              file,
+              fileKey: uploadResult.data.metadata.serverKey,
+              type: uploadResult.data.metadata.contentType,
+              size: `${(uploadResult.data.metadata.sizeBytes / (1024 * 1024)).toFixed(1)}MB`,
+              url: uploadResult.data.metadata.serverKey, // Use server key for R2 storage
+              uploadedAt: Date.now()
+            };
 
-          // Add to user tracks
-          const updatedTracks = [...userTracks, userTrack];
-          setUserTracks(updatedTracks);
+            // Add to user tracks
+            const updatedTracks = [...userTracks, userTrack];
+            setUserTracks(updatedTracks);
 
-          // Default to preview mode for uploaded files
-          onUploadTrack(file, 'preview');
-          
-          // Only close the sidebar on mobile and tablets (full-width mode)
-          // On desktop (lg and above), keep the sidebar open
-          if (window.innerWidth < 1024) {
-            onToggle();
+            // Default to preview mode for uploaded files
+            onUploadTrack(file, 'preview');
+            
+            // Only close the sidebar on mobile and tablets (full-width mode)
+            // On desktop (lg and above), keep the sidebar open
+            if (window.innerWidth < 1024) {
+              onToggle();
+            }
           }
         }
-      }
-    } catch (error) {
+      } catch (error) {
       console.error('Upload failed:', error);
       // You might want to show an error message to the user here
     }
@@ -346,77 +393,34 @@ const SidePanel: React.FC<SidePanelProps> = ({
     return new Promise((resolve) => {
       const audio = new Audio();
       const url = URL.createObjectURL(file);
-      
-      audio.addEventListener('loadedmetadata', () => {
-        resolve(audio.duration);
-        URL.revokeObjectURL(url);
-      });
-      
-      audio.addEventListener('error', () => {
-        resolve(0);
-        URL.revokeObjectURL(url);
-      });
-      
+      audio.preload = "metadata";
+
+      const cleanup = () => URL.revokeObjectURL(url);
+      audio.onloadedmetadata = () => { resolve(audio.duration || 0); cleanup(); };
+      audio.onerror = () => { resolve(0); cleanup(); };
       audio.src = url;
     });
   };
 
-  const handlePreviewPlay = async (asset: AudioAsset | UserTrack, isUserTrack = false) => {
-    const assetId = asset.id;
-    
-    // Stop any currently playing audio
-    Object.entries(previewAudios).forEach(([id, audio]) => {
-      if (id !== assetId && audio) {
-        audio.pause();
-        audio.currentTime = 0;
-        setPlayingAssets(prev => ({ ...prev, [id]: false }));
-      }
-    });
+  const handlePreviewPlay = async (asset: AudioAsset | UserTrack, isUserTrack: boolean) => {
+    try {
+      const key = isUserTrack
+        ? (asset as UserTrack).fileKey
+        : (asset as AudioAsset).fileKey;
 
-    // If this asset is already playing, stop it
-    if (playingAssets[assetId]) {
-      const audio = previewAudios[assetId];
-      if (audio) {
-        audio.pause();
-        audio.currentTime = 0;
-        setPlayingAssets(prev => ({ ...prev, [assetId]: false }));
-      }
-      return;
-    }
-
-    // Create new audio element
-    let audioSource: string;
-    if (isUserTrack) {
-      // Generate signed URL for user tracks
-      try {
-        audioSource = await StorageService.getSignedUrl('user-uploads', (asset as UserTrack).url);
-      } catch (error) {
-        console.error('Failed to generate signed URL:', error);
+      if (!key) {
+        console.error("Missing fileKey for asset", asset);
         return;
       }
-    } else {
-      audioSource = (asset as AudioAsset).file;
+
+      // One-line toggle: signs the key and plays, or stops if same track is currently playing
+      toggle({ kind: "key", key });
+
+      // If you kept per-asset UI state like `setPlayingAssets`, you can still set it here:
+      // setPlayingAssets(prev => ({ ...prev, [asset.id]: true }));
+    } catch (err) {
+      console.error("Failed to play preview:", err);
     }
-    
-    const audio = new Audio(audioSource);
-    
-    audio.addEventListener('ended', () => {
-      setPlayingAssets(prev => ({ ...prev, [assetId]: false }));
-    });
-    audio.addEventListener('pause', () => {
-      setPlayingAssets(prev => ({ ...prev, [assetId]: false }));
-    });
-    audio.addEventListener('error', (e) => {
-      console.error('Audio error:', e);
-      console.error('Audio error details:', audio.error);
-    });
-    
-    audio.play().then(() => {
-      setPlayingAssets(prev => ({ ...prev, [assetId]: true }));
-      setPreviewAudios(prev => ({ ...prev, [assetId]: audio }));
-    }).catch(error => {
-      console.error('Failed to play preview:', error);
-    });
   };
 
   const handleAddTrack = async (asset: AudioAsset | UserTrack, isUserTrack = false) => {
@@ -456,10 +460,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
     try {
       // Delete from storage first
-      const storageResult = await StorageService.deleteFile('user-uploads', trackToRemove.url);
-      if (storageResult.error) {
-        console.error('Failed to delete file from storage:', storageResult.error);
-      }
+      await deleteByKey(trackToRemove.fileKey);
       
       // Delete from database
       const success = await DatabaseService.deleteUpload(trackId, user.id);
@@ -483,7 +484,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Mobile and Tablet overlay */}
       {isOpen && (
         <div 
-          className="fixed top-15 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed top-16 left-0 right-0 bottom-0 bg-black bg-opacity-50 z-[50] lg:hidden"
           onClick={onToggle}
         />
       )}
@@ -491,7 +492,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       {/* Sidebar */}
       <div 
         data-sidepanel
-        className={`fixed top-16 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-50 overflow-hidden flex flex-col ${
+        className={`fixed top-16 left-0 h-[calc(100vh-4rem)] bg-audafact-surface-1 border-r border-audafact-divider shadow-card transition-transform duration-300 ease-in-out z-[60] overflow-hidden flex flex-col ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         } w-full lg:w-[400px]`}
       >
@@ -568,26 +569,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         
                         {/* Enhanced Library Tracks */}
                         <div className="space-y-3">
-                          {isLoadingLibrary ? (
+                          {userLoading ? (
                             <div className="text-center py-4">
                               <div className="loading-spinner mx-auto"></div>
                               <p className="text-sm audafact-text-secondary mt-2">Loading tracks...</p>
                             </div>
-                          ) : libraryTracks.length === 0 ? (
+                          ) : userLibraryTracks.length === 0 ? (
                             <div className="text-center py-4">
                               <p className="text-sm audafact-text-secondary">No tracks available</p>
                             </div>
                           ) : (
-                            libraryTracks.map((track) => (
+                            userLibraryTracks.map((track) => (
                               <LibraryTrackItem
                                 key={track.id}
                                 track={track}
-                                isPreviewing={isPreviewing(track.id)}
-                                onPreview={() => togglePreview(track)}
+                                onPreview={() => handlePreviewPlay(track, false)}
+                                isPreviewing={isPlaying && isCurrentKey(track.fileKey)}
                                 onAddToStudio={() => handleAddTrack({
                                   id: track.id,
                                   name: track.name,
-                                  file: track.file,
+                                  fileKey: track.fileKey,
                                   type: track.type,
                                   size: track.size
                                 }, false)}
@@ -675,85 +676,102 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         </div>
                       ) : user ? (
                         <div className="space-y-3">
-                          {userTracks.map((track) => (
-                            <div
-                              key={track.id}
-                              draggable
-                              onDragStart={(e) => {
-                                e.dataTransfer.setData('text/plain', track.id);
-                                e.dataTransfer.setData('application/json', JSON.stringify({
-                                  type: 'user-track',
-                                  name: track.name,
-                                  id: track.id
-                                }));
-                                e.dataTransfer.effectAllowed = 'copy';
-                              }}
-                              className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                  {/* Play/Pause Button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePreviewPlay(track, true);
-                                    }}
-                                    className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                    title={playingAssets[track.id] ? 'Pause Preview' : 'Play Preview'}
-                                  >
-                                    {playingAssets[track.id] ? (
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                      </svg>
-                                    ) : (
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653Z" />
-                                      </svg>
-                                    )}
-                                  </button>
+                          {userTracks.map((track) => {
+                            const isThisUserTrackPlaying = isPlaying && isCurrentKey(track.fileKey);
+                            const isThisUserTrackLoading = isLoading && isCurrentKey(track.fileKey);
 
-                                  {/* Track Info */}
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="font-medium audafact-text-primary truncate max-w-[200px]" title={track.name}>{track.name}</h4>
-                                    <p className="text-sm audafact-text-secondary truncate max-w-[200px]">
-                                      {track.type ? track.type.split('/')[1]?.toUpperCase() || 'AUDIO' : 'AUDIO'} • {track.size}
-                                    </p>
+                            return (
+                              <div
+                                key={track.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('text/plain', track.id);
+                                  e.dataTransfer.setData('application/json', JSON.stringify({
+                                    type: 'user-track',
+                                    name: track.name,
+                                    id: track.id
+                                  }));
+                                  e.dataTransfer.effectAllowed = 'copy';
+                                }}
+                                className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    {/* Play/Pause Button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePreviewPlay(track, true); // single-audio hook handles toggle
+                                      }}
+                                      className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title={isThisUserTrackLoading ? "Loading..." : isThisUserTrackPlaying ? "Pause Preview" : "Play Preview"}
+                                      disabled={isThisUserTrackLoading}
+                                    >
+                                      {isThisUserTrackLoading ? (
+                                        <div className="loading-spinner w-4 h-4"></div>
+                                      ) : (
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          {isThisUserTrackPlaying ? (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+                                          ) : (
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653Z" />
+                                          )}
+                                        </svg>
+                                      )}
+                                    </button>
+                                    {/* Track Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className="font-medium audafact-text-primary truncate max-w-[200px]" title={track.name}>{track.name}</h4>
+                                      <p className="text-sm audafact-text-secondary truncate max-w-[200px]">
+                                        {track.type ? track.type.split('/')[1]?.toUpperCase() || 'AUDIO' : 'AUDIO'} • {track.size}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Action Buttons */}
+                                  <div className="flex items-center gap-1">
+                                    {/* Add Track Button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleAddTrack(track, true);
+                                      }}
+                                      className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title="Add to Studio"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                      </svg>
+                                    </button>
+
+                                    {/* Remove Track Button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveUserTrack(track.id);
+                                      }}
+                                      className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      title="Remove Track"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
                                   </div>
                                 </div>
-
-                                {/* Action Buttons */}
-                                <div className="flex items-center gap-1">
-                                  {/* Add Track Button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAddTrack(track, true);
-                                    }}
-                                    className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                    title="Add to Studio"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                    </svg>
-                                  </button>
-
-                                  {/* Remove Track Button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRemoveUserTrack(track.id);
-                                    }}
-                                    className="flex-shrink-0 p-2 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                    title="Remove Track"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                  </button>
-                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
+                          
+                          {/* Upload Button - Less prominent when tracks exist */}
+                          <UploadButton
+                            user={user}
+                            canPerformAction={canPerformAction}
+                            getUpgradeMessage={getUpgradeMessage}
+                            showSignupModal={showSignupModal}
+                            setShowUpgradePrompt={setShowUpgradePrompt}
+                            fileInputRef={fileInputRef}
+                          />
                         </div>
                       ) : null}
                     </div>
@@ -1020,27 +1038,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     {performance.audioBlob && (
                                       <button
                                         onClick={() => {
-                                          try {
-                                            const url = URL.createObjectURL(performance.audioBlob!);
-                                            const audio = new Audio(url);
-                                            
-                                            audio.onerror = (e) => {
-                                              console.error('Audio playback error:', e);
-                                              alert('Failed to play audio. The format may not be supported.');
-                                            };
-                                            
-                                            audio.onloadeddata = () => {
-                                              // Audio loaded successfully
-                                            };
-                                            
-                                            audio.play().catch(error => {
-                                              console.error('Audio play failed:', error);
-                                              alert('Failed to play audio. Please check browser audio permissions.');
-                                            });
-                                          } catch (error) {
-                                            console.error('Audio playback setup failed:', error);
-                                            alert('Failed to setup audio playback.');
-                                          }
+                                          if (!performance.audioBlob) return;
+                                          toggle({ kind: "blob", blob: performance.audioBlob });
                                         }}
                                         className="p-1 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                         title="Play Audio"

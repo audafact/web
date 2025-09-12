@@ -1,0 +1,19 @@
+{
+  "name": "audafact-r2-population",
+  "version": "1.0.0",
+  "description": "Script to populate library_tracks from R2 bucket and CSV data",
+  "type": "module",
+  "main": "populate-library-from-r2.js",
+  "scripts": {
+    "start": "node populate-library-from-r2.js",
+    "install-deps": "npm install"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0",
+    "@aws-sdk/client-s3": "^3.450.0",
+    "csv-parse": "^5.5.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.3.1"
+  }
+}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AudioAsset } from '../context/DemoContext';
+import { AudioAsset } from '../context/GuestContext';
 
 interface DemoTrackInfoProps {
   track: AudioAsset | null;

@@ -16,31 +16,31 @@ export class AnalyticsReliabilityService {
   private retryInterval: number = 5000; // 5 seconds
   private maxRetries: number = 3;
   private retryTimer?: NodeJS.Timeout;
-  
+
   private constructor() {
     this.loadPendingEvents();
     this.setupNetworkListeners();
     this.startRetryTimer();
   }
-  
+
   static getInstance(): AnalyticsReliabilityService {
     if (!AnalyticsReliabilityService.instance) {
       AnalyticsReliabilityService.instance = new AnalyticsReliabilityService();
     }
     return AnalyticsReliabilityService.instance;
   }
-  
+
   private setupNetworkListeners(): void {
-    window.addEventListener('online', () => {
+    window.addEventListener("online", () => {
       this.isOnline = true;
       this.processPendingEvents();
     });
-    
-    window.addEventListener('offline', () => {
+
+    window.addEventListener("offline", () => {
       this.isOnline = false;
     });
   }
-  
+
   private startRetryTimer(): void {
     this.retryTimer = setInterval(() => {
       if (this.isOnline && this.pendingEvents.length > 0) {
@@ -48,7 +48,7 @@ export class AnalyticsReliabilityService {
       }
     }, this.retryInterval);
   }
-  
+
   queueEvent(event: string, properties: Record<string, any>): void {
     const analyticsEvent: AnalyticsEvent = {
       event,
@@ -58,104 +58,131 @@ export class AnalyticsReliabilityService {
       userId: this.getCurrentUserId(),
       userTier: this.getCurrentUserTier(),
       retryCount: 0,
-      maxRetries: this.maxRetries
+      maxRetries: this.maxRetries,
     };
-    
+
     this.pendingEvents.push(analyticsEvent);
     this.savePendingEvents();
-    
+
     // Try to send immediately if online
     if (this.isOnline) {
       this.processPendingEvents();
     }
   }
-  
+
   private async processPendingEvents(): Promise<void> {
     const eventsToProcess = [...this.pendingEvents];
-    
+
     for (const event of eventsToProcess) {
       try {
         await this.sendEvent(event);
-        
+
         // Remove successfully sent event
-        this.pendingEvents = this.pendingEvents.filter(e => e !== event);
+        this.pendingEvents = this.pendingEvents.filter((e) => e !== event);
         this.savePendingEvents();
-        
       } catch (error) {
         event.retryCount++;
-        
+
         // Remove events that have exceeded max retries
         if (event.retryCount >= event.maxRetries) {
-          this.pendingEvents = this.pendingEvents.filter(e => e !== event);
+          this.pendingEvents = this.pendingEvents.filter((e) => e !== event);
           this.savePendingEvents();
-          
-          console.error(`Failed to send analytics event after ${event.maxRetries} retries:`, event);
+
+          console.error(
+            `Failed to send analytics event after ${event.maxRetries} retries:`,
+            event
+          );
         }
       }
     }
   }
-  
+
   private async sendEvent(event: AnalyticsEvent): Promise<void> {
-    // For now, we'll use a mock API endpoint
-    // In production, this would be your actual analytics API
-    const response = await fetch('/api/analytics', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(event)
-    });
-    
+    // Get the current JWT token for authentication
+    const token = await this.getAuthToken();
+
+    // Use the Cloudflare Worker URL for analytics
+    const { API_CONFIG } = await import("../config/api");
+    const response = await fetch(
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.ANALYTICS}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(event),
+      }
+    );
+
     if (!response.ok) {
       throw new Error(`Analytics API returned ${response.status}`);
     }
   }
-  
+
   private loadPendingEvents(): void {
     try {
-      const stored = localStorage.getItem('pending_analytics_events');
+      const stored = localStorage.getItem("pending_analytics_events");
       if (stored) {
         this.pendingEvents = JSON.parse(stored);
       }
     } catch (error) {
-      console.error('Failed to load pending analytics events:', error);
+      console.error("Failed to load pending analytics events:", error);
       this.pendingEvents = [];
     }
   }
-  
+
   private savePendingEvents(): void {
     try {
-      localStorage.setItem('pending_analytics_events', JSON.stringify(this.pendingEvents));
+      localStorage.setItem(
+        "pending_analytics_events",
+        JSON.stringify(this.pendingEvents)
+      );
     } catch (error) {
-      console.error('Failed to save pending analytics events:', error);
+      console.error("Failed to save pending analytics events:", error);
     }
   }
-  
+
   private getSessionId(): string {
-    return localStorage.getItem('session_id') || `session_${Date.now()}`;
+    return localStorage.getItem("session_id") || `session_${Date.now()}`;
   }
-  
+
   private getCurrentUserId(): string | undefined {
-    return localStorage.getItem('user_id') || undefined;
+    return localStorage.getItem("user_id") || undefined;
   }
-  
+
   private getCurrentUserTier(): string {
-    return localStorage.getItem('user_tier') || 'guest';
+    return localStorage.getItem("user_tier") || "guest";
   }
-  
+
+  private async getAuthToken(): Promise<string | null> {
+    try {
+      // Get token from Supabase client (same approach as other services)
+      const {
+        data: { session },
+      } = await import("../services/supabase").then((m) =>
+        m.supabase.auth.getSession()
+      );
+      return session?.access_token || null;
+    } catch (error) {
+      console.warn("Could not get auth token for analytics:", error);
+      return null;
+    }
+  }
+
   getPendingEventCount(): number {
     return this.pendingEvents.length;
   }
-  
+
   clearPendingEvents(): void {
     this.pendingEvents = [];
     this.savePendingEvents();
   }
-  
+
   // Cleanup method
   destroy(): void {
     if (this.retryTimer) {
       clearInterval(this.retryTimer);
     }
   }
-} 
+}
