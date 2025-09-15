@@ -22,6 +22,7 @@ export default defineConfig({
   build: {
     sourcemap: true,
     rollupOptions: {
+      external: [],
       output: {
         manualChunks: {
           // Separate vendor chunks for better caching

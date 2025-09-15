@@ -2510,38 +2510,6 @@ const Studio = () => {
         return;
       }
       
-      // For anonymous users, use guest tracks
-      if (!user && !isGuestMode) {
-        // Load a random guest track for anonymous users
-        await loadRandomGuestTrack();
-        if (!currentGuestTrack) {
-          throw new Error('Failed to load demo track. Please try again.');
-        }
-        
-        // Fetch the bundled track from DemoProvider
-        const response = await fetch(currentGuestTrack.file);
-        const blob = await response.blob();
-        const file = new File([blob], `${currentGuestTrack.name}.mp3`, { type: 'audio/mpeg' });
-        
-        const buffer = await loadAudioBuffer(file, context);
-        const trackId = `guest-${Date.now()}`;
-        const settings = loadTrackSettingsFromLocal(trackId) || {};
-        
-        const newTrack: Track = {
-          id: trackId,
-          file,
-          buffer,
-          name: currentGuestTrack.name,
-          settings,
-          isGuestTrack: true,
-        };
-        
-        setTracks([newTrack]);
-        setCurrentTrackIndex(0);
-        setIsInitializingAudio(false);
-        return;
-      }
-      
       // For authenticated users, wait for assets to load if they're not ready yet
       if (!availableAssets || availableAssets.length === 0) {
         throw new Error('Library tracks are still loading. Please wait a moment and try again.');
