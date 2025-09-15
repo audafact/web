@@ -13,6 +13,7 @@ const Studio = lazy(() => import('../views/Studio'));
 const Pricing = lazy(() => import('../views/Pricing').then(module => ({ default: module.Pricing })));
 const CheckoutResult = lazy(() => import('../views/CheckoutResult').then(module => ({ default: module.CheckoutResult })));
 const Profile = lazy(() => import('../views/Profile').then(module => ({ default: module.Profile })));
+const Privacy = lazy(() => import('../views/Privacy').then(module => ({ default: module.Privacy })));
 
 // Loading component for lazy routes
 const LoadingSpinner = () => (
@@ -63,6 +64,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <Profile />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'privacy',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Privacy />
           </Suspense>
         ),
       },
