@@ -17,31 +17,31 @@ export interface AudioAsset {
 // Guest tracks for anonymous users
 const GUEST_TRACKS: AudioAsset[] = [
   {
-    id: 'underneath-the-moonlight-version-1',
-    name: 'Underneath the Moonlight (Version 1)',
+    id: 'hearts-are-golden',
+    name: 'Hearts Are Golden',
     genre: 'ambient',
     bpm: 120,
-    file: '/src/assets/audio/underneath-the-moonlight-version-1.mp3',
+    file: '/assets/library-inbox/hearts-are-golden.mp3',
     type: 'mp3',
     size: 'Unknown',
     is_guest: true
   },
   {
-    id: 'break-the-chains-version-2',
-    name: 'Break the Chains (Version 2)',
+    id: 'break-the-chains-version-1',
+    name: 'Break the Chains (Version 1)',
     genre: 'electronic',
     bpm: 128,
-    file: '/src/assets/audio/break-the-chains-version-2.mp3',
+    file: '/assets/library-inbox/break-the-chains-version-1.mp3',
     type: 'mp3',
     size: 'Unknown',
     is_guest: true
   },
   {
-    id: 'break-the-chains-version-3',
-    name: 'Break the Chains (Version 3)',
+    id: 'feel-the-rhythm-now-version-1',
+    name: 'Feel the Rhythm Now (Version 1)',
     genre: 'electronic',
     bpm: 128,
-    file: '/src/assets/audio/break-the-chains-version-3.mp3',
+    file: '/assets/library-inbox/feel-the-rhythm-now-version-1.mp3',
     type: 'mp3',
     size: 'Unknown',
     is_guest: true
@@ -51,7 +51,7 @@ const GUEST_TRACKS: AudioAsset[] = [
     name: 'Groove Vibes (Version 3)',
     genre: 'electronic',
     bpm: 128,
-    file: '/src/assets/audio/groove-vibes-version-3.mp3',
+    file: '/assets/library-inbox/groove-vibes-version-3.mp3',
     type: 'mp3',
     size: 'Unknown',
     is_guest: true

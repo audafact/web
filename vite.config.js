@@ -16,13 +16,13 @@ export default defineConfig({
         "https://audafact-api.david-g-cortinas.workers.dev"
     ),
     "import.meta.env.VITE_TURNSTILE_SITE_KEY": JSON.stringify(
-      process.env.VITE_TURNSTILE_SITE_KEY || ""
+      process.env.VITE_TURNSTILE_SITE_KEY || "0x4AAAAAABpJ3cypikhi7CPU"
     ),
   },
   build: {
     sourcemap: true,
     rollupOptions: {
-      external: ["@/services/supabase"],
+      external: [],
       output: {
         manualChunks: {
           // Separate vendor chunks for better caching
