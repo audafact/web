@@ -8,7 +8,6 @@ import { LibraryProvider } from './context/LibraryContext';
 import { GlobalModalManager } from './components/GlobalModalManager';
 import SuccessMessageManager from './components/SuccessMessageManager';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { TurnstileDebug } from './components/TurnstileDebug';
 import { router } from './routes';
 import React from 'react';
 // Add this import to your App.tsx or main component
@@ -51,7 +50,6 @@ function App() {
                   <RouterProvider router={router} />
                   <GlobalModalManager />
                   <SuccessMessageManager />
-                  <TurnstileDebug />
                 </RecordingProvider>
               </SidePanelProvider>
             </AudioProvider>
