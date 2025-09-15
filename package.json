@@ -5,11 +5,28 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:staging": "VITE_MODE=staging npm run dev",
+    "dev:staging": "VITE_APP_ENV=staging vite",
+    "dev:preview": "VITE_APP_ENV=preview vite",
+    "dev:production": "VITE_APP_ENV=production vite",
     "build": "vite build",
-    "build:staging": "NODE_ENV=staging vite build",
-    "preview:staging": "NODE_ENV=staging vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build:development": "VITE_APP_ENV=development vite build",
+    "build:staging": "VITE_APP_ENV=staging vite build",
+    "build:preview": "VITE_APP_ENV=preview vite build",
+    "build:production": "VITE_APP_ENV=production vite build",
+    "preview": "vite preview",
+    "preview:staging": "VITE_APP_ENV=staging vite preview",
+    "preview:preview": "VITE_APP_ENV=preview vite preview",
+    "preview:production": "VITE_APP_ENV=production vite preview",
+    "env:generate": "node scripts/env-utils.js generate",
+    "env:validate": "node scripts/env-utils.js validate",
+    "env:list": "node scripts/env-utils.js list",
+    "env:current": "node scripts/env-utils.js current",
+    "env:test": "node scripts/test-env.js",
+    "deploy:staging": "npm run build:staging && wrangler pages deploy dist --project-name=audafact-web-staging",
+    "deploy:preview": "npm run build:preview && wrangler pages deploy dist --project-name=audafact-web-prod",
+    "deploy:production": "npm run build:production && wrangler pages deploy dist --project-name=audafact-web-prod",
+    "deploy:env": "node scripts/deploy-env.js",
+    "lint": "eslint . --ext js,ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
@@ -21,7 +38,6 @@
     "test:accessibility": "playwright test --project=accessibility-tests",
     "test:all-playwright": "playwright test",
     "test:report": "playwright show-report",
-    "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "chromatic": "chromatic",
@@ -82,10 +98,5 @@
     "typescript": "^5.0.0",
     "vite": "^4.0.0",
     "vitest": "^0.34.6"
-  },
-  "eslintConfig": {
-    "extends": [
-      "plugin:storybook/recommended"
-    ]
   }
 }
