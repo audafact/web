@@ -151,7 +151,7 @@ export const Privacy: React.FC = () => {
               </div>
             </div>
           </section>
-
+          
           <section className="mb-12">
             <div className="flex items-center mb-6">
               <div className="w-10 h-10 bg-audafact-accent-purple/10 rounded-lg flex items-center justify-center mr-4">
