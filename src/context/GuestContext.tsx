@@ -37,19 +37,11 @@ const GUEST_TRACKS: AudioAsset[] = [
     is_guest: true
   },
   {
-<<<<<<< HEAD
-    id: 'break-the-chains-version-3',
-    name: 'Break the Chains (Version 3)',
-    genre: 'electronic',
-    bpm: 128,
-    file: '/src/assets/audio/break-the-chains-version-3.mp3',
-=======
     id: 'feel-the-rhythm-now-version-1',
     name: 'Feel the Rhythm Now (Version 1)',
     genre: 'electronic',
     bpm: 128,
     file: '/assets/library-inbox/feel-the-rhythm-now-version-1.mp3',
->>>>>>> main
     type: 'mp3',
     size: 'Unknown',
     is_guest: true
@@ -59,11 +51,7 @@ const GUEST_TRACKS: AudioAsset[] = [
     name: 'Groove Vibes (Version 3)',
     genre: 'electronic',
     bpm: 128,
-<<<<<<< HEAD
-    file: '/src/assets/audio/groove-vibes-version-3.mp3',
-=======
     file: '/assets/library-inbox/groove-vibes-version-3.mp3',
->>>>>>> main
     type: 'mp3',
     size: 'Unknown',
     is_guest: true

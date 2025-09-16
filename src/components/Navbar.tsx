@@ -52,7 +52,7 @@ const Navbar = () => {
           </div>
 
           {/* Navigation Links - Absolutely Centered (show on lg+ to avoid overlap on tablet portrait) */}
-          <div className="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
+          {/* <div className="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
             {!user && (
               <Link 
                 to="/" 
@@ -85,7 +85,7 @@ const Navbar = () => {
             >
               Pricing
             </Link>
-          </div>
+          </div> */}
 
           {/* Auth Section */}
           <div className="flex items-center space-x-2 md:space-x-4 ml-auto">
@@ -103,7 +103,7 @@ const Navbar = () => {
               </button>
             )}
             
-            {!loading && (
+            {/* {!loading && (
               user ? (
                 <div className="flex items-center space-x-2 md:space-x-4">
                   <Link
@@ -130,10 +130,10 @@ const Navbar = () => {
                   Sign In
                 </Link>
               )
-            )}
+            )} */}
 
             {/* Mobile menu toggle (shown on < lg) */}
-            <button
+            {/* <button
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
               className="p-2 rounded-lg lg:hidden text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 transition-colors duration-200"
               aria-label="Toggle navigation menu"
@@ -143,7 +143,7 @@ const Navbar = () => {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
-            </button>
+            </button> */}
           </div>
         </div>
       </div>
@@ -225,7 +225,7 @@ const Navbar = () => {
       
       {/* Performance Dashboard Modal */}
       <PerformanceDashboard 
-        isOpen={showPerformanceDashboard}
+        isVisible={showPerformanceDashboard}
         onClose={() => setShowPerformanceDashboard(false)}
       />
     </nav>
