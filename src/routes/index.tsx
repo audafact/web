@@ -13,6 +13,8 @@ const Studio = lazy(() => import('../views/Studio'));
 const Pricing = lazy(() => import('../views/Pricing').then(module => ({ default: module.Pricing })));
 const CheckoutResult = lazy(() => import('../views/CheckoutResult').then(module => ({ default: module.CheckoutResult })));
 const Profile = lazy(() => import('../views/Profile').then(module => ({ default: module.Profile })));
+const Privacy = lazy(() => import('../views/Privacy').then(module => ({ default: module.Privacy })));
+const NotFound = lazy(() => import('../views/NotFound'));
 
 // Loading component for lazy routes
 const LoadingSpinner = () => (
@@ -34,11 +36,52 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
+      // {
+      //   path: 'studio',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <Studio />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'pricing',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <Pricing />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'checkout-result',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <CheckoutResult />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'profile',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <Profile />
+      //     </Suspense>
+      //   ),
+      // },
+      {
+        path: 'privacy',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Privacy />
+          </Suspense>
+        ),
+      },
+      // Blocked routes - redirect to 404
       {
         path: 'studio',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <Studio />
+            <NotFound />
           </Suspense>
         ),
       },
@@ -46,7 +89,7 @@ export const router = createBrowserRouter([
         path: 'pricing',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <Pricing />
+            <NotFound />
           </Suspense>
         ),
       },
@@ -54,7 +97,7 @@ export const router = createBrowserRouter([
         path: 'checkout-result',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <CheckoutResult />
+            <NotFound />
           </Suspense>
         ),
       },
@@ -62,19 +105,78 @@ export const router = createBrowserRouter([
         path: 'profile',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <Profile />
+            <NotFound />
+          </Suspense>
+        ),
+      },
+      // Catch-all 404 route
+      {
+        path: '*',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <NotFound />
           </Suspense>
         ),
       },
     ],
   },
+  // {
+  //   path: '/auth',
+  //   element: <AuthPage />,
+  // },
+  // {
+  //   path: '/auth/callback',
+  //   element: <AuthCallback />,
+  // },
+  // {
+  //   path: '/auth/verify',
+  //   element: <AuthVerification />,
+  // },
+  // {
+  //   path: '/auth/check-email',
+  //   element: <CheckEmailPage />,
+  // },
+  // Blocked auth routes - redirect to 404
   {
     path: '/auth',
-    element: <AuthPage />,
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <NotFound />
+      </Suspense>
+    ),
   },
   {
     path: '/auth/callback',
-    element: <AuthCallback />,
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <NotFound />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/auth/verify',
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <NotFound />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/auth/check-email',
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <NotFound />
+      </Suspense>
+    ),
+  },
+  // Global catch-all for any other routes
+  {
+    path: '*',
+    element: (
+      <Suspense fallback={<LoadingSpinner />}>
+        <NotFound />
+      </Suspense>
+    ),
   },
   {
     path: '/auth/verify',
