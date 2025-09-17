@@ -75,7 +75,6 @@ const Home = () => {
   const handleLaunchDemo = () => {
     navigate('/studio');
   };
-
   const handleOpenModal = () => {
     setIsModalOpen(true);
   };
