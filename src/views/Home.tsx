@@ -4,7 +4,7 @@ import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { useEffect, useMemo, memo, useState } from 'react';
 import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
 
-// Declare HubSpot global
+// Declare HubSpot and GTM globals
 declare global {
   interface Window {
     hbspt: {
@@ -17,6 +17,7 @@ declare global {
         }) => void;
       };
     };
+    dataLayer: any[];
   }
 }
 
@@ -93,8 +94,45 @@ const Home = () => {
     }));
   };
 
+  // Helper function to create UTM parameter fields for HubSpot
+  const createUTMFields = (utmParams: Record<string, string>) => {
+    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;
+    const fields: Array<{ name: string; value: string }> = [];
+    
+    utmKeys.forEach(key => {
+      if (utmParams[key]) {
+        // Add both custom and HubSpot built-in versions
+        fields.push(
+          { name: key, value: utmParams[key] },
+          { name: `hs_${key}`, value: utmParams[key] }
+        );
+      }
+    });
+    
+    return fields;
+  };
+
+  // Helper function to push events to dataLayer
+  const pushToDataLayer = (eventData: Record<string, any>) => {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push(eventData);
+  };
+
+  // Helper function to generate unique event ID
+  const generateEventId = () => {
+    return (crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Guard against double submissions
+    if (isSubmitting || submitStatus === 'success') {
+      return;
+    }
+    
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
@@ -106,67 +144,15 @@ const Home = () => {
       const requestBody = {
         submittedAt: getCurrentTimestamp(),
         fields: [
-          {
-            name: 'firstname',
-            value: formData.firstName
-          },
-          {
-            name: 'email',
-            value: formData.email
-          },
-          {
-            name: 'consent_to_comms',
-            value: formData.agreeUpdates.toString()
-          },
-          {
-            name: 'consent_to_process',
-            value: formData.agreeStorage.toString()
-          },
+          { name: 'firstname', value: formData.firstName },
+          { name: 'email', value: formData.email },
+          { name: 'consent_to_comms', value: formData.agreeUpdates.toString() },
+          { name: 'consent_to_process', value: formData.agreeStorage.toString() },
           // Audafact Attribution properties
-          {
-            name: 'referrer_url',
-            value: document.referrer || ''
-          },
-          {
-            name: 'signup_page',
-            value: window.location.href
-          },
-          // UTM parameters - try both custom and HubSpot built-in
-          ...(utmParams.utm_source ? [{
-            name: 'utm_source',
-            value: utmParams.utm_source
-          }, {
-            name: 'hs_utm_source',
-            value: utmParams.utm_source
-          }] : []),
-          ...(utmParams.utm_medium ? [{
-            name: 'utm_medium',
-            value: utmParams.utm_medium
-          }, {
-            name: 'hs_utm_medium',
-            value: utmParams.utm_medium
-          }] : []),
-          ...(utmParams.utm_campaign ? [{
-            name: 'utm_campaign',
-            value: utmParams.utm_campaign
-          }, {
-            name: 'hs_utm_campaign',
-            value: utmParams.utm_campaign
-          }] : []),
-          ...(utmParams.utm_content ? [{
-            name: 'utm_content',
-            value: utmParams.utm_content
-          }, {
-            name: 'hs_utm_content',
-            value: utmParams.utm_content
-          }] : []),
-          ...(utmParams.utm_term ? [{
-            name: 'utm_term',
-            value: utmParams.utm_term
-          }, {
-            name: 'hs_utm_term',
-            value: utmParams.utm_term
-          }] : [])
+          { name: 'referrer_url', value: document.referrer || '' },
+          { name: 'signup_page', value: window.location.href },
+          // UTM parameters - deduplicated logic
+          ...createUTMFields(utmParams)
         ],
         context: {
           ...(hutk && { hutk }),
@@ -185,16 +171,50 @@ const Home = () => {
       });
 
       if (response.ok) {
+        const eventId = generateEventId();
+
+        // Push success events to dataLayer
+        pushToDataLayer({
+          event: "waitlist_signup",
+          method: "hubspot_forms_api",
+          form_id: "bd0ad51a-65d5-4a66-a983-f1919c76069b",
+          portal_id: "243862805",
+          status: "success",
+          event_id: eventId
+        });
+
+        pushToDataLayer({
+          event: "form_submit",
+          form_name: "waitlist",
+          status: "success"
+        });
+
         setSubmitStatus('success');
         setTimeout(() => {
           handleCloseModal();
         }, 2000);
       } else {
         console.error('Form submission error:', response.status);
+        
+        pushToDataLayer({
+          event: "form_submit",
+          form_name: "waitlist",
+          status: "error",
+          error_code: response.status
+        });
+        
         setSubmitStatus('error');
       }
     } catch (error) {
       console.error('Form submission error:', error);
+      
+      pushToDataLayer({
+        event: "form_submit",
+        form_name: "waitlist",
+        status: "error",
+        error_type: "network_error"
+      });
+      
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
