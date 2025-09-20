@@ -280,6 +280,191 @@ const Home = () => {
     </div>
   ));
 
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setFormData({ firstName: '', email: '', agreeUpdates: false, agreeStorage: false });
+    setSubmitStatus('idle');
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitStatus('idle');
+
+    try {
+      // Get HubSpot tracking cookie and UTM parameters
+      const hutk = getHubSpotCookie();
+      const utmParams = getUTMParameters();
+
+      const requestBody = {
+        submittedAt: getCurrentTimestamp(),
+        fields: [
+          {
+            name: 'firstname',
+            value: formData.firstName
+          },
+          {
+            name: 'email',
+            value: formData.email
+          },
+          {
+            name: 'consent_to_comms',
+            value: formData.agreeUpdates.toString()
+          },
+          {
+            name: 'consent_to_process',
+            value: formData.agreeStorage.toString()
+          },
+          // Audafact Attribution properties
+          {
+            name: 'referrer_url',
+            value: document.referrer || ''
+          },
+          {
+            name: 'signup_page',
+            value: window.location.href
+          },
+          // UTM parameters - try both custom and HubSpot built-in
+          ...(utmParams.utm_source ? [{
+            name: 'utm_source',
+            value: utmParams.utm_source
+          }, {
+            name: 'hs_utm_source',
+            value: utmParams.utm_source
+          }] : []),
+          ...(utmParams.utm_medium ? [{
+            name: 'utm_medium',
+            value: utmParams.utm_medium
+          }, {
+            name: 'hs_utm_medium',
+            value: utmParams.utm_medium
+          }] : []),
+          ...(utmParams.utm_campaign ? [{
+            name: 'utm_campaign',
+            value: utmParams.utm_campaign
+          }, {
+            name: 'hs_utm_campaign',
+            value: utmParams.utm_campaign
+          }] : []),
+          ...(utmParams.utm_content ? [{
+            name: 'utm_content',
+            value: utmParams.utm_content
+          }, {
+            name: 'hs_utm_content',
+            value: utmParams.utm_content
+          }] : []),
+          ...(utmParams.utm_term ? [{
+            name: 'utm_term',
+            value: utmParams.utm_term
+          }, {
+            name: 'hs_utm_term',
+            value: utmParams.utm_term
+          }] : [])
+        ],
+        context: {
+          ...(hutk && { hutk }),
+          pageUri: window.location.href,
+          pageName: 'Audafact Waitlist'
+        }
+      };
+      
+      // Submit to HubSpot API
+      const response = await fetch('https://api.hsforms.com/submissions/v3/integration/submit/243862805/bd0ad51a-65d5-4a66-a983-f1919c76069b', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        setSubmitStatus('success');
+        setTimeout(() => {
+          handleCloseModal();
+        }, 2000);
+      } else {
+        console.error('Form submission error:', response.status);
+        setSubmitStatus('error');
+      }
+    } catch (error) {
+      console.error('Form submission error:', error);
+      setSubmitStatus('error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+
+  // Memoize vinyl groove elements to prevent unnecessary re-renders
+  const vinylGrooves = useMemo(() => {
+    // Reduce number of grooves for better performance
+    const grooveCount = isMobile ? 6 : 12;
+    return [...Array(grooveCount)].map((_, i) => (
+      <div
+        key={i}
+        className="vinyl-groove absolute top-1/2 left-1/2 rounded-full border border-slate-500"
+        style={{
+          width: `${(isMobile ? 140 : 200) + i * (isMobile ? 8 : 12)}px`,
+          height: `${(isMobile ? 140 : 200) + i * (isMobile ? 8 : 12)}px`,
+          animation: isScrolling 
+            ? 'none' 
+            : `vinyl-spin ${(isMobile ? 16 : 24) + i * 0.8}s linear infinite`,
+          animationDelay: `${i * 0.15}s`
+        }}
+      />
+    ));
+  }, [isMobile, isScrolling]);
+
+  // Memoize feature cards to prevent unnecessary re-renders
+  const featureCards = useMemo(() => [
+    {
+      icon: '🔄',
+      title: 'loop xtractor',
+      description: 'Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy — no clearance needed.'
+    },
+    {
+      icon: '🎯',
+      title: 'xcuevator',
+      description: 'Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation with AI-generated sounds.'
+    },
+    {
+      icon: '📊',
+      title: 'waveform visualization',
+      description: 'See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis — learn as you create.'
+    },
+    {
+      icon: '🎼',
+      title: 'curated library',
+      description: 'Access our handpicked collection of AI-generated, royalty-free tracks. Practice sampling safely while building your skills and creative confidence.'
+    }
+  ], []);
+
+  // Memoized FeatureCard component
+  const FeatureCard = memo(({ icon, title, description }: { icon: string; title: string; description: string }) => (
+    <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
+      </div>
+      <div className="relative z-10">
+        <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">{icon}</div>
+        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
+        <p className="text-slate-300 leading-relaxed">{description}</p>
+      </div>
+    </div>
+  ));
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6">
       {/* Hero Section */}
