@@ -178,12 +178,4 @@ export const router = createBrowserRouter([
       </Suspense>
     ),
   },
-  {
-    path: '/auth/verify',
-    element: <AuthVerification />,
-  },
-  {
-    path: '/auth/check-email',
-    element: <CheckEmailPage />,
-  },
 ]); 
