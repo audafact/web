@@ -5,6 +5,7 @@ import { useEffect, useMemo, memo, useState } from 'react';
 import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
 import { hashEmailForMeta, generateEventId } from '../utils/cryptoUtils';
 import { getFacebookTrackingParams } from '../utils/facebookUtils';
+import { onSignupSuccess, sendTikTokCompleteRegistration } from '../utils/tiktokUtils';
 
 // Declare HubSpot and GTM globals
 declare global {
@@ -220,6 +221,19 @@ const Home = () => {
               has_fbp: !!facebookParams.fbp,
               has_fbc: !!facebookParams.fbc
             });
+
+            // TikTok tracking - CompleteRegistration event for waitlist signup
+            try {
+              // Push to dataLayer for GTM TikTok tag
+              onSignupSuccess(formData.email, eventId);
+              
+              // Send to TikTok Events API via Supabase Edge Function
+              await sendTikTokCompleteRegistration(eventId, formData.email);
+              console.log('TikTok CompleteRegistration event sent successfully for waitlist signup');
+            } catch (tiktokError) {
+              console.error('Failed to send TikTok CompleteRegistration event for waitlist:', tiktokError);
+              // Don't throw - TikTok tracking failure shouldn't break waitlist flow
+            }
           } else {
             const capiError = await capiResponse.text();
             console.warn('Meta CAPI Lead event failed:', capiError);
