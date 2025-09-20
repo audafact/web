@@ -4,7 +4,7 @@ import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { useEffect, useMemo, memo, useState } from 'react';
 import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
 
-// Declare HubSpot global
+// Declare HubSpot and GTM globals
 declare global {
   interface Window {
     hbspt: {
@@ -17,6 +17,7 @@ declare global {
         }) => void;
       };
     };
+    dataLayer: any[];
   }
 }
 
@@ -75,6 +76,209 @@ const Home = () => {
   const handleLaunchDemo = () => {
     navigate('/studio');
   };
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setFormData({ firstName: '', email: '', agreeUpdates: false, agreeStorage: false });
+    setSubmitStatus('idle');
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  // Helper function to create UTM parameter fields for HubSpot
+  const createUTMFields = (utmParams: Record<string, string>) => {
+    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;
+    const fields: Array<{ name: string; value: string }> = [];
+    
+    utmKeys.forEach(key => {
+      if (utmParams[key]) {
+        // Add both custom and HubSpot built-in versions
+        fields.push(
+          { name: key, value: utmParams[key] },
+          { name: `hs_${key}`, value: utmParams[key] }
+        );
+      }
+    });
+    
+    return fields;
+  };
+
+  // Helper function to push events to dataLayer
+  const pushToDataLayer = (eventData: Record<string, any>) => {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push(eventData);
+  };
+
+  // Helper function to generate unique event ID
+  const generateEventId = () => {
+    return (crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Guard against double submissions
+    if (isSubmitting || submitStatus === 'success') {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setSubmitStatus('idle');
+
+    try {
+      // Get HubSpot tracking cookie and UTM parameters
+      const hutk = getHubSpotCookie();
+      const utmParams = getUTMParameters();
+
+      const requestBody = {
+        submittedAt: getCurrentTimestamp(),
+        fields: [
+          { name: 'firstname', value: formData.firstName },
+          { name: 'email', value: formData.email },
+          { name: 'consent_to_comms', value: formData.agreeUpdates.toString() },
+          { name: 'consent_to_process', value: formData.agreeStorage.toString() },
+          // Audafact Attribution properties
+          { name: 'referrer_url', value: document.referrer || '' },
+          { name: 'signup_page', value: window.location.href },
+          // UTM parameters - deduplicated logic
+          ...createUTMFields(utmParams)
+        ],
+        context: {
+          ...(hutk && { hutk }),
+          pageUri: window.location.href,
+          pageName: 'Audafact Waitlist'
+        }
+      };
+      
+      // Submit to HubSpot API
+      const response = await fetch('https://api.hsforms.com/submissions/v3/integration/submit/243862805/bd0ad51a-65d5-4a66-a983-f1919c76069b', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        const eventId = generateEventId();
+
+        // Push success events to dataLayer
+        pushToDataLayer({
+          event: "waitlist_signup",
+          method: "hubspot_forms_api",
+          form_id: "bd0ad51a-65d5-4a66-a983-f1919c76069b",
+          portal_id: "243862805",
+          status: "success",
+          event_id: eventId
+        });
+
+        pushToDataLayer({
+          event: "form_submit",
+          form_name: "waitlist",
+          status: "success"
+        });
+
+        setSubmitStatus('success');
+        setTimeout(() => {
+          handleCloseModal();
+        }, 2000);
+      } else {
+        console.error('Form submission error:', response.status);
+        
+        pushToDataLayer({
+          event: "form_submit",
+          form_name: "waitlist",
+          status: "error",
+          error_code: response.status
+        });
+        
+        setSubmitStatus('error');
+      }
+    } catch (error) {
+      console.error('Form submission error:', error);
+      
+      pushToDataLayer({
+        event: "form_submit",
+        form_name: "waitlist",
+        status: "error",
+        error_type: "network_error"
+      });
+      
+      setSubmitStatus('error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+
+  // Memoize vinyl groove elements to prevent unnecessary re-renders
+  const vinylGrooves = useMemo(() => {
+    // Reduce number of grooves for better performance
+    const grooveCount = isMobile ? 6 : 12;
+    return [...Array(grooveCount)].map((_, i) => (
+      <div
+        key={i}
+        className="vinyl-groove absolute top-1/2 left-1/2 rounded-full border border-slate-500"
+        style={{
+          width: `${(isMobile ? 140 : 200) + i * (isMobile ? 8 : 12)}px`,
+          height: `${(isMobile ? 140 : 200) + i * (isMobile ? 8 : 12)}px`,
+          animation: isScrolling 
+            ? 'none' 
+            : `vinyl-spin ${(isMobile ? 16 : 24) + i * 0.8}s linear infinite`,
+          animationDelay: `${i * 0.15}s`
+        }}
+      />
+    ));
+  }, [isMobile, isScrolling]);
+
+  // Memoize feature cards to prevent unnecessary re-renders
+  const featureCards = useMemo(() => [
+    {
+      icon: '🔄',
+      title: 'loop xtractor',
+      description: 'Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy — no clearance needed.'
+    },
+    {
+      icon: '🎯',
+      title: 'xcuevator',
+      description: 'Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation with AI-generated sounds.'
+    },
+    {
+      icon: '📊',
+      title: 'waveform visualization',
+      description: 'See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis — learn as you create.'
+    },
+    {
+      icon: '🎼',
+      title: 'curated library',
+      description: 'Access our handpicked collection of AI-generated, royalty-free tracks. Practice sampling safely while building your skills and creative confidence.'
+    }
+  ], []);
+
+  // Memoized FeatureCard component
+  const FeatureCard = memo(({ icon, title, description }: { icon: string; title: string; description: string }) => (
+    <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
+      </div>
+      <div className="relative z-10">
+        <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">{icon}</div>
+        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
+        <p className="text-slate-300 leading-relaxed">{description}</p>
+      </div>
+    </div>
+  ));
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
