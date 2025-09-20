@@ -1,3 +1,5 @@
+/// <reference types="https://deno.land/x/types/deno.d.ts" />
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -51,7 +53,6 @@ serve(async (req) => {
     // Get environment variables
     const PIXEL_ID = Deno.env.get("META_PIXEL_ID");
     const ACCESS_TOKEN = Deno.env.get("META_ACCESS_TOKEN");
-    const TEST_EVENT_CODE = Deno.env.get("META_TEST_EVENT_CODE"); // Optional, remove for production
 
     if (!PIXEL_ID || !ACCESS_TOKEN) {
       console.error(
@@ -111,10 +112,7 @@ serve(async (req) => {
       ],
     };
 
-    // Add test event code if available (for testing only)
-    if (TEST_EVENT_CODE) {
-      capiPayload.test_event_code = TEST_EVENT_CODE;
-    }
+    // Test event code removed for production
 
     console.log("Sending Meta CAPI event:", {
       event_id: body.event_id,
