@@ -85,10 +85,9 @@ export class PostSignupFlowHandler implements SignupSuccessHandler {
       );
 
       // Track upgrade
-      analytics.track("tier_upgraded", {
-        newTier,
-        previousTier: "free",
-        timestamp: Date.now(),
+      analytics.track("upgrade_completed", {
+        plan: newTier,
+        amount: 0, // Will be updated with actual amount if needed
       });
     } catch (error) {
       console.error("Failed to handle tier upgrade:", error);
