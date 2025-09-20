@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { useEffect, useMemo, memo, useState } from 'react';
 import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
+import { hashEmailForMeta, generateEventId } from '../utils/cryptoUtils';
+import { getFacebookTrackingParams } from '../utils/facebookUtils';
 
 // Declare HubSpot and GTM globals
 declare global {
@@ -118,12 +120,7 @@ const Home = () => {
     window.dataLayer.push(eventData);
   };
 
-  // Helper function to generate unique event ID
-  const generateEventId = () => {
-    return (crypto && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  };
+  // Note: generateEventId is now imported from cryptoUtils
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,6 +185,62 @@ const Home = () => {
           form_name: "waitlist",
           status: "success"
         });
+
+        // Send Meta CAPI Lead event for deduplication with Pixel
+        try {
+          const hashedEmail = await hashEmailForMeta(formData.email);
+          const facebookParams = getFacebookTrackingParams();
+          
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          
+          const capiResponse = await fetch(`${supabaseUrl}/functions/v1/meta-lead`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseAnonKey}`,
+            },
+            body: JSON.stringify({
+              event_id: eventId, // Same event ID as Pixel for deduplication
+              em: hashedEmail,
+              fbp: facebookParams.fbp,
+              fbc: facebookParams.fbc,
+              sourceUrl: window.location.href
+            })
+          });
+
+          if (capiResponse.ok) {
+            const capiResult = await capiResponse.json();
+            console.log('Meta CAPI Lead event sent successfully:', capiResult);
+            
+            // Track CAPI success in dataLayer
+            pushToDataLayer({
+              event: "meta_capi_success",
+              event_id: eventId,
+              has_fbp: !!facebookParams.fbp,
+              has_fbc: !!facebookParams.fbc
+            });
+          } else {
+            const capiError = await capiResponse.text();
+            console.warn('Meta CAPI Lead event failed:', capiError);
+            
+            // Track CAPI failure in dataLayer (non-blocking)
+            pushToDataLayer({
+              event: "meta_capi_error",
+              event_id: eventId,
+              error: capiError
+            });
+          }
+        } catch (capiError) {
+          console.warn('Meta CAPI request failed:', capiError);
+          
+          // Track CAPI failure in dataLayer (non-blocking)
+          pushToDataLayer({
+            event: "meta_capi_error",
+            event_id: eventId,
+            error: capiError instanceof Error ? capiError.message : 'Unknown error'
+          });
+        }
 
         setSubmitStatus('success');
         setTimeout(() => {
