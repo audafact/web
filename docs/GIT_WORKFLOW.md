@@ -38,11 +38,13 @@ This document outlines the standardized git workflow for the Audafact project, i
 ### 1. Daily Sync (Recommended)
 
 ```bash
-# Sync develop with latest main changes
+# Sync develop with latest main changes (use rebase to maintain linear history)
 git checkout develop
-git pull origin main
+git pull origin main --rebase
 git push origin develop
 ```
+
+**Note:** Use `--rebase` to maintain linear history and avoid merge commits that would be blocked by branch protection.
 
 ### 2. Feature Development
 
@@ -219,6 +221,12 @@ git pull origin branch-name
 - Verify branch protection allows force pushes
 - Use `--force-with-lease` instead of `--force`
 - Coordinate with team if shared branch
+
+#### "Recent pushes" message persists
+
+- This often occurs after merging develop → main via PR
+- Use rebase to align histories: `git pull origin main --rebase`
+- May require force push: `git push origin develop --force-with-lease`
 
 ### Recovery Commands
 
