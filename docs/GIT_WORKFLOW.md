@@ -38,11 +38,13 @@ This document outlines the standardized git workflow for the Audafact project, i
 ### 1. Daily Sync (Recommended)
 
 ```bash
-# Sync develop with latest main changes
+# Sync develop with latest main changes (use rebase to maintain linear history)
 git checkout develop
-git pull origin main
+git pull origin main --rebase
 git push origin develop
 ```
+
+**Note:** Use `--rebase` to maintain linear history and avoid merge commits that would be blocked by branch protection.
 
 ### 2. Feature Development
 
@@ -70,9 +72,68 @@ git push origin --delete feature/feature-name
 ```bash
 # Create PR: develop → main
 # After PR approval and merge:
+
+# 1. Update local main
 git checkout main
 git pull origin main
+
+# 2. IMPORTANT: Do NOT pull main back into develop immediately
+# This prevents circular git issues
+
+# 3. Continue development on develop as normal
+# The next daily sync will naturally align develop with main
 ```
+
+**⚠️ Critical:** Do not run `git pull origin main` in develop immediately after merging develop → main. This creates circular references and the "recent pushes" issue. Let the next daily sync handle the alignment naturally.
+
+## Complete Deployment Workflow
+
+### Step-by-Step: Deploy to Production
+
+1. **Ensure develop is ready:**
+   ```bash
+   git checkout develop
+   git status  # Ensure clean working directory
+   ```
+
+2. **Create PR: develop → main**
+   - Go to GitHub
+   - Create pull request from develop to main
+   - Add descriptive title and description
+   - Request review if required
+
+3. **After PR is approved and merged:**
+   ```bash
+   # Update local main
+   git checkout main
+   git pull origin main
+   
+   # Verify main has the latest changes
+   git log --oneline -5
+   ```
+
+4. **Continue development normally:**
+   ```bash
+   # Return to develop for continued development
+   git checkout develop
+   
+   # Continue with new features as usual
+   # The next daily sync will align develop with main
+   ```
+
+5. **Next day's sync (this will align everything):**
+   ```bash
+   git checkout develop
+   git pull origin main --rebase  # This will align develop with main
+   git push origin develop
+   ```
+
+### Why This Prevents Circular Issues
+
+- **One-way flow:** develop → main (via PR)
+- **No immediate back-sync:** Avoids pulling main into develop right after merge
+- **Natural alignment:** Next daily sync handles the alignment cleanly
+- **Clean history:** Rebase maintains linear history without merge commits
 
 ## Conflict Resolution
 
@@ -219,6 +280,12 @@ git pull origin branch-name
 - Verify branch protection allows force pushes
 - Use `--force-with-lease` instead of `--force`
 - Coordinate with team if shared branch
+
+#### "Recent pushes" message persists
+
+- This often occurs after merging develop → main via PR
+- Use rebase to align histories: `git pull origin main --rebase`
+- May require force push: `git push origin develop --force-with-lease`
 
 ### Recovery Commands
 
