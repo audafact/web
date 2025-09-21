@@ -91,21 +91,18 @@ git pull origin main
 ### Step-by-Step: Deploy to Production
 
 1. **Ensure develop is ready:**
-
    ```bash
    git checkout develop
    git status  # Ensure clean working directory
    ```
 
 2. **Create PR: develop → main**
-
    - Go to GitHub
    - Create pull request from develop to main
    - Add descriptive title and description
    - Request review if required
 
 3. **After PR is approved and merged:**
-
    ```bash
    # Update local main
    git checkout main
@@ -116,11 +113,9 @@ git pull origin main
    ```
 
 4. **Continue development normally:**
-
    ```bash
    # Return to develop for continued development
    git checkout develop
-
    # Continue with new features as usual
    # The next daily sync will align develop with main
    ```
