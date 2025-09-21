@@ -415,7 +415,7 @@ const Home = () => {
     <div className="min-h-screen">
       {/* Sticky Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <div className="flex items-center">
@@ -490,7 +490,7 @@ const Home = () => {
                   <span>No commitment • Cancel anytime</span>
                 </div>
               </div>
-              
+
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
@@ -519,6 +519,7 @@ const Home = () => {
                 {/* Hero Demo Video */}
                 <div className="relative">
                   <video 
+                    preload="metadata"
                     className="w-full h-auto rounded-lg shadow-lg"
                     autoPlay 
                     muted 
@@ -535,120 +536,80 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Product Demo Strip */}
+        {/* Product Features Strip */}
         <section className="py-12 sm:py-16">
           <div className="text-center mb-8">
             <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-              Hear it. Chop it. Map it.
-            </h2>
+              Core Features
+              </h2>
             <p className="text-slate-300 max-w-2xl mx-auto">
-              Audafact's sampler helps you set cues fast, play them from your keyboard, and capture ideas without breaking flow.
+              Everything you need to flip samples fast and capture ideas without breaking your creative flow.
             </p>
           </div>
           
-          {/* Audio Preview Tiles */}
+          {/* Feature Cards */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-            {/* Drum Loop */}
+            {/* Loop Xtractor */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                    </svg>
-                  </div>
-                  <button 
-                    onClick={() => handleDemoPlay('drum_loop')}
-                    className="w-8 h-8 bg-slate-700 hover:bg-audafact-accent-cyan rounded-full flex items-center justify-center transition-colors duration-200"
-                  >
-                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </button>
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">🔄</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white mb-1">Drum Loop</h3>
-                  <p className="text-sm text-slate-400">140 BPM • G major</p>
+                  <h3 className="font-semibold text-white mb-2">loop xtractor</h3>
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy — no clearance needed.
+                  </p>
                 </div>
               </div>
             </div>
             
-            {/* Melodic Loop */}
+            {/* Xcuevator */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-purple to-audafact-accent-cyan rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                    </svg>
-                  </div>
-                  <button 
-                    onClick={() => handleDemoPlay('melodic_loop')}
-                    className="w-8 h-8 bg-slate-700 hover:bg-audafact-accent-purple rounded-full flex items-center justify-center transition-colors duration-200"
-                  >
-                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </button>
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">🎯</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white mb-1">Melodic Loop</h3>
-                  <p className="text-sm text-slate-400">120 BPM • C minor</p>
+                  <h3 className="font-semibold text-white mb-2">xcuevator</h3>
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation with AI-generated sounds.
+                  </p>
+                </div>
+              </div>
+                </div>
+
+            {/* Waveform Visualization */}
+            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
+              <div className="space-y-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">📊</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white mb-2">waveform visualization</h3>
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis — learn as you create.
+                  </p>
                 </div>
               </div>
             </div>
             
-            {/* One-Shot */}
+            {/* Curated Library */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
-                    </svg>
-                  </div>
-                  <button 
-                    onClick={() => handleDemoPlay('one_shot')}
-                    className="w-8 h-8 bg-slate-700 hover:bg-audafact-accent-cyan rounded-full flex items-center justify-center transition-colors duration-200"
-                  >
-                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </button>
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                  <span className="text-2xl">🎼</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white mb-1">One-Shot</h3>
-                  <p className="text-sm text-slate-400">80 BPM • A minor</p>
+                  <h3 className="font-semibold text-white mb-2">curated library</h3>
+                  <p className="text-sm text-slate-300 leading-relaxed">
+                    Access our handpicked collection of AI-generated, royalty-free tracks. Practice sampling safely while building your skills and creative confidence.
+                  </p>
                 </div>
               </div>
             </div>
-            
-            {/* FX */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-purple to-audafact-accent-cyan rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                    </svg>
-                  </div>
-                  <button 
-                    onClick={() => handleDemoPlay('fx')}
-                    className="w-8 h-8 bg-slate-700 hover:bg-audafact-accent-purple rounded-full flex items-center justify-center transition-colors duration-200"
-                  >
-                    <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </button>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white mb-1">FX</h3>
-                  <p className="text-sm text-slate-400">110 BPM • F major</p>
-                </div>
               </div>
-            </div>
-          </div>
-          
+
           {/* Mini Sampler Demo */}
           <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
             <div className="text-center mb-6">
@@ -656,16 +617,29 @@ const Home = () => {
               <p className="text-slate-400">Watch how cue mapping and keyboard triggers work</p>
             </div>
             
-            {/* Placeholder for GIF/video */}
-            <div className="relative bg-slate-800 rounded-lg p-8 min-h-[200px] flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center mx-auto">
-                  <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                  </svg>
-                </div>
-                <p className="text-slate-400">GIF/Video placeholder: Keyboard cue triggers + draggable cue points</p>
-              </div>
+            {/* Mini Sampler Demo Video */}
+            <div className="relative">
+              <video 
+                preload="metadata"
+                className="w-full h-auto rounded-lg shadow-lg"
+                autoPlay 
+                muted 
+                loop
+                playsInline
+                poster="/landing-mini-sampler-vid-cropped-poster.jpg"
+              >
+                <source src="/landing-mini-sampler-vid-cropped.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            
+            {/* Demo Explanation */}
+            <div className="mt-6 text-center">
+              <p className="text-sm text-slate-400 leading-relaxed">
+                <span className="font-medium text-white">Cue points</span> shown in the waveform are triggered by 
+                <span className="font-medium text-audafact-accent-cyan"> number keys 1-0</span> on your keyboard 
+                or <span className="font-medium text-audafact-accent-cyan">clickable buttons</span> in the control panel
+              </p>
             </div>
           </div>
         </section>
@@ -674,15 +648,15 @@ const Home = () => {
         <section className="py-12 sm:py-16">
           <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
             {keyBenefits.map((benefit, index) => (
-              <FeatureCard
-                key={index}
+            <FeatureCard
+              key={index}
                 icon={benefit.icon}
                 title={benefit.title}
                 description={benefit.description}
-              />
-            ))}
-          </div>
-        </section>
+            />
+          ))}
+        </div>
+      </section>
 
         {/* How It Works Section */}
         <section className="py-12 sm:py-16">
