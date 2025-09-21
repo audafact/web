@@ -107,7 +107,7 @@ git pull origin main
    # Update local main
    git checkout main
    git pull origin main
-   
+
    # Verify main has the latest changes
    git log --oneline -5
    ```
@@ -116,7 +116,6 @@ git pull origin main
    ```bash
    # Return to develop for continued development
    git checkout develop
-   
    # Continue with new features as usual
    # The next daily sync will align develop with main
    ```
