@@ -516,66 +516,19 @@ const Home = () => {
             {/* Right: Product Visual */}
             <div className="relative">
               <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
-                {/* Sampler Interface Mockup */}
-                <div className="space-y-6">
-                  {/* Waveform with cue points */}
-                  <div className="space-y-3">
-                    <div className="text-center">
-                      <span className="text-sm text-slate-400">Tap keys to trigger</span>
-                    </div>
-                    <div className="relative h-24 bg-slate-800 rounded-lg p-4">
-                      <div className="relative w-full h-full">
-                        {/* Waveform visualization */}
-                        <div className="absolute inset-0 flex items-center">
-                          <div className="flex items-center space-x-1 w-full">
-                            {[...Array(20)].map((_, index) => (
-                              <div
-                                key={index}
-                                className="bg-gradient-to-t from-audafact-accent-cyan to-audafact-accent-purple rounded-sm"
-                                style={{
-                                  height: `${Math.random() * 60 + 20}%`,
-                                  width: '3px',
-                                  opacity: 0.7
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        
-                        {/* Cue points */}
-                        <div className="absolute top-2 left-4 w-3 h-3 bg-audafact-accent-cyan rounded-full flex items-center justify-center">
-                          <span className="text-xs text-slate-900 font-bold">A</span>
-                        </div>
-                        <div className="absolute top-2 left-12 w-3 h-3 bg-audafact-accent-purple rounded-full flex items-center justify-center">
-                          <span className="text-xs text-white font-bold">S</span>
-                        </div>
-                        <div className="absolute top-2 left-20 w-3 h-3 bg-audafact-accent-cyan rounded-full flex items-center justify-center">
-                          <span className="text-xs text-slate-900 font-bold">D</span>
-                        </div>
-                        <div className="absolute top-2 left-28 w-3 h-3 bg-audafact-accent-purple rounded-full flex items-center justify-center">
-                          <span className="text-xs text-white font-bold">F</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Keyboard hint */}
-                  <div className="flex justify-center space-x-2">
-                    {['A', 'S', 'D', 'F'].map((key) => (
-                      <div
-                        key={key}
-                        className="w-8 h-8 bg-slate-700 border border-slate-600 rounded flex items-center justify-center text-xs font-mono text-slate-300"
-                      >
-                        {key}
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Track info */}
-                  <div className="text-center space-y-2">
-                    <div className="text-sm text-slate-300">120 BPM • C minor</div>
-                    <div className="text-xs text-slate-400">Melodic Loop</div>
-                  </div>
+                {/* Hero Demo Video */}
+                <div className="relative">
+                  <video 
+                    className="w-full h-auto rounded-lg shadow-lg"
+                    autoPlay 
+                    muted 
+                    loop
+                    playsInline
+                    poster="/audafact-hero-demo-poster.jpg"
+                  >
+                    <source src="/audafact-hero-demo.mp4" type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
                 </div>
               </div>
             </div>
