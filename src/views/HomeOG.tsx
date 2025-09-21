@@ -341,7 +341,7 @@ const Home = () => {
       </div>
       <div className="relative z-10">
         <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">{icon}</div>
-        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
+        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
         <p className="text-slate-300 leading-relaxed">{description}</p>
       </div>
     </div>
@@ -368,14 +368,14 @@ const Home = () => {
             <div className="relative z-10">
               {/* Icon/Logo area */}
               <div className="mb-6 sm:mb-8">
-                <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple mb-4 shadow-lg">
+                <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-audafact-accent-cyan mb-4 shadow-lg">
                   <svg className="w-8 h-8 sm:w-10 sm:h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                   </svg>
                 </div>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-2 sm:mb-3 tracking-tight leading-tight">
+              <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-2 sm:mb-3 tracking-tight leading-tight">
                 Dig. Uncover. Refine. Create.
               </h1>
               
@@ -429,7 +429,7 @@ const Home = () => {
 
               {/* <button
                 onClick={handleLaunchDemo}
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
               >
                 <span className="relative z-10 flex items-center gap-2">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -442,7 +442,7 @@ const Home = () => {
 
               <button
                 onClick={handleOpenModal}
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
               >
                 <span className="relative z-10 flex items-center gap-2">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -481,7 +481,7 @@ const Home = () => {
             </div>
             
             <div className="relative z-10">
-              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
+              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
                 Join the Waitlist
               </h2>
               <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
@@ -490,7 +490,7 @@ const Home = () => {
                   : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
               </p>
               <button
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
                 onClick={handleOpenModal}
               >
                 <span className="relative z-10 flex items-center gap-2">
@@ -502,7 +502,7 @@ const Home = () => {
                 <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </button>
               {/* <button
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
                 onClick={() => navigate('/auth')}
               >
                 <span className="relative z-10 flex items-center gap-2">
@@ -628,7 +628,7 @@ const Home = () => {
                   <button
                     type="submit"
                     disabled={isSubmitting || !formData.agreeStorage}
-                    className="w-full group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    className="w-full group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     <span className="relative z-10 flex items-center gap-2">
                       {isSubmitting ? (

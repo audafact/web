@@ -117,10 +117,12 @@ const Home = () => {
     pushToDataLayer({
       event: "click_cta_secondary",
       cta_type: "demo_launch",
-      cta_text: "Watch 30-sec demo",
+      cta_text: "Watch 60-sec demo",
       location: "hero"
     });
-    navigate('/studio');
+    
+    // Open demo video in new tab
+    window.open('/60-sec-demo.mp4', '_blank');
   };
   
   const handleOpenModal = () => {
@@ -405,7 +407,7 @@ const Home = () => {
       </div>
       <div className="relative z-10">
         <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">{icon}</div>
-        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
+        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
         <p className="text-slate-300 leading-relaxed">{description}</p>
       </div>
     </div>
@@ -432,19 +434,19 @@ const Home = () => {
               {!user && (
                 <button
                   onClick={handleOpenModal}
-                  className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                  className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
                 >
                   <span className="relative z-10">Join the Beta</span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                 </button>
               )}
               {user && (
                 <button
                   onClick={() => navigate('/studio')}
-                  className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                  className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
                 >
                   <span className="relative z-10">Open Studio</span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                 </button>
               )}
             </div>
@@ -460,12 +462,12 @@ const Home = () => {
             {/* Left: Copy Block */}
             <div className="space-y-6">
               {/* Beta Badge */}
-              <div className="inline-flex items-center px-3 py-1 rounded-full bg-gradient-to-r from-audafact-accent-cyan/20 to-audafact-accent-purple/20 border border-audafact-accent-cyan/30">
+              <div className="inline-flex items-center px-3 py-1 rounded-full bg-gradient-to-r from-audafact-accent-cyan/20 to-audafact-accent-cyan/20 border border-audafact-accent-cyan/30">
                 <span className="text-xs font-medium text-audafact-accent-cyan">Beta • Limited access</span>
               </div>
               
               {/* Headline */}
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent tracking-tight leading-tight">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent tracking-tight leading-tight">
                 Cue, chop, and flip samples faster than ever.
               </h1>
               
@@ -494,10 +496,10 @@ const Home = () => {
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   onClick={handleOpenModal}
-                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                  className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
                 >
                   <span className="relative z-10">Join the Beta Waitlist</span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                 </button>
                 
                 <button
@@ -507,7 +509,7 @@ const Home = () => {
                   <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z"/>
                   </svg>
-                  Watch 30-sec demo
+                  Watch 60-sec demo
                 </button>
               </div>
             </div>
@@ -538,7 +540,7 @@ const Home = () => {
         {/* Product Features Strip */}
         <section className="py-12 sm:py-16">
           <div className="text-center mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
+            <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
               Core Features
               </h2>
             <p className="text-slate-300 max-w-2xl mx-auto">
@@ -551,7 +553,7 @@ const Home = () => {
             {/* Loop Xtractor */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
                   <span className="text-2xl">🔄</span>
                 </div>
                 <div>
@@ -566,7 +568,7 @@ const Home = () => {
             {/* Xcuevator */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
                   <span className="text-2xl">🎯</span>
                 </div>
                 <div>
@@ -581,7 +583,7 @@ const Home = () => {
             {/* Waveform Visualization */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
                   <span className="text-2xl">📊</span>
                 </div>
                 <div>
@@ -596,7 +598,7 @@ const Home = () => {
             {/* Curated Library */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
               <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
                   <span className="text-2xl">🎼</span>
                 </div>
                 <div>
@@ -660,7 +662,7 @@ const Home = () => {
         {/* How It Works Section */}
         <section className="py-12 sm:py-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
               How It Works
             </h2>
           </div>
@@ -668,7 +670,7 @@ const Home = () => {
           <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
             {/* Step 1 */}
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
                 1
               </div>
               <h3 className="text-xl font-semibold text-white">Load a track</h3>
@@ -679,7 +681,7 @@ const Home = () => {
             
             {/* Step 2 */}
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-purple to-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
                 2
               </div>
               <h3 className="text-xl font-semibold text-white">Auto-map & trigger</h3>
@@ -690,7 +692,7 @@ const Home = () => {
             
             {/* Step 3 */}
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
                 3
               </div>
               <h3 className="text-xl font-semibold text-white">Export ideas</h3>
@@ -706,14 +708,14 @@ const Home = () => {
           <div className="relative overflow-hidden audafact-card p-8 sm:p-12 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
             {/* Background balance elements */}
             <div className="absolute top-8 right-8 opacity-10">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-full"></div>
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full"></div>
             </div>
             <div className="absolute bottom-12 right-16 opacity-5">
               <div className="w-24 h-24 border-2 border-audafact-accent-cyan rounded-lg rotate-12"></div>
             </div>
             
             <div className="text-center mb-8">
-              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
+              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
                 What you get now—and what's coming next
               </h2>
             </div>
@@ -766,7 +768,7 @@ const Home = () => {
                   <div className="text-slate-300">Curated AI tracks ready for flipping</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-audafact-accent-purple mb-2">12</div>
+                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">12</div>
                   <div className="text-slate-300">New tracks added weekly during beta</div>
                 </div>
                 <div>
@@ -779,13 +781,13 @@ const Home = () => {
             {/* Founder note */}
             <div className="mt-12 pt-8 border-t border-slate-700/50">
               <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-full flex items-center justify-center flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center flex-shrink-0">
                   <span className="text-white font-bold text-lg">D</span>
                 </div>
                 <div>
                   <h4 className="font-semibold text-white mb-2">Hey, I'm David</h4>
                   <p className="text-slate-300 leading-relaxed">
-                    I built Audafact to make flipping faster and more fun. The beta focuses on a nimble sampler and a curated AI library you can actually use. Tell me what gets you to the next idea—I'll build toward that.
+                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler and a curated AI library you can actually use. Tell me what gets you to the next idea—I'll build toward that.
                   </p>
                 </div>
               </div>
@@ -796,17 +798,17 @@ const Home = () => {
         {/* Use Cases Section */}
         <section className="py-12 sm:py-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
               Use Cases
             </h2>
             <p className="text-slate-300 max-w-2xl mx-auto">
-              Speak the producer's language
+              Real scenarios where Audafact accelerates your creative workflow
             </p>
           </div>
           
           <div className="grid md:grid-cols-3 gap-8">
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center mx-auto">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
                 <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                 </svg>
@@ -818,7 +820,7 @@ const Home = () => {
             </div>
             
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-purple to-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
                 <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
                 </svg>
@@ -830,7 +832,7 @@ const Home = () => {
             </div>
             
             <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-lg flex items-center justify-center mx-auto">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
                 <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
                 </svg>
@@ -846,7 +848,7 @@ const Home = () => {
         {/* FAQ Section */}
         <section className="py-12 sm:py-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
               Frequently Asked Questions
             </h2>
           </div>
@@ -883,8 +885,8 @@ const Home = () => {
                 We're offering founders' trial pricing for beta users—exact details TBD. Join the waitlist for early access pricing and be among the first to experience Audafact.
               </p>
             </div>
-          </div>
-        </section>
+        </div>
+      </section>
 
       {/* Call to Action */}
       {!user && (
@@ -897,7 +899,7 @@ const Home = () => {
             </div>
             
             <div className="relative z-10">
-              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
+              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
                 Join the Waitlist
               </h2>
               <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
@@ -906,7 +908,7 @@ const Home = () => {
                   : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
               </p>
               <button
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
                 onClick={handleOpenModal}
               >
                 <span className="relative z-10 flex items-center gap-2">
@@ -915,10 +917,10 @@ const Home = () => {
                   </svg>
                   Join Waitlist
                 </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </button>
               {/* <button
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
                 onClick={() => navigate('/auth')}
               >
                 <span className="relative z-10 flex items-center gap-2">
@@ -927,7 +929,7 @@ const Home = () => {
                   </svg>
                   Sign Up Now
                 </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </button> */}
             </div>
           </div>
@@ -1107,7 +1109,7 @@ const Home = () => {
                   <div className="text-slate-300 text-sm">
                     <p className="mb-3">
                       Audafact is committed to protecting your privacy. We'll only use your information to provide early access updates and product news. You can unsubscribe anytime. For more details, see our{' '}
-                      <a href="/privacy" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200">
+                      <a href="/privacy" className="text-audafact-accent-cyan hover:text-audafact-accent-cyan transition-colors duration-200">
                         Privacy Policy
                       </a>.
                     </p>
@@ -1141,7 +1143,7 @@ const Home = () => {
                   <div className="text-slate-300 text-sm">
                     <p>
                       You can unsubscribe from Audafact updates at any time. For details on how we handle your data, please review our{' '}
-                      <a href="/privacy" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200">
+                      <a href="/privacy" className="text-audafact-accent-cyan hover:text-audafact-accent-cyan transition-colors duration-200">
                         Privacy Policy
                       </a>.
                     </p>
@@ -1156,7 +1158,7 @@ const Home = () => {
                   <button
                     type="submit"
                     disabled={isSubmitting || !formData.agreeStorage}
-                    className="w-full group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    className="w-full group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     <span className="relative z-10 flex items-center gap-2">
                       {isSubmitting ? (
@@ -1171,7 +1173,7 @@ const Home = () => {
                         'Submit'
                       )}
                     </span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                   </button>
                 </form>
               )}

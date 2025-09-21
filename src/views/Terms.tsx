@@ -34,7 +34,7 @@ const Terms = () => {
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
         <div className="relative overflow-hidden audafact-card p-8 sm:p-12 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
-          <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-8">
+          <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-8">
             Terms of Service
           </h1>
           
@@ -127,7 +127,7 @@ const Terms = () => {
               <h2 className="text-xl font-semibold text-white mb-4">11. Contact Information</h2>
               <p>
                 If you have any questions about these Terms of Service, please contact us at{' '}
-                <a href="mailto:legal@audafact.com" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200">
+                <a href="mailto:legal@audafact.com" className="text-audafact-accent-cyan hover:text-audafact-accent-cyan transition-colors duration-200">
                   legal@audafact.com
                 </a>
               </p>
