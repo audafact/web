@@ -466,8 +466,7 @@ const Home = () => {
               
               {/* Headline */}
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent tracking-tight leading-tight">
-                Flip faster.<br />
-                Finish more.
+                Cue, chop, and flip samples faster than ever.
               </h1>
               
               {/* Subhead */}
@@ -696,7 +695,7 @@ const Home = () => {
               </div>
               <h3 className="text-xl font-semibold text-white">Export ideas</h3>
               <p className="text-slate-300 leading-relaxed">
-                Export ideas or share a flip snippet link <span className="text-xs bg-slate-700 px-2 py-1 rounded">Coming during beta</span>
+                Export ideas or share a flip snippet link <br /><span className="text-xs bg-slate-700 px-2 py-1 rounded">Coming during beta</span>
               </p>
             </div>
           </div>
@@ -705,20 +704,28 @@ const Home = () => {
         {/* Transparency Panel */}
         <section className="py-12 sm:py-16">
           <div className="relative overflow-hidden audafact-card p-8 sm:p-12 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
+            {/* Background balance elements */}
+            <div className="absolute top-8 right-8 opacity-10">
+              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple rounded-full"></div>
+            </div>
+            <div className="absolute bottom-12 right-16 opacity-5">
+              <div className="w-24 h-24 border-2 border-audafact-accent-cyan rounded-lg rotate-12"></div>
+            </div>
+            
             <div className="text-center mb-8">
               <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
                 What you get now—and what's coming next
               </h2>
             </div>
             
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid md:grid-cols-3 gap-8 ml-20">
               {/* Where we are today */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-white flex items-center">
                   <span className="text-green-400 mr-2">✔️</span>
                   Where we are today
                 </h3>
-                <ul className="space-y-2 text-slate-300">
+                <ul className="space-y-2 text-slate-300 ml-4">
                   <li>• Sampling tool</li>
                   <li>• Curated AI library</li>
                   <li>• Audio previews</li>
@@ -731,7 +738,7 @@ const Home = () => {
                   <span className="text-blue-400 mr-2">➡️</span>
                   What's shipping next
                 </h3>
-                <ul className="space-y-2 text-slate-300">
+                <ul className="space-y-2 text-slate-300 ml-4">
                   <li>• Session saves</li>
                   <li>• Export stems/snippet</li>
                   <li>• Personal stash</li>
@@ -744,7 +751,7 @@ const Home = () => {
                   <span className="text-purple-400 mr-2">🧪</span>
                   What we're exploring
                 </h3>
-                <ul className="space-y-2 text-slate-300">
+                <ul className="space-y-2 text-slate-300 ml-4">
                   <li>• Creator uploads</li>
                   <li>• Licensing tools</li>
                 </ul>
