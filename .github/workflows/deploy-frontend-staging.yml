@@ -28,17 +28,16 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
       - name: Build for staging
         run: npm run build:staging
         env:
           VITE_APP_ENV: staging
 
       - name: Deploy to Cloudflare Pages (Staging)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=audafact-web-staging
+        run: wrangler pages deploy dist --project-name=audafact-web-staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
