@@ -150,6 +150,21 @@ const Contact = () => {
                 and stay updated on new features and releases.
               </p>
             </div>
+
+            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50">
+              <div className="flex items-start space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center flex-shrink-0">
+                  <span className="text-2xl">🎵</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-2">Turn Your Music Into Sampling Revenue</h3>
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    <strong className="text-audafact-accent-cyan">Earn money when producers sample your tracks.</strong> We're building the first platform that pays independent artists when their music gets flipped by producers—with automatic licensing and revenue sharing built in. 
+                    Use the contact form and select "Music Contribution" to be among the first artists on our platform.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Contact Form */}
@@ -211,6 +226,7 @@ const Contact = () => {
                     <option value="beta">Beta Feedback</option>
                     <option value="bug">Bug Report</option>
                     <option value="feature">Feature Request</option>
+                    <option value="music-contribution">Music Contribution</option>
                     <option value="business">Business Inquiry</option>
                   </select>
                 </div>
