@@ -1,8 +1,8 @@
-import { useNavigate } from 'react-router-dom';
+// import { useNavigate } from 'react-router-dom';
 // import { useAuth } from '../context/AuthContext';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
-import { useEffect, useMemo, memo, useState } from 'react';
-import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
+import { useEffect, useMemo, memo, useState, useRef } from 'react';
+import { getUTMParameters } from '../utils/hubspotUtils';
 import { hashEmailForMeta, generateEventId } from '../utils/cryptoUtils';
 import { getFacebookTrackingParams } from '../utils/facebookUtils';
 import { onSignupSuccess, sendTikTokCompleteRegistration } from '../utils/tiktokUtils';
@@ -26,7 +26,7 @@ declare global {
 
 const Home = () => {
   // const { user } = useAuth();
-  const navigate = useNavigate();
+  // const navigate = useNavigate();
   const { isMobile } = useResponsiveDesign();
   const [, setIsScrolling] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,6 +44,8 @@ const Home = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
 
   // Check if user just verified their email
   // useEffect(() => {
@@ -112,6 +114,42 @@ const Home = () => {
     });
   }, []);
 
+  // Initialize Turnstile widget when modal opens
+  useEffect(() => {
+    if (isModalOpen && turnstileRef.current) {
+      // Get Turnstile site key from environment variables
+      const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+      
+      if (turnstileSiteKey) {
+        // Clear any existing widget
+        turnstileRef.current.innerHTML = '';
+        
+        // Initialize Turnstile widget
+        const widgetId = window.turnstile?.render(turnstileRef.current, {
+          sitekey: turnstileSiteKey,
+          callback: (token: string) => {
+            setCaptchaToken(token);
+          },
+          'error-callback': () => {
+            setCaptchaToken(null);
+          },
+          'expired-callback': () => {
+            setCaptchaToken(null);
+          },
+          'timeout-callback': () => {
+            setCaptchaToken(null);
+          }
+        });
+
+        return () => {
+          if (widgetId && window.turnstile) {
+            window.turnstile.remove(widgetId);
+          }
+        };
+      }
+    }
+  }, [isModalOpen]);
+
   const handleLaunchDemo = () => {
     // Track demo launch event
     pushToDataLayer({
@@ -151,6 +189,7 @@ const Home = () => {
       earlyAccess: false
     });
     setSubmitStatus('idle');
+    setCaptchaToken(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -170,33 +209,17 @@ const Home = () => {
     }));
   };
 
-  const handleDemoPlay = (trackType: string) => {
-    pushToDataLayer({
-      event: "demo_play",
-      track_type: trackType,
-      location: "product_demo_strip"
-    });
-    // TODO: Implement actual audio playback
-    console.log(`Playing ${trackType} demo`);
-  };
+  // const handleDemoPlay = (trackType: string) => {
+  //   pushToDataLayer({
+  //     event: "demo_play",
+  //     track_type: trackType,
+  //     location: "product_demo_strip"
+  //   });
+  //   // TODO: Implement actual audio playback
+  //   console.log(`Playing ${trackType} demo`);
+  // };
 
-  // Helper function to create UTM parameter fields for HubSpot
-  const createUTMFields = (utmParams: Record<string, string>) => {
-    const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;
-    const fields: Array<{ name: string; value: string }> = [];
-    
-    utmKeys.forEach(key => {
-      if (utmParams[key]) {
-        // Add both custom and HubSpot built-in versions
-        fields.push(
-          { name: key, value: utmParams[key] },
-          { name: `hs_${key}`, value: utmParams[key] }
-        );
-      }
-    });
-    
-    return fields;
-  };
+  // Note: UTM parameters are now handled by the Supabase Edge Function
 
   // Helper function to push events to dataLayer
   const pushToDataLayer = (eventData: Record<string, any>) => {
@@ -213,62 +236,62 @@ const Home = () => {
     if (isSubmitting || submitStatus === 'success') {
       return;
     }
+
+    // Check if Turnstile token is present
+    if (!captchaToken) {
+      alert('Please complete the security verification.');
+      return;
+    }
     
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
     try {
-      // Get HubSpot tracking cookie and UTM parameters
-      const hutk = getHubSpotCookie();
+      // Get UTM parameters
       const utmParams = getUTMParameters();
 
+      // Prepare data for Supabase Edge Function with Turnstile validation
       const requestBody = {
-        submittedAt: getCurrentTimestamp(),
-        fields: [
-          { name: 'firstname', value: formData.firstName },
-          { name: 'email', value: formData.email },
-          { name: 'consent_to_comms', value: formData.agreeUpdates.toString() },
-          { name: 'consent_to_process', value: formData.agreeStorage.toString() },
-          // Audafact Attribution properties
-          { name: 'referrer_url', value: document.referrer || '' },
-          { name: 'signup_page', value: window.location.href },
-          // UTM parameters - deduplicated logic
-          ...createUTMFields(utmParams),
-          // Package all user profile data into one JSON field
-          { name: 'user_profile', value: JSON.stringify({
-            role: formData.role,
-            daw: formData.daw,
-            genres: formData.genres,
-            experience: formData.experience,
-            referralSource: formData.referralSource,
-            earlyAccess: formData.earlyAccess
-          }) }
-        ],
-        context: {
-          ...(hutk && { hutk }),
-          pageUri: window.location.href,
-          pageName: 'Audafact Waitlist'
-        }
+        firstName: formData.firstName,
+        email: formData.email,
+        role: formData.role,
+        daw: formData.daw,
+        genres: formData.genres,
+        experience: formData.experience,
+        referralSource: formData.referralSource,
+        agreeUpdates: formData.agreeUpdates,
+        agreeStorage: formData.agreeStorage,
+        earlyAccess: formData.earlyAccess,
+        turnstileToken: captchaToken,
+        referrerUrl: document.referrer || '',
+        signupPage: window.location.href,
+        utmParams: utmParams
       };
+
+      // Get Supabase URL and anon key for the Edge Function
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       
-      // Submit to HubSpot API
-      const response = await fetch('https://api.hsforms.com/submissions/v3/integration/submit/243862805/bd0ad51a-65d5-4a66-a983-f1919c76069b', {
+      // Submit to Supabase Edge Function (which validates Turnstile and submits to HubSpot)
+      const response = await fetch(`${supabaseUrl}/functions/v1/waitlist-submission`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify(requestBody)
       });
 
       if (response.ok) {
+        const result = await response.json();
         const eventId = generateEventId();
 
         // Push success events to dataLayer
         pushToDataLayer({
           event: "waitlist_signup",
-          method: "hubspot_forms_api",
-          form_id: "bd0ad51a-65d5-4a66-a983-f1919c76069b",
-          portal_id: "243862805",
+          method: "supabase_edge_function",
+          turnstile_verified: result.turnstileVerified,
+          hubspot_submitted: result.hubspotSubmitted,
           status: "success",
           event_id: eventId
         });
@@ -353,13 +376,15 @@ const Home = () => {
           handleCloseModal();
         }, 2000);
       } else {
-        console.error('Form submission error:', response.status);
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Waitlist submission error:', errorData);
         
         pushToDataLayer({
           event: "form_submit",
           form_name: "waitlist",
           status: "error",
-          error_code: response.status
+          error_code: response.status,
+          error_message: errorData.error || "Unknown error"
         });
         
         setSubmitStatus('error');
@@ -1207,6 +1232,11 @@ const Home = () => {
                     </p>
                   </div>
                   
+                  {/* Turnstile widget */}
+                  <div className="flex justify-center">
+                    <div ref={turnstileRef}></div>
+                  </div>
+                  
                   {submitStatus === 'error' && (
                     <div className="text-red-400 text-sm text-center">
                       Something went wrong. Please try again.
@@ -1215,7 +1245,7 @@ const Home = () => {
                   
                   <button
                     type="submit"
-                    disabled={isSubmitting || !formData.agreeStorage}
+                    disabled={isSubmitting || !formData.agreeStorage || !captchaToken}
                     className="w-full group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     <span className="relative z-10 flex items-center gap-2">
