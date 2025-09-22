@@ -457,7 +457,7 @@ const Home = () => {
               
               {/* Headline */}
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent tracking-tight leading-tight">
-                Cue, chop, and flip samples faster than ever.
+                Discover, chop, and flip samples fast.
               </h1>
               
               {/* Subhead */}
@@ -745,7 +745,29 @@ const Home = () => {
                 <ul className="space-y-2 text-slate-300 ml-4">
                   <li>• Creator uploads</li>
                   <li>• Licensing tools</li>
+                  <li>• Music contributions</li>
                 </ul>
+              </div>
+            </div>
+            
+            {/* Music Contributions Call-to-Action */}
+            <div className="mt-12 pt-8 border-t border-slate-700/50">
+              <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <span className="text-2xl">🎵</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-3">Get Your Music Sampled by Top Producers</h3>
+                  <p className="text-slate-300 text-sm leading-relaxed mb-4">
+                    <strong className="text-audafact-accent-cyan">Get paid when producers flip your tracks.</strong> We're building the first platform that connects independent artists with producers who want to sample their music—with proper licensing built right in.
+                  </p>
+                  <a 
+                    href="/contact" 
+                    className="inline-flex items-center justify-center px-4 py-2 border border-audafact-accent-cyan text-audafact-accent-cyan font-medium rounded-lg hover:bg-audafact-accent-cyan hover:text-white transition-all duration-200"
+                  >
+                    Get in Touch
+                  </a>
+                </div>
               </div>
             </div>
             
