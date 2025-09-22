@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { useEffect, useMemo, memo, useState } from 'react';
-import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
+import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters, isHubSpotTrackingEnabled } from '../utils/hubspotUtils';
 import { hashEmailForMeta, generateEventId } from '../utils/cryptoUtils';
 import { getFacebookTrackingParams } from '../utils/facebookUtils';
 import { onSignupSuccess, sendTikTokCompleteRegistration } from '../utils/tiktokUtils';
@@ -135,8 +135,8 @@ const Home = () => {
     setSubmitStatus('idle');
 
     try {
-      // Get HubSpot tracking cookie and UTM parameters
-      const hutk = getHubSpotCookie();
+      // Get HubSpot tracking cookie and UTM parameters (only if consent given)
+      const hutk = isHubSpotTrackingEnabled() ? getHubSpotCookie() : null;
       const utmParams = getUTMParameters();
 
       const requestBody = {
