@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+// import { useAuth } from '../context/AuthContext';
 import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
 import { useEffect, useMemo, memo, useState } from 'react';
 import { getHubSpotCookie, getCurrentTimestamp, getUTMParameters } from '../utils/hubspotUtils';
@@ -25,7 +25,7 @@ declare global {
 }
 
 const Home = () => {
-  const { user } = useAuth();
+  // const { user } = useAuth();
   const navigate = useNavigate();
   const { isMobile } = useResponsiveDesign();
   const [, setIsScrolling] = useState(false);
@@ -431,24 +431,13 @@ const Home = () => {
             
             {/* Right side CTAs */}
             <div className="flex items-center gap-3">
-              {!user && (
-                <button
-                  onClick={handleOpenModal}
-                  className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                >
-                  <span className="relative z-10">Join the Beta</span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                </button>
-              )}
-              {user && (
-                <button
-                  onClick={() => navigate('/studio')}
-                  className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                >
-                  <span className="relative z-10">Open Studio</span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                </button>
-              )}
+              <button
+                onClick={handleOpenModal}
+                className="group relative inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-audafact-accent-cyan text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              >
+                <span className="relative z-10">Join the Beta</span>
+                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+              </button>
             </div>
           </div>
         </div>
@@ -889,52 +878,50 @@ const Home = () => {
       </section>
 
       {/* Call to Action */}
-      {!user && (
-        <section className="py-5">
-          <div className="relative overflow-hidden audafact-card p-8 sm:p-12 text-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
-            {/* Vinyl record background element */}
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-44 sm:w-56 md:w-64 h-44 sm:h-56 md:h-64 rounded-full border-6 border-slate-600"></div>
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-36 sm:w-44 md:w-48 h-36 sm:h-44 md:h-48 rounded-full border-3 border-slate-500"></div>
-            </div>
-            
-            <div className="relative z-10">
-              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
-                Join the Waitlist
-              </h2>
-              <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
-                {isMobile
-                  ? 'Be among the first to access Audafact when we launch. Get early access to the AI library and share your creations without legal uncertainty.'
-                  : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
-              </p>
-              <button
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
-                onClick={handleOpenModal}
-              >
-                <span className="relative z-10 flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
-                  Join Waitlist
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-              </button>
-              {/* <button
-                className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
-                onClick={() => navigate('/auth')}
-              >
-                <span className="relative z-10 flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
-                  Sign Up Now
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-              </button> */}
-            </div>
+      <section className="py-5">
+        <div className="relative overflow-hidden audafact-card p-8 sm:p-12 text-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
+          {/* Vinyl record background element */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-44 sm:w-56 md:w-64 h-44 sm:h-56 md:h-64 rounded-full border-6 border-slate-600"></div>
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-36 sm:w-44 md:w-48 h-36 sm:h-44 md:h-48 rounded-full border-3 border-slate-500"></div>
           </div>
-        </section>
-      )}
+          
+          <div className="relative z-10">
+            <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
+              Join the Waitlist
+            </h2>
+            <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
+              {isMobile
+                ? 'Be among the first to access Audafact when we launch. Get early access to the AI library and share your creations without legal uncertainty.'
+                : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
+            </p>
+            <button
+              className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+              onClick={handleOpenModal}
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                Join Waitlist
+              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+            </button>
+            {/* <button
+              className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
+              onClick={() => navigate('/auth')}
+            >
+              <span className="relative z-10 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                Sign Up Now
+              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+            </button> */}
+          </div>
+        </div>
+      </section>
 
       {/* HubSpot Form Modal */}
       {isModalOpen && (
