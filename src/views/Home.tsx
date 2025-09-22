@@ -462,7 +462,7 @@ const Home = () => {
               
               {/* Subhead */}
               <p className="text-lg sm:text-xl text-slate-300 leading-relaxed">
-                A fast sampling workflow + a curated AI track library—made for looping, slicing, and flipping into your next release.
+                A fast sampling workflow + a curated AI track library—made for looping, slicing, and flipping into your next release. <span className="text-audafact-accent-cyan font-medium">The first step toward a future where creators work directly with each other.</span>
               </p>
               
               {/* Micro reassurance */}
@@ -648,6 +648,44 @@ const Home = () => {
         </div>
       </section>
 
+        {/* Creator Vision Section */}
+        <section className="py-12 sm:py-16">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
+              A Vision for Independent Creators
+            </h2>
+            <p className="text-slate-300 max-w-3xl mx-auto text-lg">
+              We're building toward a future where creators work directly with each other, without labels or publishers managing their relationships. The beta is just the beginning.
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
+            <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto mb-6">
+                  <span className="text-3xl">🤝</span>
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-4">Direct Collaboration</h3>
+                <p className="text-slate-300 leading-relaxed">
+                  We're working toward tools that let creators connect and collaborate directly. No middlemen, no gatekeepers—just artists working together on their own terms.
+                </p>
+              </div>
+            </div>
+            
+            <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto mb-6">
+                  <span className="text-3xl">🎯</span>
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-4">Career Control</h3>
+                <p className="text-slate-300 leading-relaxed">
+                  Our vision is to put creators in control of their creative journey. Tools and platforms that serve your career, not someone else's business model.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* How It Works Section */}
         <section className="py-12 sm:py-16">
           <div className="text-center mb-12">
@@ -744,8 +782,8 @@ const Home = () => {
                 </h3>
                 <ul className="space-y-2 text-slate-300 ml-4">
                   <li>• Creator uploads</li>
-                  <li>• Licensing tools</li>
-                  <li>• Music contributions</li>
+                  <li>• Collaboration tools</li>
+                  <li>• Creator-to-creator connections</li>
                 </ul>
               </div>
             </div>
@@ -757,9 +795,9 @@ const Home = () => {
                   <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto mb-4">
                     <span className="text-2xl">🎵</span>
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-3">Get Your Music Sampled by Top Producers</h3>
+                  <h3 className="text-lg font-semibold text-white mb-3">Shape the Future of Music Collaboration</h3>
                   <p className="text-slate-300 text-sm leading-relaxed mb-4">
-                    <strong className="text-audafact-accent-cyan">Get paid when producers flip your tracks.</strong> We're building the first platform that connects independent artists with producers who want to sample their music—with proper licensing built right in.
+                    <strong className="text-audafact-accent-cyan">Be part of the next phase.</strong> We're working toward tools that will let artists and producers connect directly, creating new ways to collaborate and share revenue without traditional gatekeepers.
                   </p>
                   <a 
                     href="/contact" 
@@ -798,7 +836,7 @@ const Home = () => {
                 <div>
                   <h4 className="font-semibold text-white mb-2">Hey, I'm David</h4>
                   <p className="text-slate-300 leading-relaxed">
-                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler and a curated AI library you can actually use. Tell me what gets you to the next idea—I'll build toward that.
+                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler and a curated AI library you can actually use. But I'm also thinking about the bigger picture—a future where creators work directly with each other, without gatekeepers managing their relationships. This is just the first phase. Tell me what gets you to the next idea—I'll build toward that.
                   </p>
                 </div>
               </div>
@@ -896,6 +934,14 @@ const Home = () => {
                 We're offering founders' trial pricing for beta users—exact details TBD. Join the waitlist for early access pricing and be among the first to experience Audafact.
               </p>
             </div>
+            
+            {/* FAQ Item 5 */}
+            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
+              <h3 className="text-lg font-semibold text-white mb-3">What's your vision for independent creators?</h3>
+              <p className="text-slate-300 leading-relaxed">
+                We're building toward a future where creators work directly with each other, without labels or publishers managing their relationships. The current beta focuses on sampling tools and a curated library, but we're planning features that will put you in control of your creative partnerships and career trajectory.
+              </p>
+            </div>
         </div>
       </section>
 
@@ -915,7 +961,7 @@ const Home = () => {
             <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
               {isMobile
                 ? 'Be among the first to access Audafact when we launch. Get early access to the AI library and share your creations without legal uncertainty.'
-                : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
+                : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Join us as we build the future of creator collaboration.'}
             </p>
             <button
               className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
