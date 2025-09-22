@@ -7,6 +7,7 @@ import { GuestProvider } from './context/GuestContext';
 import { LibraryProvider } from './context/LibraryContext';
 import { GlobalModalManager } from './components/GlobalModalManager';
 import SuccessMessageManager from './components/SuccessMessageManager';
+import CookieConsentBanner from './components/CookieConsentBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { router } from './routes';
 import React from 'react';
@@ -26,7 +27,20 @@ import './utils/testAnalytics';
 import './utils/debugAnalytics';
 import './utils/debugAnalyticsWorker';
 
+// Import consent management
+import { initializeConsent } from './utils/consentUtils';
+
+// Import debug utilities (only in development)
+if (process.env.NODE_ENV === 'development') {
+  import('./utils/debugConsent');
+}
+
 function App() { 
+  // Initialize consent management on app load
+  React.useEffect(() => {
+    initializeConsent();
+  }, []);
+
   // Lazy load analytics service after app is mounted
   React.useEffect(() => {
     const loadAnalytics = async () => {
@@ -50,6 +64,7 @@ function App() {
                   <RouterProvider router={router} />
                   <GlobalModalManager />
                   <SuccessMessageManager />
+                  <CookieConsentBanner />
                 </RecordingProvider>
               </SidePanelProvider>
             </AudioProvider>

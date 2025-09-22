@@ -2,12 +2,29 @@
  * Utility functions for HubSpot integration
  */
 
+import { isConsentAllowed } from "./consentUtils";
+
+// Declare HubSpot global types
+declare global {
+  interface Window {
+    _hsq: {
+      q: any[];
+      push: (args: any[]) => void;
+    };
+  }
+}
+
 /**
- * Gets the HubSpot tracking cookie (hutk) if it exists
- * @returns The hutk cookie value or null if not found
+ * Gets the HubSpot tracking cookie (hutk) if it exists and consent is given
+ * @returns The hutk cookie value or null if not found or consent not given
  */
 export const getHubSpotCookie = (): string | null => {
   if (typeof document === "undefined") {
+    return null;
+  }
+
+  // Check if analytics consent is given
+  if (!isConsentAllowed("analytics")) {
     return null;
   }
 
@@ -32,7 +49,25 @@ export const getCurrentTimestamp = (): number => {
 };
 
 /**
- * Extracts UTM parameters from the current URL
+ * Gets a cookie value by name
+ * @param name - The cookie name
+ * @returns The cookie value or null if not found
+ */
+const getCookie = (name: string): string | null => {
+  if (typeof document === "undefined") return null;
+
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    const cookieValue = parts.pop()?.split(";").shift();
+    return cookieValue ? decodeURIComponent(cookieValue) : null;
+  }
+  return null;
+};
+
+/**
+ * Extracts UTM parameters from URL and cookies (GTM stored)
+ * Prioritizes URL parameters over cookies (first-touch attribution)
  * @returns Object containing UTM parameters
  */
 export const getUTMParameters = (): {
@@ -48,11 +83,60 @@ export const getUTMParameters = (): {
 
   const urlParams = new URLSearchParams(window.location.search);
 
+  // UTM parameter keys
+  const utmKeys = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+  ];
+
+  const utmParams: Record<string, string | undefined> = {};
+
+  utmKeys.forEach((key) => {
+    // First try URL parameters (first-touch)
+    const urlValue = urlParams.get(key);
+    if (urlValue) {
+      utmParams[key] = urlValue;
+      return;
+    }
+
+    // Fallback to cookies (last-touch from GTM)
+    const cookieValue = getCookie(key);
+    if (cookieValue) {
+      utmParams[key] = cookieValue;
+    }
+  });
+
   return {
-    utm_source: urlParams.get("utm_source") || undefined,
-    utm_medium: urlParams.get("utm_medium") || undefined,
-    utm_campaign: urlParams.get("utm_campaign") || undefined,
-    utm_content: urlParams.get("utm_content") || undefined,
-    utm_term: urlParams.get("utm_term") || undefined,
+    utm_source: utmParams.utm_source,
+    utm_medium: utmParams.utm_medium,
+    utm_campaign: utmParams.utm_campaign,
+    utm_content: utmParams.utm_content,
+    utm_term: utmParams.utm_term,
   };
+};
+
+/**
+ * Check if HubSpot tracking is enabled based on consent
+ * @returns true if analytics consent is given
+ */
+export const isHubSpotTrackingEnabled = (): boolean => {
+  return isConsentAllowed("analytics");
+};
+
+/**
+ * Initialize HubSpot tracking with consent
+ * Call this after consent is given
+ */
+export const initializeHubSpotTracking = (): void => {
+  if (typeof window === "undefined") return;
+
+  if (isHubSpotTrackingEnabled()) {
+    // HubSpot script should already be loaded
+    if (window._hsq) {
+      console.log("HubSpot tracking initialized with consent");
+    }
+  }
 };

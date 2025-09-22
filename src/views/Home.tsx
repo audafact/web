@@ -247,7 +247,7 @@ const Home = () => {
     setSubmitStatus('idle');
 
     try {
-      // Get UTM parameters
+      // Get UTM parameters (consent is handled by the Supabase Edge Function)
       const utmParams = getUTMParameters();
 
       // Prepare data for Supabase Edge Function with Turnstile validation
