@@ -227,19 +227,22 @@ const Home = () => {
         fields: [
           { name: 'firstname', value: formData.firstName },
           { name: 'email', value: formData.email },
-          { name: 'role', value: formData.role },
-          { name: 'daw', value: formData.daw },
-          { name: 'genres', value: formData.genres.join(', ') },
-          { name: 'experience', value: formData.experience },
-          { name: 'referral_source', value: formData.referralSource },
-          { name: 'early_access_interest', value: formData.earlyAccess.toString() },
           { name: 'consent_to_comms', value: formData.agreeUpdates.toString() },
           { name: 'consent_to_process', value: formData.agreeStorage.toString() },
           // Audafact Attribution properties
           { name: 'referrer_url', value: document.referrer || '' },
           { name: 'signup_page', value: window.location.href },
           // UTM parameters - deduplicated logic
-          ...createUTMFields(utmParams)
+          ...createUTMFields(utmParams),
+          // Package all user profile data into one JSON field
+          { name: 'user_profile', value: JSON.stringify({
+            role: formData.role,
+            daw: formData.daw,
+            genres: formData.genres,
+            experience: formData.experience,
+            referralSource: formData.referralSource,
+            earlyAccess: formData.earlyAccess
+          }) }
         ],
         context: {
           ...(hutk && { hutk }),
