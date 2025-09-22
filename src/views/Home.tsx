@@ -46,19 +46,19 @@ const Home = () => {
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   // Check if user just verified their email
-  useEffect(() => {
-    if (user) {
-      const emailVerifiedAt = user.email_confirmed_at;
-      const now = new Date();
-      const verifiedAt = emailVerifiedAt ? new Date(emailVerifiedAt) : null;
+  // useEffect(() => {
+  //   if (user) {
+  //     const emailVerifiedAt = user.email_confirmed_at;
+  //     const now = new Date();
+  //     const verifiedAt = emailVerifiedAt ? new Date(emailVerifiedAt) : null;
       
-      // If verified within the last 5 minutes, redirect to verification page
-      if (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 5 * 60 * 1000) {
-        navigate('/auth/verify', { replace: true });
-        return;
-      }
-    }
-  }, [user, navigate]);
+  //     // If verified within the last 5 minutes, redirect to verification page
+  //     if (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 5 * 60 * 1000) {
+  //       navigate('/auth/verify', { replace: true });
+  //       return;
+  //     }
+  //   }
+  // }, [user, navigate]);
 
   // Scroll detection to pause animations during scroll and track scroll depth
   useEffect(() => {
