@@ -19,6 +19,9 @@ interface ImportMetaEnv {
   readonly VITE_STRIPE_LIVE_PRICE_YEARLY: string;
   readonly VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER: string;
   readonly VITE_TURNSTILE_SITE_KEY: string;
+  readonly VITE_EMAILJS_SERVICE_ID: string;
+  readonly VITE_EMAILJS_TEMPLATE_ID: string;
+  readonly VITE_EMAILJS_PUBLIC_KEY: string;
   readonly MODE: string;
   readonly PROD: boolean;
 }

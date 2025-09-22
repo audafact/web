@@ -14,6 +14,8 @@ const Pricing = lazy(() => import('../views/Pricing').then(module => ({ default:
 const CheckoutResult = lazy(() => import('../views/CheckoutResult').then(module => ({ default: module.CheckoutResult })));
 const Profile = lazy(() => import('../views/Profile').then(module => ({ default: module.Profile })));
 const Privacy = lazy(() => import('../views/Privacy').then(module => ({ default: module.Privacy })));
+const Terms = lazy(() => import('../views/Terms'));
+const Contact = lazy(() => import('../views/Contact'));
 const NotFound = lazy(() => import('../views/NotFound'));
 
 // Loading component for lazy routes
@@ -73,6 +75,22 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <Privacy />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'terms',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Terms />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'contact',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Contact />
           </Suspense>
         ),
       },
