@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAudioContext } from '../context/AudioContext';
+import { useGuest } from '../context/GuestContext';
 import WaveformDisplay from '../components/WaveformDisplay';
 import TrackControls from '../components/TrackControls';
 import TempoControls from '../components/TempoControls';
@@ -23,32 +24,11 @@ interface Track {
   showMeasures: boolean;
 }
 
-// Demo track configuration
-const DEMO_TRACK = {
-  id: 'demo-track',
-  name: 'Break the Chains (Version 1)',
-  genre: 'electronic',
-  bpm: 128,
-  file: '/assets/library-inbox/break-the-chains-version-1.mp3',
-  type: 'mp3',
-  size: 'Unknown',
-  is_demo: true
-};
+// Use the same track as GuestContext for consistency
 
 const StudioDemo = () => {
-  // Debug logging that won't be stripped by build process
-  const debugLog = (message: string) => {
-    console.log(message);
-    // Also add to DOM for debugging in production
-    const debugDiv = document.getElementById('debug-logs');
-    if (debugDiv) {
-      debugDiv.innerHTML += `<div>${new Date().toISOString()}: ${message}</div>`;
-    }
-  };
-  
-  debugLog('StudioDemo component rendering');
-    
   const { audioContext, initializeAudio } = useAudioContext();
+  const { currentGuestTrack, loadRandomGuestTrack } = useGuest();
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
@@ -72,12 +52,17 @@ const StudioDemo = () => {
   const [expandedControls, setExpandedControls] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
 
-  // Load audio buffer
+  // Load guest track on component mount, but don't initialize audio until user interaction
+  useEffect(() => {
+    if (!currentGuestTrack) {
+      loadRandomGuestTrack();
+    }
+  }, [currentGuestTrack, loadRandomGuestTrack]);
+
+  // Load audio buffer using the same method as the main app
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
-
-      debugLog('Array buffer size: ' + arrayBuffer.byteLength);
       return await context.decodeAudioData(arrayBuffer);
     } catch (error) {
       debugLog('Audio decoding error: ' + (error instanceof Error ? error.message : String(error)));
@@ -86,14 +71,12 @@ const StudioDemo = () => {
     }
   };
 
-  // Initialize audio context and load demo track
+  // Initialize audio context and load demo track using GuestContext
   const handleInitializeAudio = async () => {
-    debugLog('handleInitializeAudio called');
     try {
       setNeedsUserInteraction(false);
       setIsInitializingAudio(true);
       setError(null);
-      debugLog('Starting audio initialization...');
 
       const context = await initializeAudio();
       if (!context) {
@@ -101,28 +84,29 @@ const StudioDemo = () => {
       }
 
       setIsAudioInitialized(true);
-
-      // Load the demo track
-      debugLog('Fetching demo track from: ' + DEMO_TRACK.file);
-      const response = await fetch(DEMO_TRACK.file);
+      
+      // Use the guest track that was already loaded
+      if (!currentGuestTrack) {
+        throw new Error('No guest track available');
+      }
+      
+      // Fetch the audio file using the same path as GuestContext
+      const response = await fetch(currentGuestTrack.file);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch audio file: ${response.status} ${response.statusText}`);
       }
       
       const blob = await response.blob();
-      debugLog('Audio blob size: ' + blob.size + ', type: ' + blob.type);
       
-      const file = new File([blob], `${DEMO_TRACK.name}.${DEMO_TRACK.type}`, { 
-        type: `audio/${DEMO_TRACK.type}` 
+      const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
+        type: `audio/${currentGuestTrack.type}` 
       });
       
-      debugLog('Decoding audio buffer...');
       const buffer = await loadAudioBuffer(file, context);
-      debugLog('Audio buffer decoded successfully, duration: ' + buffer.duration);
       
       const newTrack: Track = {
-        id: DEMO_TRACK.id,
+        id: currentGuestTrack.id,
         file,
         buffer,
         mode: 'cue',
@@ -131,17 +115,16 @@ const StudioDemo = () => {
         cuePoints: Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ),
-        tempo: DEMO_TRACK.bpm,
+        tempo: currentGuestTrack.bpm,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false
       };
       
       setTrack(newTrack);
-      setTempo(DEMO_TRACK.bpm);
+      setTempo(currentGuestTrack.bpm);
       
     } catch (err) {
-      debugLog('Failed to initialize audio: ' + (err instanceof Error ? err.message : String(err)));
       console.error('Failed to initialize audio:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize audio');
     } finally {
@@ -211,25 +194,18 @@ const StudioDemo = () => {
   };
 
   // User interaction handler
-  const handleUserInteraction = useCallback(() => {
-    debugLog('handleUserInteraction called, needsUserInteraction: ' + needsUserInteraction);
-      
+  const handleUserInteraction = useCallback(async () => {
     if (needsUserInteraction) {
-      handleInitializeAudio();
+      await handleInitializeAudio();
     }
-  }, [needsUserInteraction, handleInitializeAudio]);
+  }, [needsUserInteraction]);
 
   if (needsUserInteraction) {
-    debugLog('Rendering user interaction screen');
-      
     return (
       <div className="min-h-screen  flex items-center justify-center">
         <div className="text-center">
           <button
-            onClick={() => {
-              debugLog('Start Demo button clicked');
-              handleUserInteraction();
-            }}
+            onClick={handleUserInteraction}
             className="bg-audafact-accent-cyan text-audafact-bg-primary px-8 py-3 rounded-lg font-semibold hover:bg-audafact-accent-cyan/80 transition-colors"
           >
             Start Demo
