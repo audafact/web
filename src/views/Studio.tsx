@@ -3828,6 +3828,7 @@ const Studio = () => {
       <HelpButton
         onStartTutorial={onboarding.startOnboarding}
         onShowHelp={() => setShowHelpModal(true)}
+        hideTutorial={false}
       />
 
       {/* Help Modal */}

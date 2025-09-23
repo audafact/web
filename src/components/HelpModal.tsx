@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 interface HelpModalProps {
   isOpen: boolean;
@@ -30,11 +31,11 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
     'Save your sessions to return to them later'
   ];
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black bg-opacity-60"
         onClick={onClose}
       />
 
@@ -156,7 +157,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
