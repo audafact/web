@@ -75,9 +75,10 @@ const StudioDemo = () => {
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      console.log('Array buffer size:', arrayBuffer.byteLength);
+      debugLog('Array buffer size: ' + arrayBuffer.byteLength);
       return await context.decodeAudioData(arrayBuffer);
     } catch (error) {
+      debugLog('Audio decoding error: ' + (error instanceof Error ? error.message : String(error)));
       console.error('Audio decoding error:', error);
       throw new Error(`Failed to decode audio data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
