@@ -10,6 +10,7 @@ import { ProtectedRoute } from '../auth/ProtectedRoute';
 // Lazy load views for better performance
 const Home = lazy(() => import('../views/Home'));
 const Studio = lazy(() => import('../views/Studio'));
+const StudioDemo = lazy(() => import('../views/StudioDemo'));
 const Pricing = lazy(() => import('../views/Pricing').then(module => ({ default: module.Pricing })));
 const CheckoutResult = lazy(() => import('../views/CheckoutResult').then(module => ({ default: module.CheckoutResult })));
 const Profile = lazy(() => import('../views/Profile').then(module => ({ default: module.Profile })));
@@ -91,6 +92,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <Contact />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'demo',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <StudioDemo />
           </Suspense>
         ),
       },
