@@ -62,8 +62,14 @@ const StudioDemo = () => {
 
   // Load audio buffer
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
-    const arrayBuffer = await file.arrayBuffer();
-    return await context.decodeAudioData(arrayBuffer);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('Array buffer size:', arrayBuffer.byteLength);
+      return await context.decodeAudioData(arrayBuffer);
+    } catch (error) {
+      console.error('Audio decoding error:', error);
+      throw new Error(`Failed to decode audio data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   // Initialize audio context and load demo track
@@ -81,13 +87,23 @@ const StudioDemo = () => {
       setIsAudioInitialized(true);
 
       // Load the demo track
+      console.log('Fetching demo track from:', DEMO_TRACK.file);
       const response = await fetch(DEMO_TRACK.file);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio file: ${response.status} ${response.statusText}`);
+      }
+      
       const blob = await response.blob();
+      console.log('Audio blob size:', blob.size, 'type:', blob.type);
+      
       const file = new File([blob], `${DEMO_TRACK.name}.${DEMO_TRACK.type}`, { 
         type: `audio/${DEMO_TRACK.type}` 
       });
       
+      console.log('Decoding audio buffer...');
       const buffer = await loadAudioBuffer(file, context);
+      console.log('Audio buffer decoded successfully, duration:', buffer.duration);
       
       const newTrack: Track = {
         id: DEMO_TRACK.id,
