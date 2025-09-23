@@ -101,7 +101,7 @@ const StudioDemo = () => {
 
       addDebugInfo('Audio context initialized successfully');
       setIsAudioInitialized(true);
-
+      
       // Use the guest track that was already loaded
       if (!currentGuestTrack) {
         throw new Error('No guest track available');
