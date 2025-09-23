@@ -36,7 +36,18 @@ const DEMO_TRACK = {
 };
 
 const StudioDemo = () => {
-  console.log('StudioDemo component rendering');
+  // Debug logging that won't be stripped by build process
+  const debugLog = (message: string) => {
+    console.log(message);
+    // Also add to DOM for debugging in production
+    const debugDiv = document.getElementById('debug-logs');
+    if (debugDiv) {
+      debugDiv.innerHTML += `<div>${new Date().toISOString()}: ${message}</div>`;
+    }
+  };
+  
+  debugLog('StudioDemo component rendering');
+    
   const { audioContext, initializeAudio } = useAudioContext();
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,9 +76,11 @@ const StudioDemo = () => {
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      console.log('Array buffer size:', arrayBuffer.byteLength);
+
+      debugLog('Array buffer size: ' + arrayBuffer.byteLength);
       return await context.decodeAudioData(arrayBuffer);
     } catch (error) {
+      debugLog('Audio decoding error: ' + (error instanceof Error ? error.message : String(error)));
       console.error('Audio decoding error:', error);
       throw new Error(`Failed to decode audio data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -75,12 +88,12 @@ const StudioDemo = () => {
 
   // Initialize audio context and load demo track
   const handleInitializeAudio = async () => {
-    console.log('handleInitializeAudio called');
+    debugLog('handleInitializeAudio called');
     try {
       setNeedsUserInteraction(false);
       setIsInitializingAudio(true);
       setError(null);
-      console.log('Starting audio initialization...');
+      debugLog('Starting audio initialization...');
 
       const context = await initializeAudio();
       if (!context) {
@@ -90,7 +103,7 @@ const StudioDemo = () => {
       setIsAudioInitialized(true);
 
       // Load the demo track
-      console.log('Fetching demo track from:', DEMO_TRACK.file);
+      debugLog('Fetching demo track from: ' + DEMO_TRACK.file);
       const response = await fetch(DEMO_TRACK.file);
       
       if (!response.ok) {
@@ -98,15 +111,15 @@ const StudioDemo = () => {
       }
       
       const blob = await response.blob();
-      console.log('Audio blob size:', blob.size, 'type:', blob.type);
+      debugLog('Audio blob size: ' + blob.size + ', type: ' + blob.type);
       
       const file = new File([blob], `${DEMO_TRACK.name}.${DEMO_TRACK.type}`, { 
         type: `audio/${DEMO_TRACK.type}` 
       });
       
-      console.log('Decoding audio buffer...');
+      debugLog('Decoding audio buffer...');
       const buffer = await loadAudioBuffer(file, context);
-      console.log('Audio buffer decoded successfully, duration:', buffer.duration);
+      debugLog('Audio buffer decoded successfully, duration: ' + buffer.duration);
       
       const newTrack: Track = {
         id: DEMO_TRACK.id,
@@ -128,7 +141,7 @@ const StudioDemo = () => {
       setTempo(DEMO_TRACK.bpm);
       
     } catch (err) {
-      console.log('Failed to initialize audio:', err);
+      debugLog('Failed to initialize audio: ' + (err instanceof Error ? err.message : String(err)));
       console.error('Failed to initialize audio:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize audio');
     } finally {
@@ -199,20 +212,22 @@ const StudioDemo = () => {
 
   // User interaction handler
   const handleUserInteraction = useCallback(() => {
-    console.log('handleUserInteraction called, needsUserInteraction:', needsUserInteraction);
+    debugLog('handleUserInteraction called, needsUserInteraction: ' + needsUserInteraction);
+      
     if (needsUserInteraction) {
       handleInitializeAudio();
     }
   }, [needsUserInteraction, handleInitializeAudio]);
 
   if (needsUserInteraction) {
-    console.log('Rendering user interaction screen');
+    debugLog('Rendering user interaction screen');
+      
     return (
       <div className="min-h-screen  flex items-center justify-center">
         <div className="text-center">
           <button
             onClick={() => {
-              console.log('Start Demo button clicked');
+              debugLog('Start Demo button clicked');
               handleUserInteraction();
             }}
             className="bg-audafact-accent-cyan text-audafact-bg-primary px-8 py-3 rounded-lg font-semibold hover:bg-audafact-accent-cyan/80 transition-colors"
@@ -270,6 +285,9 @@ const StudioDemo = () => {
 
   return (
     <div className="min-h-screen">
+      {/* Debug container - visible in production for debugging */}
+      <div id="debug-logs" className="fixed top-0 left-0 bg-black text-white p-2 text-xs max-w-md max-h-32 overflow-auto z-50"></div>
+      
       {/* Header */}
       <div className="bg-audafact-bg-secondary border-b border-audafact-border">
         <div className="px-6 py-4">
