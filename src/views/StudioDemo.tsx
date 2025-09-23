@@ -65,6 +65,7 @@ const StudioDemo = () => {
       const arrayBuffer = await file.arrayBuffer();
       return await context.decodeAudioData(arrayBuffer);
     } catch (error) {
+      debugLog('Audio decoding error: ' + (error instanceof Error ? error.message : String(error)));
       console.error('Audio decoding error:', error);
       throw new Error(`Failed to decode audio data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -83,7 +84,7 @@ const StudioDemo = () => {
       }
 
       setIsAudioInitialized(true);
-
+      
       // Use the guest track that was already loaded
       if (!currentGuestTrack) {
         throw new Error('No guest track available');
@@ -260,6 +261,9 @@ const StudioDemo = () => {
 
   return (
     <div className="min-h-screen">
+      {/* Debug container - visible in production for debugging */}
+      <div id="debug-logs" className="fixed top-0 left-0 bg-black text-white p-2 text-xs max-w-md max-h-32 overflow-auto z-50"></div>
+      
       {/* Header */}
       <div className="bg-audafact-bg-secondary border-b border-audafact-border">
         <div className="px-6 py-4">
