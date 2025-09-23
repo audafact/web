@@ -47,6 +47,7 @@ const StudioDemo = () => {
   };
   
   debugLog('StudioDemo component rendering');
+    
   const { audioContext, initializeAudio } = useAudioContext();
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +76,7 @@ const StudioDemo = () => {
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
+
       debugLog('Array buffer size: ' + arrayBuffer.byteLength);
       return await context.decodeAudioData(arrayBuffer);
     } catch (error) {
@@ -211,6 +213,7 @@ const StudioDemo = () => {
   // User interaction handler
   const handleUserInteraction = useCallback(() => {
     debugLog('handleUserInteraction called, needsUserInteraction: ' + needsUserInteraction);
+      
     if (needsUserInteraction) {
       handleInitializeAudio();
     }
@@ -218,6 +221,7 @@ const StudioDemo = () => {
 
   if (needsUserInteraction) {
     debugLog('Rendering user interaction screen');
+      
     return (
       <div className="min-h-screen  flex items-center justify-center">
         <div className="text-center">
