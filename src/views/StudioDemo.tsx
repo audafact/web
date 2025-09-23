@@ -127,6 +127,7 @@ const StudioDemo = () => {
       setTempo(DEMO_TRACK.bpm);
       
     } catch (err) {
+      console.log('Failed to initialize audio:', err);
       console.error('Failed to initialize audio:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize audio');
     } finally {
