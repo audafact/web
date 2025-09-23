@@ -36,6 +36,7 @@ const DEMO_TRACK = {
 };
 
 const StudioDemo = () => {
+  console.log('StudioDemo component rendering');
   const { audioContext, initializeAudio } = useAudioContext();
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,11 +206,15 @@ const StudioDemo = () => {
   }, [needsUserInteraction, handleInitializeAudio]);
 
   if (needsUserInteraction) {
+    console.log('Rendering user interaction screen');
     return (
       <div className="min-h-screen  flex items-center justify-center">
         <div className="text-center">
           <button
-            onClick={handleUserInteraction}
+            onClick={() => {
+              console.log('Start Demo button clicked');
+              handleUserInteraction();
+            }}
             className="bg-audafact-accent-cyan text-audafact-bg-primary px-8 py-3 rounded-lg font-semibold hover:bg-audafact-accent-cyan/80 transition-colors"
           >
             Start Demo
