@@ -80,8 +80,7 @@ const StudioDemo = () => {
       
       return audioBuffer;
     } catch (error) {
-      addDebugInfo(`AUDIO DECODING ERROR: ${error instanceof Error ? error.message : String(error)}`);
-      addDebugInfo(`File: ${file.name}, Size: ${file.size}, Type: ${file.type}, Context: ${context.state}`);
+      console.error('Audio decoding error:', error);
       throw new Error(`Failed to decode audio data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -101,7 +100,7 @@ const StudioDemo = () => {
 
       addDebugInfo('Audio context initialized successfully');
       setIsAudioInitialized(true);
-      
+
       // Use the guest track that was already loaded
       if (!currentGuestTrack) {
         throw new Error('No guest track available');
@@ -285,16 +284,6 @@ const StudioDemo = () => {
 
   return (
     <div className="min-h-screen">
-      {/* Debug Info Panel - Only show in staging/development */}
-      {debugInfo.length > 0 && (
-        <div className="fixed top-0 left-0 bg-black text-white p-4 text-xs max-w-md max-h-64 overflow-auto z-50 border border-gray-600">
-          <div className="font-bold mb-2">Debug Info:</div>
-          {debugInfo.map((info, index) => (
-            <div key={index} className="mb-1 text-green-400">{info}</div>
-          ))}
-        </div>
-      )}
-      
       {/* Header */}
       <div className="bg-audafact-bg-secondary border-b border-audafact-border">
         <div className="px-6 py-4">
