@@ -74,10 +74,12 @@ const StudioDemo = () => {
 
   // Initialize audio context and load demo track
   const handleInitializeAudio = async () => {
+    console.log('handleInitializeAudio called');
     try {
       setNeedsUserInteraction(false);
       setIsInitializingAudio(true);
       setError(null);
+      console.log('Starting audio initialization...');
 
       const context = await initializeAudio();
       if (!context) {
@@ -195,6 +197,7 @@ const StudioDemo = () => {
 
   // User interaction handler
   const handleUserInteraction = useCallback(() => {
+    console.log('handleUserInteraction called, needsUserInteraction:', needsUserInteraction);
     if (needsUserInteraction) {
       handleInitializeAudio();
     }
