@@ -51,13 +51,6 @@ const StudioDemo = () => {
   const [filterEnabled, setFilterEnabled] = useState<boolean>(false);
   const [expandedControls, setExpandedControls] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-
-  // Debug logging function that updates UI
-  const addDebugInfo = (message: string) => {
-    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    setDebugInfo(prev => [...prev, `[${timestamp}] ${message}`]);
-  };
 
   // Load guest track on component mount, but don't initialize audio until user interaction
   useEffect(() => {
@@ -69,19 +62,10 @@ const StudioDemo = () => {
   // Load audio buffer using the same method as the main app
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     try {
-      addDebugInfo(`Loading audio buffer: ${file.name} (${file.size} bytes, ${file.type})`);
-      addDebugInfo(`AudioContext state: ${context.state}`);
-      
       const arrayBuffer = await file.arrayBuffer();
-      addDebugInfo(`Array buffer created: ${arrayBuffer.byteLength} bytes`);
-      
-      const audioBuffer = await context.decodeAudioData(arrayBuffer);
-      addDebugInfo(`Audio buffer decoded successfully: ${audioBuffer.duration}s duration`);
-      
-      return audioBuffer;
+      return await context.decodeAudioData(arrayBuffer);
     } catch (error) {
-      addDebugInfo(`AUDIO DECODING ERROR: ${error instanceof Error ? error.message : String(error)}`);
-      addDebugInfo(`File: ${file.name}, Size: ${file.size}, Type: ${file.type}, Context: ${context.state}`);
+      console.error('Audio decoding error:', error);
       throw new Error(`Failed to decode audio data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -89,7 +73,6 @@ const StudioDemo = () => {
   // Initialize audio context and load demo track using GuestContext
   const handleInitializeAudio = async () => {
     try {
-      addDebugInfo('Starting audio initialization...');
       setNeedsUserInteraction(false);
       setIsInitializingAudio(true);
       setError(null);
@@ -99,32 +82,25 @@ const StudioDemo = () => {
         throw new Error('Failed to initialize audio context');
       }
 
-      addDebugInfo('Audio context initialized successfully');
       setIsAudioInitialized(true);
-      
+
       // Use the guest track that was already loaded
       if (!currentGuestTrack) {
         throw new Error('No guest track available');
       }
       
-      addDebugInfo(`Loading track: ${currentGuestTrack.name} from ${currentGuestTrack.file}`);
-      
       // Fetch the audio file using the same path as GuestContext
       const response = await fetch(currentGuestTrack.file);
       
       if (!response.ok) {
-        addDebugInfo(`Fetch failed: ${response.status} ${response.statusText}`);
         throw new Error(`Failed to fetch audio file: ${response.status} ${response.statusText}`);
       }
       
       const blob = await response.blob();
-      addDebugInfo(`Blob received: ${blob.size} bytes, type: ${blob.type}`);
       
       const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
         type: currentGuestTrack.type === 'mp3' ? 'audio/mpeg' : `audio/${currentGuestTrack.type}`
       });
-      
-      addDebugInfo(`File created: ${file.name}, ${file.size} bytes, ${file.type}`);
       
       const buffer = await loadAudioBuffer(file, context);
       
@@ -146,10 +122,9 @@ const StudioDemo = () => {
       
       setTrack(newTrack);
       setTempo(currentGuestTrack.bpm);
-      addDebugInfo('Track loaded successfully!');
       
     } catch (err) {
-      addDebugInfo(`INITIALIZATION ERROR: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('Failed to initialize audio:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize audio');
     } finally {
       setIsInitializingAudio(false);
@@ -285,16 +260,6 @@ const StudioDemo = () => {
 
   return (
     <div className="min-h-screen">
-      {/* Debug Info Panel - Only show in staging/development */}
-      {debugInfo.length > 0 && (
-        <div className="fixed top-0 left-0 bg-black text-white p-4 text-xs max-w-md max-h-64 overflow-auto z-50 border border-gray-600">
-          <div className="font-bold mb-2">Debug Info:</div>
-          {debugInfo.map((info, index) => (
-            <div key={index} className="mb-1 text-green-400">{info}</div>
-          ))}
-        </div>
-      )}
-      
       {/* Header */}
       <div className="bg-audafact-bg-secondary border-b border-audafact-border">
         <div className="px-6 py-4">
