@@ -39,14 +39,14 @@ export const router = createBrowserRouter([
           </Suspense>
         ),
       },
-      // {
-      //   path: 'studio',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <Studio />
-      //     </Suspense>
-      //   ),
-      // },
+      {
+        path: 'studio',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Studio />
+          </Suspense>
+        ),
+      },
       // {
       //   path: 'pricing',
       //   element: (
@@ -104,14 +104,14 @@ export const router = createBrowserRouter([
         ),
       },
       // Blocked routes - redirect to 404
-      {
-        path: 'studio',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
+      // {
+      //   path: 'studio',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
       {
         path: 'pricing',
         element: (
@@ -147,55 +147,55 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  // {
-  //   path: '/auth',
-  //   element: <AuthPage />,
-  // },
-  // {
-  //   path: '/auth/callback',
-  //   element: <AuthCallback />,
-  // },
-  // {
-  //   path: '/auth/verify',
-  //   element: <AuthVerification />,
-  // },
-  // {
-  //   path: '/auth/check-email',
-  //   element: <CheckEmailPage />,
-  // },
-  // Blocked auth routes - redirect to 404
   {
     path: '/auth',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <AuthPage />,
   },
   {
     path: '/auth/callback',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <AuthCallback />,
   },
   {
     path: '/auth/verify',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <AuthVerification />,
   },
   {
     path: '/auth/check-email',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <CheckEmailPage />,
   },
+  // Blocked auth routes - redirect to 404
+  // {
+  //   path: '/auth',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
+  // {
+  //   path: '/auth/callback',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
+  // {
+  //   path: '/auth/verify',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
+  // {
+  //   path: '/auth/check-email',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
   // Global catch-all for any other routes
   {
     path: '*',
