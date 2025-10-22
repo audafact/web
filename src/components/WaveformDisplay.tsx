@@ -37,6 +37,8 @@ interface WaveformDisplayProps {
   onScrollStateChange?: (isScrolling: boolean) => void;
   // Demo mode
   isGuestMode?: boolean;
+  // Drag state callback for real-time timestamp updates
+  onCueDragStateChange?: (index: number, time: number | null) => void;
 }
 
 const WaveformDisplay = ({
@@ -70,6 +72,8 @@ const WaveformDisplay = ({
   onScrollStateChange,
   // Demo mode
   isGuestMode = false,
+  // Drag state callback for real-time timestamp updates
+  onCueDragStateChange,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -453,10 +457,33 @@ const WaveformDisplay = ({
           }
         });
 
+        // Add drag event listeners for real-time timestamp updates
+        region.on('update-start', () => {
+          if (onCueDragStateChange) {
+            const cuePoint = region.start + (region.end - region.start) / 2;
+            const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
+            onCueDragStateChange(index, clampedCuePoint);
+          }
+        });
+
+        region.on('update', () => {
+          if (onCueDragStateChange) {
+            const cuePoint = region.start + (region.end - region.start) / 2;
+            const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
+            onCueDragStateChange(index, clampedCuePoint);
+          }
+        });
+
         // Only update the cue point and region position, do not recreate all regions
         region.on('update-end', () => {
           const cuePoint = region.start + (region.end - region.start) / 2;
           const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
+          
+          // Clear drag state when drag ends
+          if (onCueDragStateChange) {
+            onCueDragStateChange(index, null);
+          }
+          
           debouncedUpdate(() => {
             onCuePointChangeRef.current(index, clampedCuePoint);
             const newCuePoints = [...prevCuePointsRef.current];

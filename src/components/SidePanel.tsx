@@ -426,7 +426,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const handleAddTrack = async (asset: AudioAsset | UserTrack, isUserTrack = false) => {
     if (isUserTrack) {
       const userTrack = asset as UserTrack;
-      onAddUserTrack(userTrack, 'preview');
+      onAddUserTrack(userTrack, 'cue');
     } else {
       // Check library track limit for free users
       const canAddLibraryTrack = await canPerformAction('add_library_track');
@@ -442,7 +442,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       // No longer need to track individual user library usage
       
       const libraryAsset = asset as AudioAsset;
-      onAddFromLibrary(libraryAsset, 'preview');
+      onAddFromLibrary(libraryAsset, 'cue');
     }
     
     // Only close the sidebar on mobile and tablets (full-width mode)
