@@ -459,8 +459,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
 
     try {
-      // Delete from storage first
-      await deleteByKey(trackToRemove.fileKey);
+      // Try to delete from storage, but continue even if it fails (e.g., file not found in dev)
+      try {
+        await deleteByKey(trackToRemove.fileKey);
+      } catch (storageError) {
+        console.warn('Failed to delete from storage (continuing anyway):', storageError);
+      }
       
       // Delete from database
       const success = await DatabaseService.deleteUpload(trackId, user.id);
