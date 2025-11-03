@@ -5,7 +5,7 @@ import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
 import { useGuest } from '../context/GuestContext';
-
+import { useKeyMap } from '../hooks/useKeyMap';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
@@ -2618,6 +2618,9 @@ const Studio = () => {
     }
   };
 
+  // useKeyMap(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
+
+
   // Memoize the callback functions to prevent SidePanel re-mounting
   const memoizedSidePanelProps = useMemo(() => ({
     isOpen: isSidePanelOpen,
@@ -3748,7 +3751,7 @@ const Studio = () => {
 
             {/* Waveform Display */}
             <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
-            <WaveformDisplay
+              <WaveformDisplay
                 audioFile={track.file}
                 mode={track.mode}
                 loopStart={track.loopStart}
@@ -3775,8 +3778,6 @@ const Studio = () => {
                 isGuestMode={isGuestMode}
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
               />
-              
-
             </div>
 
             {/* Track Controls */}
