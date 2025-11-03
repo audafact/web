@@ -567,8 +567,8 @@ const StudioDemo = () => {
                 onCuePointChange={handleCuePointChange}
                 playhead={currentTime}
                 zoomLevel={zoomLevel}
-                onZoomIn={() => setZoomLevel(prev => Math.min(prev * 1.5, 10))}
-                onZoomOut={() => setZoomLevel(prev => Math.max(prev / 1.5, 0.1))}
+                onZoomIn={() => setZoomLevel(prev => Math.min(prev * 2, 8))}
+                onZoomOut={() => setZoomLevel(prev => Math.max(prev / 2, 1))}
                 onResetZoom={() => setZoomLevel(1)}
                 trackId={track.id}
                 showMeasures={showMeasures}
