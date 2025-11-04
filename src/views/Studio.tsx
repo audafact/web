@@ -5,7 +5,6 @@ import { useSidePanel } from '../context/SidePanelContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAuth } from '../context/AuthContext';
 import { useGuest } from '../context/GuestContext';
-
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
@@ -75,6 +74,8 @@ const Studio = () => {
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
+  // Track drag state for real-time timestamp updates
+  const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
@@ -1705,6 +1706,29 @@ const Studio = () => {
       })
     );
   };
+
+  // Handle cue point drag state updates for real-time timestamp display
+  const handleCueDragStateChange = (trackId: string, index: number, time: number | null) => {
+    setCueDragStates(prev => {
+      const newState = { ...prev };
+      if (!newState[trackId]) {
+        newState[trackId] = {};
+      }
+      
+      if (time === null) {
+        // Remove drag state when drag ends
+        delete newState[trackId][index];
+        if (Object.keys(newState[trackId]).length === 0) {
+          delete newState[trackId];
+        }
+      } else {
+        // Update drag state with current position
+        newState[trackId][index] = time;
+      }
+      
+      return newState;
+    });
+  };
   
   const handleModeChange = (trackId: string, mode: 'preview' | 'loop' | 'cue') => {
     if (!tracks) return;
@@ -2032,10 +2056,10 @@ const Studio = () => {
         if (trackData?.file) {
           // We have fileKey from the drag payload, use it directly
 
-          await handleAddFromLibrary(asset, 'preview');
+          await handleAddFromLibrary(asset, 'cue');
         } else {
           // Fallback to existing method
-          await handleAddFromLibrary(asset, 'preview');
+          await handleAddFromLibrary(asset, 'cue');
         }
         return;
       }
@@ -2273,7 +2297,9 @@ const Studio = () => {
         mode: trackType,
         loopStart: 0,
         loopEnd: buffer.duration,
-        cuePoints: [],
+        cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
+          buffer.duration * (i / 10)
+        ) : [],
         tempo: 120,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
@@ -2323,7 +2349,7 @@ const Studio = () => {
     }
   };
 
-  const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue' = 'preview') => {
+  const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     if (!userTrack.file) {
       setError('File not available for this track');
       return;
@@ -2354,7 +2380,9 @@ const Studio = () => {
         mode: trackType,
         loopStart: 0,
         loopEnd: buffer.duration,
-        cuePoints: [],
+        cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
+          buffer.duration * (i / 10)
+        ) : [],
         tempo: 120,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
@@ -3719,7 +3747,7 @@ const Studio = () => {
 
             {/* Waveform Display */}
             <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
-            <WaveformDisplay
+              <WaveformDisplay
                 audioFile={track.file}
                 mode={track.mode}
                 loopStart={track.loopStart}
@@ -3744,9 +3772,8 @@ const Studio = () => {
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
                 isGuestMode={isGuestMode}
+                onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
               />
-              
-
             </div>
 
             {/* Track Controls */}
@@ -3782,6 +3809,7 @@ const Studio = () => {
                 trackId={track.id}
                 seekFunctionRef={getSeekFunctionRef(track.id)}
                 recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
+                cueDragState={cueDragStates[track.id] || null}
               />
 
               {track.mode === 'cue' && track.id === selectedCueTrackId && (

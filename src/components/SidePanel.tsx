@@ -426,7 +426,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const handleAddTrack = async (asset: AudioAsset | UserTrack, isUserTrack = false) => {
     if (isUserTrack) {
       const userTrack = asset as UserTrack;
-      onAddUserTrack(userTrack, 'preview');
+      onAddUserTrack(userTrack, 'cue');
     } else {
       // Check library track limit for free users
       const canAddLibraryTrack = await canPerformAction('add_library_track');
@@ -442,7 +442,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       // No longer need to track individual user library usage
       
       const libraryAsset = asset as AudioAsset;
-      onAddFromLibrary(libraryAsset, 'preview');
+      onAddFromLibrary(libraryAsset, 'cue');
     }
     
     // Only close the sidebar on mobile and tablets (full-width mode)
@@ -459,8 +459,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
 
     try {
-      // Delete from storage first
-      await deleteByKey(trackToRemove.fileKey);
+      // Try to delete from storage, but continue even if it fails (e.g., file not found in dev)
+      try {
+        await deleteByKey(trackToRemove.fileKey);
+      } catch (storageError) {
+        console.warn('Failed to delete from storage (continuing anyway):', storageError);
+      }
       
       // Delete from database
       const success = await DatabaseService.deleteUpload(trackId, user.id);

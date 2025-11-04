@@ -2,6 +2,24 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
 
+// Utility function to format cue point timestamps
+const formatCueTimestamp = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 100);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
+};
+
+// Helper function to get current timestamp for a cue point (considering drag state)
+const getCurrentCueTimestamp = (cuePoints: number[], cueDragState: { [index: number]: number } | null, index: number): number => {
+  // If this cue point is being dragged, use the drag state value
+  if (cueDragState && cueDragState[index] !== undefined) {
+    return cueDragState[index];
+  }
+  // Otherwise use the actual cue point value
+  return cuePoints[index] || 0;
+};
+
 interface TrackControlsProps {
   mode: 'preview' | 'loop' | 'cue';
   audioContext: AudioContext | null;
@@ -42,6 +60,8 @@ interface TrackControlsProps {
   seekFunctionRef?: React.MutableRefObject<((seekTime: number) => void) | null>;
   // Recording destination for audio capture
   recordingDestination?: MediaStreamAudioDestinationNode | null;
+  // Add drag state props for real-time timestamp updates
+  cueDragState?: { [index: number]: number } | null;
 }
 
 const TrackControls = ({ 
@@ -71,7 +91,8 @@ const TrackControls = ({
   onDelete,
   trackId,
   seekFunctionRef,
-  recordingDestination
+  recordingDestination,
+  cueDragState = null
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
   const [speed, setSpeed] = useState(playbackSpeed);
@@ -1101,34 +1122,14 @@ const TrackControls = ({
           <h4 className="text-xs font-medium mb-2 audafact-text-secondary">Cue Points</h4>
           {/* First row: 1-5 (indexes 0-4) */}
           <div className="grid grid-cols-5 gap-0.5 md:gap-1 mb-1">
-            {cuePoints.slice(0, 5).map((_, index) => (
-              <button
-                key={`cue-top-${index}`}
-                onClick={() => !disabled && playCuePoint(index)}
-                disabled={disabled}
-                className={`h-7 md:h-8 text-[10px] md:text-xs py-0.5 md:py-1 px-1 rounded-sm md:rounded transition-colors duration-200 ${
-                  disabled
-                    ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
-                    : activeCueIndex === index
-                      ? 'bg-audafact-alert-red text-audafact-text-primary'
-                      : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
-                }`}
-              >
-                {index + 1}
-              </button>
-            ))}
-          </div>
-          {/* Second row: 6-0 (indexes 5-9, label 10th as 0) */}
-          <div className="grid grid-cols-5 gap-0.5 md:gap-1">
-            {cuePoints.slice(5, 10).map((_, idx) => {
-              const index = idx + 5;
-              const label = index === 9 ? '0' : String(index + 1);
+            {cuePoints.slice(0, 5).map((_, index) => {
+              const currentTimestamp = getCurrentCueTimestamp(cuePoints, cueDragState, index);
               return (
                 <button
-                  key={`cue-bottom-${index}`}
+                  key={`cue-top-${index}`}
                   onClick={() => !disabled && playCuePoint(index)}
                   disabled={disabled}
-                  className={`h-7 md:h-8 text-[10px] md:text-xs py-0.5 md:py-1 px-1 rounded-sm md:rounded transition-colors duration-200 ${
+                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
                     disabled
                       ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
                       : activeCueIndex === index
@@ -1136,7 +1137,37 @@ const TrackControls = ({
                         : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
                   }`}
                 >
-                  {label}
+                  <span className="font-medium">{index + 1}</span>
+                  <span className="text-[8px] md:text-[9px] opacity-75 leading-tight">
+                    {formatCueTimestamp(currentTimestamp)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* Second row: 6-0 (indexes 5-9, label 10th as 0) */}
+          <div className="grid grid-cols-5 gap-0.5 md:gap-1">
+            {cuePoints.slice(5, 10).map((_, idx) => {
+              const index = idx + 5;
+              const label = index === 9 ? '0' : String(index + 1);
+              const currentTimestamp = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+              return (
+                <button
+                  key={`cue-bottom-${index}`}
+                  onClick={() => !disabled && playCuePoint(index)}
+                  disabled={disabled}
+                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
+                    disabled
+                      ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
+                      : activeCueIndex === index
+                        ? 'bg-audafact-alert-red text-audafact-text-primary'
+                        : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
+                  }`}
+                >
+                  <span className="font-medium">{label}</span>
+                  <span className="text-[8px] md:text-[9px] opacity-75 leading-tight">
+                    {formatCueTimestamp(currentTimestamp)}
+                  </span>
                 </button>
               );
             })}
