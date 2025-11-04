@@ -96,6 +96,14 @@ const WaveformDisplay = ({
   const prevLoopEndRef = useRef<number>(loopEnd);
   const prevCuePointsRef = useRef<number[]>(cuePoints);
   const prevModeRef = useRef<string>(mode);
+  
+  // Ref to track current cuePoints value for use in createRegions callback
+  // This avoids stale closure issues when cuePoints values change but length doesn't
+  const currentCuePointsRef = useRef<number[]>(cuePoints);
+  
+  // Flag to track when we're updating cue points internally (from drag operations)
+  // This prevents the effect from recreating regions when the change originates from our own drag
+  const isInternalCueUpdateRef = useRef<boolean>(false);
 
   const onLoopPointsChangeRef = useRef(onLoopPointsChange);
   const onCuePointChangeRef = useRef(onCuePointChange);
@@ -107,6 +115,11 @@ const WaveformDisplay = ({
   useEffect(() => {
     onCuePointChangeRef.current = onCuePointChange;
   }, [onCuePointChange]);
+
+  // Keep currentCuePointsRef in sync with cuePoints prop
+  useEffect(() => {
+    currentCuePointsRef.current = [...cuePoints];
+  }, [cuePoints]);
 
   // Debounced update function to prevent rapid changes
   const debouncedUpdate = useCallback((callback: () => void, delay: number = 100) => {
@@ -430,7 +443,9 @@ const WaveformDisplay = ({
     } else if (mode === 'cue') {
       const duration = wavesurfer.getDuration();
       const epsilon = 0.05; // slightly larger to avoid float issues
-      const newRegions = cuePoints.map((point, index) => {
+      // Use ref to get current cuePoints to avoid stale closure issues
+      const currentCuePoints = currentCuePointsRef.current;
+      const newRegions = currentCuePoints.map((point, index) => {
         // Clamp start to [0, duration - epsilon]
         const clampedStart = Math.max(0, Math.min(point, duration - epsilon));
         // Ensure region end does not exceed duration
@@ -484,11 +499,26 @@ const WaveformDisplay = ({
             onCueDragStateChange(index, null);
           }
           
+          // Set flag to indicate this is an internal update from drag
+          // This prevents the effect from recreating/updating regions
+          isInternalCueUpdateRef.current = true;
+          
+          // Update the refs IMMEDIATELY (synchronously) to prevent the effect from recreating regions
+          // This must happen before the parent callback to ensure refs are up-to-date
+          // when the parent state update triggers the effect
+          const newCuePoints = [...prevCuePointsRef.current];
+          newCuePoints[index] = clampedCuePoint;
+          prevCuePointsRef.current = newCuePoints;
+          currentCuePointsRef.current = newCuePoints; // Also update current ref for createRegions
+          
+          // Debounce the parent callback to prevent rapid state updates
           debouncedUpdate(() => {
             onCuePointChangeRef.current(index, clampedCuePoint);
-            const newCuePoints = [...prevCuePointsRef.current];
-            newCuePoints[index] = clampedCuePoint;
-            prevCuePointsRef.current = newCuePoints;
+            // Clear the flag after the parent callback has been called
+            // Use a small delay to ensure the effect has had a chance to run and see the flag
+            setTimeout(() => {
+              isInternalCueUpdateRef.current = false;
+            }, 150);
           });
         });
 
@@ -726,10 +756,54 @@ const WaveformDisplay = ({
         prevLoopStartRef.current !== loopStart || 
         prevLoopEndRef.current !== loopEnd
       );
+      
+      // For cue points, check if they actually changed
       const cuePointsChanged = mode === 'cue' && (
         prevCuePointsRef.current.length !== cuePoints.length ||
         prevCuePointsRef.current.some((point, index) => point !== cuePoints[index])
       );
+      
+      // If this is an internal update from a drag operation, skip the effect
+      // The region position is already correct, and we've already updated the refs
+      if (mode === 'cue' && cuePointsChanged && isInternalCueUpdateRef.current) {
+        // Just sync the refs to match the prop (which should already match, but be safe)
+        prevCuePointsRef.current = [...cuePoints];
+        currentCuePointsRef.current = [...cuePoints];
+        return; // Skip any region updates
+      }
+      
+      // If cue points changed, try to update just the changed region(s) instead of recreating all
+      if (mode === 'cue' && cuePointsChanged && prevCuePointsRef.current.length === cuePoints.length) {
+        // Check if only one cue point changed (typical drag operation)
+        let changedIndex = -1;
+        let changeCount = 0;
+        for (let i = 0; i < cuePoints.length; i++) {
+          if (prevCuePointsRef.current[i] !== cuePoints[i]) {
+            changeCount++;
+            changedIndex = i;
+          }
+        }
+        
+        // If exactly one cue point changed and we have a matching region, update just that region
+        if (changeCount === 1 && changedIndex >= 0 && currentRegionsRef.current[changedIndex]) {
+          const region = currentRegionsRef.current[changedIndex];
+          const duration = wavesurfer.getDuration();
+          const epsilon = 0.05;
+          const clampedStart = Math.max(0, Math.min(cuePoints[changedIndex], duration - epsilon));
+          const regionEnd = Math.min(clampedStart + 0.01, duration);
+          
+          // Update the region position
+          region.setOptions({
+            start: clampedStart,
+            end: regionEnd
+          });
+          
+          // Update the refs to reflect the change
+          prevCuePointsRef.current = [...cuePoints];
+          currentCuePointsRef.current = [...cuePoints];
+          return; // Early return - no need to recreate all regions
+        }
+      }
       
       const needsUpdate = loopChanged || cuePointsChanged;
       
@@ -741,6 +815,7 @@ const WaveformDisplay = ({
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
+        currentCuePointsRef.current = [...cuePoints];
       }
     };
     
@@ -772,6 +847,7 @@ const WaveformDisplay = ({
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
+        currentCuePointsRef.current = [...cuePoints];
         prevModeRef.current = mode;
       }
     };
