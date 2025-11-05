@@ -242,19 +242,124 @@ const WaveformDisplay = ({
 
   // Set initial width for both containers when ready
   useEffect(() => {
-    if (wavesurfer && isReady) {
-      const duration = wavesurfer.getDuration();
+    if (wavesurfer && isReady && !initialSetupDoneRef.current) {
       const minPxPerSec = calculateMinPxPerSec();
       
-      // Use a small delay to ensure DOM is fully rendered
-      setTimeout(() => {
-        if (containerRef.current) {
-          // Always use the exact waveform width based on duration and minPxPerSec
-          const waveformWidth = duration * minPxPerSec;
-          containerRef.current.style.width = `${waveformWidth}px`;
-        }
-      }, 50);
+      // Simply set minPxPerSec - WaveSurfer's multicanvas renderer will handle
+      // splitting into multiple canvases automatically when width exceeds 8000px
+      // Only set initial value, don't update on zoom changes (handled by zoom effect)
+      wavesurfer.setOptions({ minPxPerSec });
     }
+  }, [wavesurfer, isReady, calculateMinPxPerSec]);
+
+  // Sync container width to WaveSurfer's wrapper width when zoomed in
+  // This prevents scrolling past the end of the waveform
+  useEffect(() => {
+    if (!wavesurfer || !isReady || !containerRef.current) return;
+    
+    // Only sync width when zoomed in (zoomLevel > 1)
+    // At 1x zoom, the container fits naturally
+    if (zoomLevel <= 1) {
+      // At 1x, ensure container doesn't have a fixed width that could cause issues
+      containerRef.current.style.width = '';
+      containerRef.current.style.minWidth = '';
+      containerRef.current.style.maxWidth = '';
+      return;
+    }
+    
+    // For zoom levels 2x and below, immediately update container width
+    // This makes zoom out feel instant instead of waiting for renderer (which has to clear many canvases)
+    if (zoomLevel <= 2) {
+      const duration = wavesurfer.getDuration();
+      const expectedMinPxPerSec = calculateMinPxPerSec();
+      const expectedWidth = duration * expectedMinPxPerSec;
+      if (expectedWidth > 0) {
+        containerRef.current.style.width = `${expectedWidth}px`;
+        containerRef.current.style.minWidth = `${expectedWidth}px`;
+        containerRef.current.style.maxWidth = `${expectedWidth}px`;
+      }
+      // Still set up the sync listener for any corrections after render completes
+    }
+
+    const syncContainerWidth = () => {
+      if (!containerRef.current || !wavesurfer) return;
+      
+      try {
+        const renderer = (wavesurfer as any).renderer;
+        if (renderer && renderer.wrapper) {
+          // Get the actual wrapper width that WaveSurfer calculated and rendered
+          const wrapperWidth = renderer.wrapper.getBoundingClientRect().width || 
+                              parseFloat(getComputedStyle(renderer.wrapper).width);
+          
+          // Also verify this matches the expected width based on minPxPerSec
+          const duration = wavesurfer.getDuration();
+          const expectedMinPxPerSec = calculateMinPxPerSec();
+          const expectedWidth = duration * expectedMinPxPerSec;
+          
+          // Use the wrapper width if available and close to expected, otherwise use expected
+          const targetWidth = (wrapperWidth > 0 && Math.abs(wrapperWidth - expectedWidth) < expectedWidth * 0.1) 
+            ? wrapperWidth 
+            : expectedWidth;
+          
+          if (targetWidth > 0) {
+            // Sync containerRef width to match WaveSurfer's wrapper exactly
+            // This ensures the scroll container knows where the waveform ends
+            containerRef.current.style.width = `${targetWidth}px`;
+            containerRef.current.style.minWidth = `${targetWidth}px`;
+            containerRef.current.style.maxWidth = `${targetWidth}px`;
+          }
+        }
+      } catch (e) {
+        // If we can't access renderer, use calculated width as fallback
+        const duration = wavesurfer.getDuration();
+        const minPxPerSec = calculateMinPxPerSec();
+        const calculatedWidth = duration * minPxPerSec;
+        if (containerRef.current && calculatedWidth > 0) {
+          containerRef.current.style.width = `${calculatedWidth}px`;
+          containerRef.current.style.minWidth = `${calculatedWidth}px`;
+          containerRef.current.style.maxWidth = `${calculatedWidth}px`;
+        }
+      }
+    };
+
+    // Sync width after WaveSurfer renders
+    // Use a single delay after 'rendered' event to ensure wrapper width is fully updated
+    try {
+      const renderer = (wavesurfer as any).renderer;
+      if (renderer && typeof renderer.on === 'function') {
+        // Listen to the 'rendered' event - sync width once after render completes
+        const handleRendered = () => {
+          // Single delay to ensure wrapper width is fully updated (especially after zoom)
+          setTimeout(syncContainerWidth, 200);
+        };
+        
+        renderer.on('rendered', handleRendered);
+        
+        // Initial sync if waveform is already loaded
+        if (wavesurfer.getDuration() > 0) {
+          setTimeout(syncContainerWidth, 200);
+        }
+        
+        return () => {
+          if (renderer && typeof renderer.un === 'function') {
+            renderer.un('rendered', handleRendered);
+          }
+        };
+      }
+    } catch (e) {
+      // If renderer events aren't available, fallback to periodic syncing
+    }
+    
+    // Fallback: periodic sync if renderer events aren't available
+    if (wavesurfer.getDuration() > 0) {
+      setTimeout(syncContainerWidth, 200);
+    }
+    
+    const intervalId = setInterval(syncContainerWidth, 1000);
+    
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
 
   // Auto-scroll to follow playhead during playback with center-lock behavior
@@ -859,32 +964,34 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
       const newMinPxPerSec = calculateMinPxPerSec();
-      const renderer = (wavesurfer as any).renderer;
       
-      // Use renderer.zoom() which properly triggers multicanvas re-render
-      // This works for both zoom in (splitting canvases) and zoom out (merging canvases)
-      if (renderer && typeof renderer.zoom === 'function') {
-        renderer.zoom(newMinPxPerSec);
-      } else {
-        // Fallback to setOptions if renderer.zoom isn't available
-        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
-        
-        // After setOptions, manually trigger reRender if available
-        if (renderer && typeof renderer.reRender === 'function') {
-          setTimeout(() => {
-            renderer.reRender();
-          }, 50);
+      // For zoom out operations from high zoom levels, immediately update container width
+      // This makes zoom out feel instant instead of waiting for renderer to update
+      if (zoomLevel <= 1 || (zoomLevel <= 4 && containerRef.current)) {
+        const duration = wavesurfer.getDuration();
+        const expectedWidth = duration * newMinPxPerSec;
+        if (containerRef.current && expectedWidth > 0) {
+          containerRef.current.style.width = `${expectedWidth}px`;
+          containerRef.current.style.minWidth = `${expectedWidth}px`;
+          containerRef.current.style.maxWidth = `${expectedWidth}px`;
         }
       }
       
-      // Update container width to match new zoom level
-      if (containerRef.current) {
-        const duration = wavesurfer.getDuration();
-        const newWidth = duration * newMinPxPerSec;
-        containerRef.current.style.width = `${newWidth}px`;
+      // Use WaveSurfer's zoom() method which properly triggers re-render
+      // This ensures the waveform actually zooms in/out, not just scrolls
+      try {
+        if (typeof wavesurfer.zoom === 'function') {
+          wavesurfer.zoom(newMinPxPerSec);
+        } else {
+          // Fallback to setOptions if zoom method isn't available
+          wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+        }
+      } catch (e) {
+        // If zoom fails, fallback to setOptions
+        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       }
       
-      // Center the playhead after zoom with delay to allow render to complete
+      // Center the playhead after zoom with a delay to allow render to complete
       setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 50);
     }
   }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
@@ -991,7 +1098,7 @@ const WaveformDisplay = ({
     }
   }, [showMeasures, wavesurfer, isReady]);
 
-  // Calculate horizontal grid size based on tempo and zoom (scales with zoom)
+  // Calculate horizontal grid size based on tempo (scales with zoom for vertical grid lines)
   const calculateHorizontalGridSize = useCallback(() => {
     // Convert tempo (BPM) to seconds per beat
     const secondsPerBeat = 60 / tempo;
@@ -1007,23 +1114,18 @@ const WaveformDisplay = ({
     const basePixelsPerSecond = 40;
     const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
     
-    // Calculate pixels per beat (horizontal spacing scales with zoom)
+    // Calculate pixels per beat (this scales with zoom)
     const pixelsPerBeat = beatDuration * zoomedPixelsPerSecond;
     
     // Round to nearest pixel and ensure minimum size
     return Math.max(10, Math.round(pixelsPerBeat));
   }, [tempo, timeSignature, zoomLevel]);
 
-  // Calculate vertical grid size (fixed, does NOT scale with zoom)
-  // This keeps horizontal grid lines at consistent spacing regardless of zoom level
-  const calculateVerticalGridSize = useCallback(() => {
-    // Fixed vertical spacing - doesn't change with zoom
-    // This ensures the number of horizontal grid lines remains constant
-    return 20; // Fixed pixel spacing for horizontal grid lines
-  }, []);
+  // Vertical grid size is fixed (does NOT scale with zoom)
+  // This prevents the appearance of vertical zoom
+  const VERTICAL_GRID_SIZE = 20; // Fixed pixel spacing for horizontal grid lines
 
   const horizontalGridSize = calculateHorizontalGridSize();
-  const verticalGridSize = calculateVerticalGridSize();
 
   return (
     <div className="w-full box-border overflow-hidden relative">
@@ -1079,17 +1181,19 @@ const WaveformDisplay = ({
           <div
             key={audioUrl || 'no-url'}
             ref={containerRef}
-            className="w-full box-border"
+            className={`box-border ${zoomLevel <= 1 ? 'w-full' : ''}`}
             style={{ 
               height: '170px', 
-              minWidth: '100%',
+              minWidth: zoomLevel <= 1 ? '100%' : undefined,
               position: 'relative',
               backgroundColor: '#111827',
               backgroundImage: `
                 linear-gradient(rgba(139, 148, 158, 0.1) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px)
               `,
-              backgroundSize: `${horizontalGridSize}px ${verticalGridSize}px`
+              // Horizontal (first value): scales with zoom for vertical grid lines
+              // Vertical (second value): fixed to prevent vertical zoom appearance
+              backgroundSize: `${horizontalGridSize}px ${VERTICAL_GRID_SIZE}px`
             }}
           >
             {/* Grid Lines Overlay - Always visible */}
