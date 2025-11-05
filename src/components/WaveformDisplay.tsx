@@ -885,7 +885,7 @@ const WaveformDisplay = ({
       }
       
       // Center the playhead after zoom with delay to allow render to complete
-      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 300);
+      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 50);
     }
   }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
 
