@@ -991,8 +991,8 @@ const WaveformDisplay = ({
     }
   }, [showMeasures, wavesurfer, isReady]);
 
-  // Calculate grid size based on tempo
-  const calculateGridSize = useCallback(() => {
+  // Calculate horizontal grid size based on tempo and zoom (scales with zoom)
+  const calculateHorizontalGridSize = useCallback(() => {
     // Convert tempo (BPM) to seconds per beat
     const secondsPerBeat = 60 / tempo;
     
@@ -1007,14 +1007,23 @@ const WaveformDisplay = ({
     const basePixelsPerSecond = 40;
     const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
     
-    // Calculate pixels per beat
+    // Calculate pixels per beat (horizontal spacing scales with zoom)
     const pixelsPerBeat = beatDuration * zoomedPixelsPerSecond;
     
     // Round to nearest pixel and ensure minimum size
     return Math.max(10, Math.round(pixelsPerBeat));
   }, [tempo, timeSignature, zoomLevel]);
 
-  const gridSize = calculateGridSize();
+  // Calculate vertical grid size (fixed, does NOT scale with zoom)
+  // This keeps horizontal grid lines at consistent spacing regardless of zoom level
+  const calculateVerticalGridSize = useCallback(() => {
+    // Fixed vertical spacing - doesn't change with zoom
+    // This ensures the number of horizontal grid lines remains constant
+    return 20; // Fixed pixel spacing for horizontal grid lines
+  }, []);
+
+  const horizontalGridSize = calculateHorizontalGridSize();
+  const verticalGridSize = calculateVerticalGridSize();
 
   return (
     <div className="w-full box-border overflow-hidden relative">
@@ -1080,7 +1089,7 @@ const WaveformDisplay = ({
                 linear-gradient(rgba(139, 148, 158, 0.1) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px)
               `,
-              backgroundSize: `${gridSize}px ${gridSize}px`
+              backgroundSize: `${horizontalGridSize}px ${verticalGridSize}px`
             }}
           >
             {/* Grid Lines Overlay - Always visible */}
