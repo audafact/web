@@ -859,7 +859,23 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
       const newMinPxPerSec = calculateMinPxPerSec();
-      wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+      const renderer = (wavesurfer as any).renderer;
+      
+      // Use renderer.zoom() which properly triggers multicanvas re-render
+      // This works for both zoom in (splitting canvases) and zoom out (merging canvases)
+      if (renderer && typeof renderer.zoom === 'function') {
+        renderer.zoom(newMinPxPerSec);
+      } else {
+        // Fallback to setOptions if renderer.zoom isn't available
+        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+        
+        // After setOptions, manually trigger reRender if available
+        if (renderer && typeof renderer.reRender === 'function') {
+          setTimeout(() => {
+            renderer.reRender();
+          }, 50);
+        }
+      }
       
       // Update container width to match new zoom level
       if (containerRef.current) {
@@ -868,11 +884,8 @@ const WaveformDisplay = ({
         containerRef.current.style.width = `${newWidth}px`;
       }
       
-      // Note: Removed region recreation on zoom to prevent layering issues
-      // Regions will be recreated only when mode or parameters change
-      
-      // Use improved centering with small delay for layout updates
-      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 10);
+      // Center the playhead after zoom with delay to allow render to complete
+      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 300);
     }
   }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
 
