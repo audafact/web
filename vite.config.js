@@ -130,10 +130,11 @@ export default defineConfig(({ mode }) => {
       hmr: {
         overlay: false,
       },
-      // Proxy for staging API to bypass CORS
+      // Proxy for local development API
       proxy: {
         "/api/staging": {
-          target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+          // target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+          target: "http://localhost:8787", // Use proxy for local dev
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/staging/, "/api"),
           configure: (proxy, options) => {

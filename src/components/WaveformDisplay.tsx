@@ -37,6 +37,8 @@ interface WaveformDisplayProps {
   onScrollStateChange?: (isScrolling: boolean) => void;
   // Demo mode
   isGuestMode?: boolean;
+  // Drag state callback for real-time timestamp updates
+  onCueDragStateChange?: (index: number, time: number | null) => void;
 }
 
 const WaveformDisplay = ({
@@ -70,6 +72,8 @@ const WaveformDisplay = ({
   onScrollStateChange,
   // Demo mode
   isGuestMode = false,
+  // Drag state callback for real-time timestamp updates
+  onCueDragStateChange,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -92,6 +96,16 @@ const WaveformDisplay = ({
   const prevLoopEndRef = useRef<number>(loopEnd);
   const prevCuePointsRef = useRef<number[]>(cuePoints);
   const prevModeRef = useRef<string>(mode);
+  const prevPlayheadRef = useRef<number | undefined>(playhead);
+  const prevPlaybackTimeRef = useRef<number>(playbackTime);
+  
+  // Ref to track current cuePoints value for use in createRegions callback
+  // This avoids stale closure issues when cuePoints values change but length doesn't
+  const currentCuePointsRef = useRef<number[]>(cuePoints);
+  
+  // Flag to track when we're updating cue points internally (from drag operations)
+  // This prevents the effect from recreating regions when the change originates from our own drag
+  const isInternalCueUpdateRef = useRef<boolean>(false);
 
   const onLoopPointsChangeRef = useRef(onLoopPointsChange);
   const onCuePointChangeRef = useRef(onCuePointChange);
@@ -103,6 +117,11 @@ const WaveformDisplay = ({
   useEffect(() => {
     onCuePointChangeRef.current = onCuePointChange;
   }, [onCuePointChange]);
+
+  // Keep currentCuePointsRef in sync with cuePoints prop
+  useEffect(() => {
+    currentCuePointsRef.current = [...cuePoints];
+  }, [cuePoints]);
 
   // Debounced update function to prevent rapid changes
   const debouncedUpdate = useCallback((callback: () => void, delay: number = 100) => {
@@ -225,19 +244,124 @@ const WaveformDisplay = ({
 
   // Set initial width for both containers when ready
   useEffect(() => {
-    if (wavesurfer && isReady) {
-      const duration = wavesurfer.getDuration();
+    if (wavesurfer && isReady && !initialSetupDoneRef.current) {
       const minPxPerSec = calculateMinPxPerSec();
       
-      // Use a small delay to ensure DOM is fully rendered
-      setTimeout(() => {
-        if (containerRef.current) {
-          // Always use the exact waveform width based on duration and minPxPerSec
-          const waveformWidth = duration * minPxPerSec;
-          containerRef.current.style.width = `${waveformWidth}px`;
-        }
-      }, 50);
+      // Simply set minPxPerSec - WaveSurfer's multicanvas renderer will handle
+      // splitting into multiple canvases automatically when width exceeds 8000px
+      // Only set initial value, don't update on zoom changes (handled by zoom effect)
+      wavesurfer.setOptions({ minPxPerSec });
     }
+  }, [wavesurfer, isReady, calculateMinPxPerSec]);
+
+  // Sync container width to WaveSurfer's wrapper width when zoomed in
+  // This prevents scrolling past the end of the waveform
+  useEffect(() => {
+    if (!wavesurfer || !isReady || !containerRef.current) return;
+    
+    // Only sync width when zoomed in (zoomLevel > 1)
+    // At 1x zoom, the container fits naturally
+    if (zoomLevel <= 1) {
+      // At 1x, ensure container doesn't have a fixed width that could cause issues
+      containerRef.current.style.width = '';
+      containerRef.current.style.minWidth = '';
+      containerRef.current.style.maxWidth = '';
+      return;
+    }
+    
+    // For zoom levels 2x and below, immediately update container width
+    // This makes zoom out feel instant instead of waiting for renderer (which has to clear many canvases)
+    if (zoomLevel <= 2) {
+      const duration = wavesurfer.getDuration();
+      const expectedMinPxPerSec = calculateMinPxPerSec();
+      const expectedWidth = duration * expectedMinPxPerSec;
+      if (expectedWidth > 0) {
+        containerRef.current.style.width = `${expectedWidth}px`;
+        containerRef.current.style.minWidth = `${expectedWidth}px`;
+        containerRef.current.style.maxWidth = `${expectedWidth}px`;
+      }
+      // Still set up the sync listener for any corrections after render completes
+    }
+
+    const syncContainerWidth = () => {
+      if (!containerRef.current || !wavesurfer) return;
+      
+      try {
+        const renderer = (wavesurfer as any).renderer;
+        if (renderer && renderer.wrapper) {
+          // Get the actual wrapper width that WaveSurfer calculated and rendered
+          const wrapperWidth = renderer.wrapper.getBoundingClientRect().width || 
+                              parseFloat(getComputedStyle(renderer.wrapper).width);
+          
+          // Also verify this matches the expected width based on minPxPerSec
+          const duration = wavesurfer.getDuration();
+          const expectedMinPxPerSec = calculateMinPxPerSec();
+          const expectedWidth = duration * expectedMinPxPerSec;
+          
+          // Use the wrapper width if available and close to expected, otherwise use expected
+          const targetWidth = (wrapperWidth > 0 && Math.abs(wrapperWidth - expectedWidth) < expectedWidth * 0.1) 
+            ? wrapperWidth 
+            : expectedWidth;
+          
+          if (targetWidth > 0) {
+            // Sync containerRef width to match WaveSurfer's wrapper exactly
+            // This ensures the scroll container knows where the waveform ends
+            containerRef.current.style.width = `${targetWidth}px`;
+            containerRef.current.style.minWidth = `${targetWidth}px`;
+            containerRef.current.style.maxWidth = `${targetWidth}px`;
+          }
+        }
+      } catch (e) {
+        // If we can't access renderer, use calculated width as fallback
+        const duration = wavesurfer.getDuration();
+        const minPxPerSec = calculateMinPxPerSec();
+        const calculatedWidth = duration * minPxPerSec;
+        if (containerRef.current && calculatedWidth > 0) {
+          containerRef.current.style.width = `${calculatedWidth}px`;
+          containerRef.current.style.minWidth = `${calculatedWidth}px`;
+          containerRef.current.style.maxWidth = `${calculatedWidth}px`;
+        }
+      }
+    };
+
+    // Sync width after WaveSurfer renders
+    // Use a single delay after 'rendered' event to ensure wrapper width is fully updated
+    try {
+      const renderer = (wavesurfer as any).renderer;
+      if (renderer && typeof renderer.on === 'function') {
+        // Listen to the 'rendered' event - sync width once after render completes
+        const handleRendered = () => {
+          // Single delay to ensure wrapper width is fully updated (especially after zoom)
+          setTimeout(syncContainerWidth, 200);
+        };
+        
+        renderer.on('rendered', handleRendered);
+        
+        // Initial sync if waveform is already loaded
+        if (wavesurfer.getDuration() > 0) {
+          setTimeout(syncContainerWidth, 200);
+        }
+        
+        return () => {
+          if (renderer && typeof renderer.un === 'function') {
+            renderer.un('rendered', handleRendered);
+          }
+        };
+      }
+    } catch (e) {
+      // If renderer events aren't available, fallback to periodic syncing
+    }
+    
+    // Fallback: periodic sync if renderer events aren't available
+    if (wavesurfer.getDuration() > 0) {
+      setTimeout(syncContainerWidth, 200);
+    }
+    
+    const intervalId = setInterval(syncContainerWidth, 1000);
+    
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
 
   // Auto-scroll to follow playhead during playback with center-lock behavior
@@ -298,7 +422,35 @@ const WaveformDisplay = ({
       left: clampedScrollTarget,
       behavior: 'smooth'
     });
-  }, [wavesurfer, isReady, zoomLevel]);
+  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
+
+  // Function to scroll viewport to playhead position (used when cues are triggered)
+  const scrollToPlayhead = useCallback((targetTime: number) => {
+    if (!wavesurfer || !isReady || !containerRef.current || zoomLevel <= 1) return;
+    
+    const parentContainer = containerRef.current.parentElement;
+    if (!parentContainer) return;
+    
+    const pxPerSec = calculateMinPxPerSec();
+    const playheadPosition = targetTime * pxPerSec;
+    const containerWidth = parentContainer.clientWidth;
+    const containerCenter = containerWidth / 2;
+    const totalWidth = wavesurfer.getDuration() * pxPerSec;
+    
+    // Calculate scroll position to center the playhead
+    const scrollTarget = playheadPosition - containerCenter;
+    
+    // Ensure scroll target is within bounds
+    const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
+    const clampedScrollTarget = Math.max(0, Math.min(scrollTarget, maxScrollLeft));
+    
+    // Always scroll to center the playhead when this function is called
+    // (it's only called for significant jumps like cue triggers)
+    parentContainer.scrollTo({
+      left: clampedScrollTarget,
+      behavior: 'auto' // Use 'auto' for immediate scrolling when cues are triggered
+    });
+  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
 
   // Function to clear all regions
   const clearRegions = useCallback(async () => {
@@ -426,7 +578,9 @@ const WaveformDisplay = ({
     } else if (mode === 'cue') {
       const duration = wavesurfer.getDuration();
       const epsilon = 0.05; // slightly larger to avoid float issues
-      const newRegions = cuePoints.map((point, index) => {
+      // Use ref to get current cuePoints to avoid stale closure issues
+      const currentCuePoints = currentCuePointsRef.current;
+      const newRegions = currentCuePoints.map((point, index) => {
         // Clamp start to [0, duration - epsilon]
         const clampedStart = Math.max(0, Math.min(point, duration - epsilon));
         // Ensure region end does not exceed duration
@@ -453,15 +607,53 @@ const WaveformDisplay = ({
           }
         });
 
+        // Add drag event listeners for real-time timestamp updates
+        region.on('update-start', () => {
+          if (onCueDragStateChange) {
+            const cuePoint = region.start + (region.end - region.start) / 2;
+            const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
+            onCueDragStateChange(index, clampedCuePoint);
+          }
+        });
+
+        region.on('update', () => {
+          if (onCueDragStateChange) {
+            const cuePoint = region.start + (region.end - region.start) / 2;
+            const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
+            onCueDragStateChange(index, clampedCuePoint);
+          }
+        });
+
         // Only update the cue point and region position, do not recreate all regions
         region.on('update-end', () => {
           const cuePoint = region.start + (region.end - region.start) / 2;
           const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
+          
+          // Clear drag state when drag ends
+          if (onCueDragStateChange) {
+            onCueDragStateChange(index, null);
+          }
+          
+          // Set flag to indicate this is an internal update from drag
+          // This prevents the effect from recreating/updating regions
+          isInternalCueUpdateRef.current = true;
+          
+          // Update the refs IMMEDIATELY (synchronously) to prevent the effect from recreating regions
+          // This must happen before the parent callback to ensure refs are up-to-date
+          // when the parent state update triggers the effect
+          const newCuePoints = [...prevCuePointsRef.current];
+          newCuePoints[index] = clampedCuePoint;
+          prevCuePointsRef.current = newCuePoints;
+          currentCuePointsRef.current = newCuePoints; // Also update current ref for createRegions
+          
+          // Debounce the parent callback to prevent rapid state updates
           debouncedUpdate(() => {
             onCuePointChangeRef.current(index, clampedCuePoint);
-            const newCuePoints = [...prevCuePointsRef.current];
-            newCuePoints[index] = clampedCuePoint;
-            prevCuePointsRef.current = newCuePoints;
+            // Clear the flag after the parent callback has been called
+            // Use a small delay to ensure the effect has had a chance to run and see the flag
+            setTimeout(() => {
+              isInternalCueUpdateRef.current = false;
+            }, 150);
           });
         });
 
@@ -699,10 +891,54 @@ const WaveformDisplay = ({
         prevLoopStartRef.current !== loopStart || 
         prevLoopEndRef.current !== loopEnd
       );
+      
+      // For cue points, check if they actually changed
       const cuePointsChanged = mode === 'cue' && (
         prevCuePointsRef.current.length !== cuePoints.length ||
         prevCuePointsRef.current.some((point, index) => point !== cuePoints[index])
       );
+      
+      // If this is an internal update from a drag operation, skip the effect
+      // The region position is already correct, and we've already updated the refs
+      if (mode === 'cue' && cuePointsChanged && isInternalCueUpdateRef.current) {
+        // Just sync the refs to match the prop (which should already match, but be safe)
+        prevCuePointsRef.current = [...cuePoints];
+        currentCuePointsRef.current = [...cuePoints];
+        return; // Skip any region updates
+      }
+      
+      // If cue points changed, try to update just the changed region(s) instead of recreating all
+      if (mode === 'cue' && cuePointsChanged && prevCuePointsRef.current.length === cuePoints.length) {
+        // Check if only one cue point changed (typical drag operation)
+        let changedIndex = -1;
+        let changeCount = 0;
+        for (let i = 0; i < cuePoints.length; i++) {
+          if (prevCuePointsRef.current[i] !== cuePoints[i]) {
+            changeCount++;
+            changedIndex = i;
+          }
+        }
+        
+        // If exactly one cue point changed and we have a matching region, update just that region
+        if (changeCount === 1 && changedIndex >= 0 && currentRegionsRef.current[changedIndex]) {
+          const region = currentRegionsRef.current[changedIndex];
+          const duration = wavesurfer.getDuration();
+          const epsilon = 0.05;
+          const clampedStart = Math.max(0, Math.min(cuePoints[changedIndex], duration - epsilon));
+          const regionEnd = Math.min(clampedStart + 0.01, duration);
+          
+          // Update the region position
+          region.setOptions({
+            start: clampedStart,
+            end: regionEnd
+          });
+          
+          // Update the refs to reflect the change
+          prevCuePointsRef.current = [...cuePoints];
+          currentCuePointsRef.current = [...cuePoints];
+          return; // Early return - no need to recreate all regions
+        }
+      }
       
       const needsUpdate = loopChanged || cuePointsChanged;
       
@@ -714,6 +950,7 @@ const WaveformDisplay = ({
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
+        currentCuePointsRef.current = [...cuePoints];
       }
     };
     
@@ -745,6 +982,7 @@ const WaveformDisplay = ({
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
+        currentCuePointsRef.current = [...cuePoints];
         prevModeRef.current = mode;
       }
     };
@@ -756,20 +994,35 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
       const newMinPxPerSec = calculateMinPxPerSec();
-      wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
       
-      // Update container width to match new zoom level
-      if (containerRef.current) {
+      // For zoom out operations from high zoom levels, immediately update container width
+      // This makes zoom out feel instant instead of waiting for renderer to update
+      if (zoomLevel <= 1 || (zoomLevel <= 4 && containerRef.current)) {
         const duration = wavesurfer.getDuration();
-        const newWidth = duration * newMinPxPerSec;
-        containerRef.current.style.width = `${newWidth}px`;
+        const expectedWidth = duration * newMinPxPerSec;
+        if (containerRef.current && expectedWidth > 0) {
+          containerRef.current.style.width = `${expectedWidth}px`;
+          containerRef.current.style.minWidth = `${expectedWidth}px`;
+          containerRef.current.style.maxWidth = `${expectedWidth}px`;
+        }
       }
       
-      // Note: Removed region recreation on zoom to prevent layering issues
-      // Regions will be recreated only when mode or parameters change
+      // Use WaveSurfer's zoom() method which properly triggers re-render
+      // This ensures the waveform actually zooms in/out, not just scrolls
+      try {
+        if (typeof wavesurfer.zoom === 'function') {
+          wavesurfer.zoom(newMinPxPerSec);
+        } else {
+          // Fallback to setOptions if zoom method isn't available
+          wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+        }
+      } catch (e) {
+        // If zoom fails, fallback to setOptions
+        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+      }
       
-      // Use improved centering with small delay for layout updates
-      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 10);
+      // Center the playhead after zoom with a delay to allow render to complete
+      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 50);
     }
   }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
 
@@ -854,20 +1107,55 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (!wavesurfer || !isReady) return;
 
+    const prevPlaybackTime = prevPlaybackTimeRef.current;
+    
+    // Detect significant jumps (cue triggers) - threshold of 0.5 seconds
+    const jumpThreshold = 0.5;
+    const isSignificantJump = Math.abs(playbackTime - prevPlaybackTime) > jumpThreshold;
+    
     const now = performance.now();
-    // Throttle updates to 30fps for smoother performance
-    if (now - lastUpdateTimeRef.current < 33) return;
+    // For significant jumps, don't throttle - update immediately
+    // For normal playback, throttle updates to 30fps for smoother performance
+    if (!isSignificantJump && now - lastUpdateTimeRef.current < 33) {
+      return;
+    }
 
     wavesurfer.setTime(playbackTime);
     lastUpdateTimeRef.current = now;
-  }, [playbackTime, wavesurfer, isReady]);
+    
+    // If there's a significant jump and we're zoomed in, scroll to the playhead
+    if (isSignificantJump && zoomLevel > 1) {
+      // Use a small delay to ensure wavesurfer has updated
+      setTimeout(() => {
+        scrollToPlayhead(playbackTime);
+      }, 10);
+    }
+    
+    prevPlaybackTimeRef.current = playbackTime;
+  }, [playbackTime, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
 
   // Handle explicit playhead updates (less frequent)
   useEffect(() => {
     if (wavesurfer && isReady && typeof playhead === 'number') {
+      const prevPlayhead = prevPlayheadRef.current;
+      
+      // Detect significant jumps (cue triggers) - threshold of 0.5 seconds
+      const jumpThreshold = 0.5;
+      const isSignificantJump = prevPlayhead !== undefined && Math.abs(playhead - prevPlayhead) > jumpThreshold;
+      
       wavesurfer.setTime(playhead);
+      
+      // If there's a significant jump and we're zoomed in, scroll to the playhead
+      if (isSignificantJump && zoomLevel > 1) {
+        // Use a small delay to ensure wavesurfer has updated
+        setTimeout(() => {
+          scrollToPlayhead(playhead);
+        }, 10);
+      }
+      
+      prevPlayheadRef.current = playhead;
     }
-  }, [playhead, wavesurfer, isReady]);
+  }, [playhead, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
 
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
@@ -875,8 +1163,8 @@ const WaveformDisplay = ({
     }
   }, [showMeasures, wavesurfer, isReady]);
 
-  // Calculate grid size based on tempo
-  const calculateGridSize = useCallback(() => {
+  // Calculate horizontal grid size based on tempo (scales with zoom for vertical grid lines)
+  const calculateHorizontalGridSize = useCallback(() => {
     // Convert tempo (BPM) to seconds per beat
     const secondsPerBeat = 60 / tempo;
     
@@ -891,14 +1179,18 @@ const WaveformDisplay = ({
     const basePixelsPerSecond = 40;
     const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
     
-    // Calculate pixels per beat
+    // Calculate pixels per beat (this scales with zoom)
     const pixelsPerBeat = beatDuration * zoomedPixelsPerSecond;
     
     // Round to nearest pixel and ensure minimum size
     return Math.max(10, Math.round(pixelsPerBeat));
   }, [tempo, timeSignature, zoomLevel]);
 
-  const gridSize = calculateGridSize();
+  // Vertical grid size is fixed (does NOT scale with zoom)
+  // This prevents the appearance of vertical zoom
+  const VERTICAL_GRID_SIZE = 20; // Fixed pixel spacing for horizontal grid lines
+
+  const horizontalGridSize = calculateHorizontalGridSize();
 
   return (
     <div className="w-full box-border overflow-hidden relative">
@@ -954,17 +1246,19 @@ const WaveformDisplay = ({
           <div
             key={audioUrl || 'no-url'}
             ref={containerRef}
-            className="w-full box-border"
+            className={`box-border ${zoomLevel <= 1 ? 'w-full' : ''}`}
             style={{ 
               height: '170px', 
-              minWidth: '100%',
+              minWidth: zoomLevel <= 1 ? '100%' : undefined,
               position: 'relative',
               backgroundColor: '#111827',
               backgroundImage: `
                 linear-gradient(rgba(139, 148, 158, 0.1) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(139, 148, 158, 0.1) 1px, transparent 1px)
               `,
-              backgroundSize: `${gridSize}px ${gridSize}px`
+              // Horizontal (first value): scales with zoom for vertical grid lines
+              // Vertical (second value): fixed to prevent vertical zoom appearance
+              backgroundSize: `${horizontalGridSize}px ${VERTICAL_GRID_SIZE}px`
             }}
           >
             {/* Grid Lines Overlay - Always visible */}
