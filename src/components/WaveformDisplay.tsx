@@ -96,6 +96,8 @@ const WaveformDisplay = ({
   const prevLoopEndRef = useRef<number>(loopEnd);
   const prevCuePointsRef = useRef<number[]>(cuePoints);
   const prevModeRef = useRef<string>(mode);
+  const prevPlayheadRef = useRef<number | undefined>(playhead);
+  const prevPlaybackTimeRef = useRef<number>(playbackTime);
   
   // Ref to track current cuePoints value for use in createRegions callback
   // This avoids stale closure issues when cuePoints values change but length doesn't
@@ -420,7 +422,35 @@ const WaveformDisplay = ({
       left: clampedScrollTarget,
       behavior: 'smooth'
     });
-  }, [wavesurfer, isReady, zoomLevel]);
+  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
+
+  // Function to scroll viewport to playhead position (used when cues are triggered)
+  const scrollToPlayhead = useCallback((targetTime: number) => {
+    if (!wavesurfer || !isReady || !containerRef.current || zoomLevel <= 1) return;
+    
+    const parentContainer = containerRef.current.parentElement;
+    if (!parentContainer) return;
+    
+    const pxPerSec = calculateMinPxPerSec();
+    const playheadPosition = targetTime * pxPerSec;
+    const containerWidth = parentContainer.clientWidth;
+    const containerCenter = containerWidth / 2;
+    const totalWidth = wavesurfer.getDuration() * pxPerSec;
+    
+    // Calculate scroll position to center the playhead
+    const scrollTarget = playheadPosition - containerCenter;
+    
+    // Ensure scroll target is within bounds
+    const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
+    const clampedScrollTarget = Math.max(0, Math.min(scrollTarget, maxScrollLeft));
+    
+    // Always scroll to center the playhead when this function is called
+    // (it's only called for significant jumps like cue triggers)
+    parentContainer.scrollTo({
+      left: clampedScrollTarget,
+      behavior: 'auto' // Use 'auto' for immediate scrolling when cues are triggered
+    });
+  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
 
   // Function to clear all regions
   const clearRegions = useCallback(async () => {
@@ -1077,20 +1107,55 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (!wavesurfer || !isReady) return;
 
+    const prevPlaybackTime = prevPlaybackTimeRef.current;
+    
+    // Detect significant jumps (cue triggers) - threshold of 0.5 seconds
+    const jumpThreshold = 0.5;
+    const isSignificantJump = Math.abs(playbackTime - prevPlaybackTime) > jumpThreshold;
+    
     const now = performance.now();
-    // Throttle updates to 30fps for smoother performance
-    if (now - lastUpdateTimeRef.current < 33) return;
+    // For significant jumps, don't throttle - update immediately
+    // For normal playback, throttle updates to 30fps for smoother performance
+    if (!isSignificantJump && now - lastUpdateTimeRef.current < 33) {
+      return;
+    }
 
     wavesurfer.setTime(playbackTime);
     lastUpdateTimeRef.current = now;
-  }, [playbackTime, wavesurfer, isReady]);
+    
+    // If there's a significant jump and we're zoomed in, scroll to the playhead
+    if (isSignificantJump && zoomLevel > 1) {
+      // Use a small delay to ensure wavesurfer has updated
+      setTimeout(() => {
+        scrollToPlayhead(playbackTime);
+      }, 10);
+    }
+    
+    prevPlaybackTimeRef.current = playbackTime;
+  }, [playbackTime, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
 
   // Handle explicit playhead updates (less frequent)
   useEffect(() => {
     if (wavesurfer && isReady && typeof playhead === 'number') {
+      const prevPlayhead = prevPlayheadRef.current;
+      
+      // Detect significant jumps (cue triggers) - threshold of 0.5 seconds
+      const jumpThreshold = 0.5;
+      const isSignificantJump = prevPlayhead !== undefined && Math.abs(playhead - prevPlayhead) > jumpThreshold;
+      
       wavesurfer.setTime(playhead);
+      
+      // If there's a significant jump and we're zoomed in, scroll to the playhead
+      if (isSignificantJump && zoomLevel > 1) {
+        // Use a small delay to ensure wavesurfer has updated
+        setTimeout(() => {
+          scrollToPlayhead(playhead);
+        }, 10);
+      }
+      
+      prevPlayheadRef.current = playhead;
     }
-  }, [playhead, wavesurfer, isReady]);
+  }, [playhead, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
 
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
