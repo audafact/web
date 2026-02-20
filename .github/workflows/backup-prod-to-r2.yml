@@ -1,0 +1,41 @@
+name: Backup Prod DB to R2
+
+on:
+  schedule:
+    # Daily at 2:00 AM UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install AWS CLI (for R2 S3-compatible API)
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+          aws --version
+
+      - name: Run backup script
+        working-directory: web
+        run: chmod +x scripts/backup-prod-to-r2.sh && ./scripts/backup-prod-to-r2.sh
+        env:
+          PGHOST: ${{ secrets.PG_PROD_HOST }}
+          PGUSER: ${{ secrets.PG_PROD_USER }}
+          PGPASSWORD: ${{ secrets.PG_PROD_PASSWORD }}
+          PGPORT: ${{ secrets.PG_PROD_PORT || '5432' }}
+          PGDATABASE: ${{ secrets.PG_PROD_DATABASE || 'postgres' }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ vars.R2_BACKUP_BUCKET || 'audafact-db-backups' }}
+          RETENTION_DAYS: ${{ vars.R2_BACKUP_RETENTION_DAYS || '30' }}

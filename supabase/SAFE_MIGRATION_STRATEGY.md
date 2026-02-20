@@ -202,6 +202,15 @@ psql -f scripts/test-user-creation-trigger.sql
 5. **Test and verify** - Ensure user creation trigger works
 6. **Keep backup until verified** - Don't delete until you're confident
 
+### Environment Isolation and Guardrails
+
+**Only run destructive commands on local/dev; staging for rehearsals; prod via guarded push only.**
+
+- **Local:** Use `supabase start` + `supabase db reset` for development. Harmless.
+- **Staging:** Run `supabase db push` after linking to staging. CI applies migrations to staging on push to main.
+- **Prod:** Migrations to prod are manual and guarded. Never run `supabase db reset --linked` – it resets the remote DB.
+- **guard-destructive.sh** prevents running against prod when linked. See `docs/SUPABASE_PROJECTS.md`.
+
 ### Contact
 
 For questions or issues during migration, refer to this document and the rollback procedures outlined above. The backup script provides comprehensive protection for your data.

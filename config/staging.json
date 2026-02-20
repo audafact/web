@@ -7,8 +7,8 @@
     "https://staging.audafact.com"
   ],
   "stripeMode": "test",
-  "supabaseUrl": "https://julxtxaspzhwbylnqkkj.supabase.co",
-  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1bHh0eGFzcHpod2J5bG5xa2tqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM3MzU3NzcsImV4cCI6MjA2OTMxMTc3N30.0KKAyMEeLFD3ZXq0REC_1Hp8G_cEO5igfHFW6YLzA4A",
+  "supabaseUrl": "https://catkuwhosrurkpmzsteh.supabase.co",
+  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhdGt1d2hvc3J1cmtwbXpzdGVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1NjIzNDQsImV4cCI6MjA4NzEzODM0NH0.INio9ARzb8XIMjWvWin50Z5sO4iAVrKzMf_DN0Wk_Ik",
   "mediaBase": "https://media.audafact.com",
   "r2AccountId": "829b50f2f5c67ed26ec5cc89af772064",
   "r2Bucket": "audafact",
