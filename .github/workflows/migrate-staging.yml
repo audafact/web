@@ -3,7 +3,7 @@ name: Migrate Staging
 on:
   push:
     branches:
-      - main
+      - develop
     paths:
       - "web/supabase/migrations/**"
   workflow_dispatch:
