@@ -60,7 +60,7 @@
     "web-audio-beat-detector": "^8.2.29"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.873.0",
+    "@aws-sdk/client-s3": "^3.994.0",
     "@aws-sdk/lib-storage": "^3.873.0",
     "@babel/plugin-transform-react-jsx": "^7.27.1",
     "@babel/preset-react": "^7.27.1",
