@@ -45,13 +45,13 @@ fi
 echo ""
 echo "🚀 Running migration..."
 
-# Use the connection details we know from the project
-echo "📡 Using database connection details..."
+# DB URL must be provided via env - never commit credentials
+if [ -z "$DB_URL" ]; then
+  echo "❌ Error: DB_URL is required. Set it from Supabase Dashboard → Settings → Database."
+  echo "   Example: export DB_URL='postgresql://postgres.[REF]:[PASSWORD]@aws-0-us-east-2.pooler.supabase.com:5432/postgres'"
+  exit 1
+fi
 
-# Construct the connection string from known values
-DB_URL="postgresql://postgres.julxtxaspzhwbylnqkkj:1VazF1poRwrObKUE@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
-
-echo "✅ Using database connection: $DB_URL"
 echo "📡 Connecting to database..."
 
 # Run the migration

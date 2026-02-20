@@ -82,9 +82,12 @@ If a migration causes issues:
 # Revert the last migration
 npx supabase migration repair --status reverted [migration_name]
 
-# Reset to a known good state
-npx supabase db reset --linked
+# Restore from backup to staging (never reset prod)
+# See docs/BACKUP_RESTORE_PLAYBOOK.md
+TARGET_DB_URL="postgresql://postgres:PASS@db.STAGING_REF.supabase.co:5432/postgres" ./scripts/restore-from-r2.sh [backup.dump]
 ```
+
+**Never run `supabase db reset --linked`** – it resets the remote DB. Use local (`supabase start` + `db reset`) or restore from R2 backup to staging.
 
 ## Current Protected Tables
 

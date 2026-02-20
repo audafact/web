@@ -6,6 +6,12 @@
 
 set -e  # Exit on any error
 
+# Guard: refuse if linked project is prod
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/guard-destructive.sh" ]; then
+  source "$SCRIPT_DIR/guard-destructive.sh"
+fi
+
 echo "🚀 Starting Safe Migration Execution"
 echo "=================================="
 

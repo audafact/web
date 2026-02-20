@@ -3,6 +3,7 @@
 
 .env
 .env.ingest
+.env.prod
 assets/
 scripts/archive/
 parts/

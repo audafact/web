@@ -1,6 +1,7 @@
 import { RouterProvider } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { AudioProvider } from './context/AudioContext';
+import { TransportProvider } from './context/TransportContext';
 import { SidePanelProvider } from './context/SidePanelContext';
 import { RecordingProvider } from './context/RecordingContext';
 import { GuestProvider } from './context/GuestContext';
@@ -59,14 +60,16 @@ function App() {
         <GuestProvider>
           <LibraryProvider>
             <AudioProvider>
-              <SidePanelProvider>
-                <RecordingProvider>
-                  <RouterProvider router={router} />
-                  <GlobalModalManager />
-                  <SuccessMessageManager />
-                  <CookieConsentBanner />
-                </RecordingProvider>
-              </SidePanelProvider>
+              <TransportProvider>
+                <SidePanelProvider>
+                  <RecordingProvider>
+                    <RouterProvider router={router} />
+                    <GlobalModalManager />
+                    <SuccessMessageManager />
+                    <CookieConsentBanner />
+                  </RecordingProvider>
+                </SidePanelProvider>
+              </TransportProvider>
             </AudioProvider>
           </LibraryProvider>
         </GuestProvider>
