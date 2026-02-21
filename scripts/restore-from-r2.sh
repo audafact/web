@@ -16,7 +16,18 @@
 
 set -e
 
-R2_BUCKET="${R2_BUCKET:-audafact-db-backups}"
+# Load scripts/.env if present (run from web/ dir)
+if [ -f "scripts/.env" ]; then
+  set +e
+  source scripts/.env 2>/dev/null || true
+  set -e
+fi
+
+# Always use backup bucket for db restores (ignore R2_BUCKET which may be for other uses)
+R2_BUCKET="${R2_BACKUP_BUCKET:-audafact-db-backups}"
+# Prefer backup credentials (scoped to backup bucket); fall back to general R2 creds
+R2_ACCESS_KEY_ID="${R2_BACKUP_ACCESS_KEY_ID:-$R2_ACCESS_KEY_ID}"
+R2_SECRET_ACCESS_KEY="${R2_BACKUP_SECRET_ACCESS_KEY:-$R2_SECRET_ACCESS_KEY}"
 PROD_REF="julxtxaspzhwbylnqkkj"
 
 RED='\033[0;31m'
@@ -71,13 +82,42 @@ fi
 
 print_success "Downloaded. Restoring to target DB..."
 
-pg_restore \
+# Supabase Cloud (staging) restricts postgres: cannot DROP/CREATE auth, storage, realtime.
+# Restore only public schema there. Full restore works for local (127.0.0.1).
+RESTORE_SCHEMA=""
+RESTORE_EXCLUDE=""
+if echo "$TARGET_DB_URL" | grep -qE '\.(supabase\.co|pooler\.supabase\.com)'; then
+  RESTORE_SCHEMA="-n public"
+  # Exclude handle_new_user: it is used by trigger on auth.users (managed). Staging has it from migrations.
+  RESTORE_EXCLUDE="--exclude-function=public.handle_new_user()"
+  print_status "Supabase Cloud detected: restoring public schema only (auth/storage/realtime are managed)"
+fi
+
+# Prefer pg_restore from postgresql@17 (dumps use format 1.16)
+PG_RESTORE="pg_restore"
+for candidate in /opt/homebrew/opt/postgresql@17/bin/pg_restore /usr/local/opt/postgresql@17/bin/pg_restore; do
+  if [ -x "$candidate" ]; then
+    PG_RESTORE="$candidate"
+    break
+  fi
+done
+
+# Allow partial restore: do not exit on errors (auth FKs, etc.) so app tables still restore
+$PG_RESTORE \
   --dbname="$TARGET_DB_URL" \
   --clean \
   --if-exists \
   --no-owner \
   --no-acl \
-  "$DUMP_PATH"
+  $RESTORE_SCHEMA \
+  $RESTORE_EXCLUDE \
+  "$DUMP_PATH" 2>&1 | tee /tmp/restore.log || true
+
+if grep -q "error:" /tmp/restore.log 2>/dev/null; then
+  print_warning "Restore completed with errors (see above). Check /tmp/restore.log. Public schema data may be restored."
+else
+  print_success "Restore completed without errors."
+fi
 
 rm -f "$DUMP_PATH"
 print_success "Restore complete. Verify data in target DB."
