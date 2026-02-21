@@ -1,5 +1,3 @@
-# Creates an issue on the 1st of each month. Set Variables → MONTHLY_DRILL_ASSIGNEE
-# to your GitHub username to auto-assign the issue (e.g. "david" or "your-username").
 name: Monthly Restore Drill Reminder
 
 on:
