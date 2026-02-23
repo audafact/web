@@ -232,6 +232,11 @@ const Studio = () => {
   const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(false);
   const [isInitializingAudio, setIsInitializingAudio] = useState<boolean>(false);
   const [isManuallyAddingTrack, setIsManuallyAddingTrack] = useState<boolean>(false);
+  // Loading placeholder when adding track mid-playback - keeps existing tracks visible and playing
+  const [loadingTrackPlaceholder, setLoadingTrackPlaceholder] = useState<{
+    id: string;
+    displayName: string;
+  } | null>(null);
   const [loopPlayhead, setLoopPlayhead] = useState(0);
   const [samplePlayhead, setSamplePlayhead] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -2176,9 +2181,10 @@ const Studio = () => {
 
   // SidePanel handlers
   const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
+    const placeholderId = `loading-${Date.now()}`;
+    setLoadingTrackPlaceholder({ id: placeholderId, displayName: file.name });
     try {
       setIsManuallyAddingTrack(true);
-      setIsLoading(true);
       setError(null);
       
       // Use existing audio context if available
@@ -2245,16 +2251,16 @@ const Studio = () => {
       console.error('Error uploading track:', error);
       setError(error instanceof Error ? error.message : 'Failed to upload track');
     } finally {
-      setIsLoading(false);
+      setLoadingTrackPlaceholder(null);
       setIsManuallyAddingTrack(false);
-      // setIsWaveformLoading(false); // This line was removed
     }
   };
 
   const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
+    const placeholderId = `loading-${Date.now()}`;
+    setLoadingTrackPlaceholder({ id: placeholderId, displayName: asset.name });
     try {
       setIsManuallyAddingTrack(true);
-      setIsLoading(true);
       setError(null);
       
       // No longer need to track individual user library usage
@@ -2343,9 +2349,8 @@ const Studio = () => {
       console.error('Error adding from library:', error);
       setError(error instanceof Error ? error.message : 'Failed to add track from library');
     } finally {
-      setIsLoading(false);
+      setLoadingTrackPlaceholder(null);
       setIsManuallyAddingTrack(false);
-      // setIsWaveformLoading(false); // This line was removed
     }
   };
 
@@ -2355,9 +2360,10 @@ const Studio = () => {
       return;
     }
 
+    const placeholderId = `loading-${Date.now()}`;
+    setLoadingTrackPlaceholder({ id: placeholderId, displayName: userTrack.name });
     try {
       setIsManuallyAddingTrack(true);
-      setIsLoading(true);
       setError(null);
       
       // Use existing audio context if available
@@ -2426,9 +2432,8 @@ const Studio = () => {
       console.error('Error adding user track:', error);
       setError(error instanceof Error ? error.message : 'Failed to add user track');
     } finally {
-      setIsLoading(false);
+      setLoadingTrackPlaceholder(null);
       setIsManuallyAddingTrack(false);
-      // setIsWaveformLoading(false); // This line was removed
     }
   };
 
@@ -2627,8 +2632,9 @@ const Studio = () => {
   }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack]);
 
   
-  // Loading state
-  if (isLoading || isTrackLoading || userLoading) {
+  // Loading state - only show full-page loader when NO tracks exist (initial load).
+  // When adding a track mid-playback, we keep the studio mounted so playback continues.
+  if ((isLoading || isTrackLoading || userLoading) && tracks.length === 0) {
     return (
       <>
         {/* SidePanel for loading state */}
@@ -3393,22 +3399,102 @@ const Studio = () => {
           <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
         </div>
 
+        {/* Render loading skeleton when adding track - pushes existing tracks down, playback continues */}
+        {loadingTrackPlaceholder && (
+          <div
+            key={loadingTrackPlaceholder.id}
+            className="audafact-card overflow-hidden transition-all duration-300 relative border-audafact-accent-cyan shadow-card"
+          >
+            <div
+              className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
+              style={{ touchAction: 'pan-y pinch-zoom' }}
+              onWheel={handleWheel}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              <button
+                onClick={handlePreviousTrack}
+                disabled={isTrackLoading}
+                className={`p-2 rounded-full transition-all duration-200 ${
+                  isTrackLoading ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                }`}
+                title="Previous Track (Left Arrow)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                disabled
+                className="flex flex-col items-center justify-center p-2 rounded-lg text-audafact-text-secondary cursor-not-allowed"
+                title="Adding track..."
+              >
+                <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+                <span className="text-xs mt-1">Adding...</span>
+              </button>
+              <button
+                onClick={handleNextTrack}
+                disabled={isTrackLoading}
+                className={`p-2 rounded-full transition-all duration-200 ${
+                  isTrackLoading ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                }`}
+                title="Next Track (Right Arrow)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
+              <div className="flex items-center gap-3">
+                <h3 className="font-medium audafact-heading truncate max-w-[420px]">
+                  {loadingTrackPlaceholder.displayName}
+                </h3>
+                <span className="flex items-center gap-2 text-sm audafact-text-secondary">
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-audafact-accent-cyan" />
+                  Loading...
+                </span>
+              </div>
+            </div>
+            <div className="audafact-waveform-bg relative flex items-center justify-center" style={{ height: '120px' }}>
+              <div className="flex items-end gap-1 h-12" aria-hidden>
+                {[...Array(24)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 bg-audafact-accent-cyan/30 rounded-sm animate-pulse"
+                    style={{ height: `${20 + Math.sin(i * 0.5) * 30}%`, animationDelay: `${i * 50}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="p-4 bg-audafact-surface-1">
+              <div className="h-10 bg-audafact-surface-2 rounded animate-pulse" />
+            </div>
+          </div>
+        )}
+
         {/* Render all tracks */}
         {tracks.map((track, index) => (
           <div 
             key={track.id} 
             className={`audafact-card overflow-hidden transition-all duration-300 relative ${
-              index === 0 
+              !loadingTrackPlaceholder && index === 0
                 ? 'border-audafact-accent-cyan shadow-card' // Top track styling
-                : 'border-audafact-divider shadow-sm' // Lower tracks styling
+                : 'border-audafact-divider shadow-sm' // Lower tracks styling (or when loading placeholder above)
             } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''}`}
             style={{
-              transform: isAddingTrack && index > 0 ? 'translateY(10px)' : 'translateY(0)'
+              transform: (loadingTrackPlaceholder || (isAddingTrack && index > 0)) ? 'translateY(10px)' : 'translateY(0)'
             }}
             data-testid={index === 0 ? 'main-track-card' : `track-card-${index}`}
           >
-            {/* Add Track and Navigation Controls - Only show on first track */}
-            {index === 0 && (
+            {/* Add Track and Navigation Controls - Only show on first track when no loading skeleton */}
+            {index === 0 && !loadingTrackPlaceholder && (
               <div 
                 className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
                 style={{ touchAction: 'pan-y pinch-zoom' }}
