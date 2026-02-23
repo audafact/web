@@ -909,6 +909,12 @@ const Studio = () => {
   // Keyboard navigation for track switching
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // Skip shortcuts when user is typing in an input (volume, speed, filters, etc.)
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active as HTMLElement)?.isContentEditable) {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
+      }
+
       // Handle help modal
       if (event.key === '?') {
         event.preventDefault();
