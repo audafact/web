@@ -916,7 +916,41 @@ const TrackControls = ({
     }
   }, [volume]);
   
-  // Update playback rate when speed changes
+  // Handle speed slider changes - resets playhead anchor when rate changes during playback
+  const handleSpeedSliderChange = useCallback((newSpeed: number, recordEvent: boolean) => {
+    const oldSpeed = currentSpeedRef.current;
+    setSpeed(newSpeed);
+    currentSpeedRef.current = newSpeed;
+
+    // When speed changes during playback, reset the playhead anchor so the time calculation
+    // stays correct (the formula assumes constant rate since start)
+    if (isPlaying && audioContext && audioSourceRef.current) {
+      const timestamp = audioContext.getOutputTimestamp();
+      const contextTime = timestamp.contextTime ?? audioContext.currentTime;
+      if (typeof contextTime === 'number') {
+        const elapsed = contextTime - startTimeRef.current;
+        const rawPosition = playbackStartTimeRef.current + (elapsed * oldSpeed);
+        playbackStartTimeRef.current = rawPosition;
+        startTimeRef.current = contextTime;
+      }
+    }
+
+    // Apply playback rate immediately for real-time feedback
+    if (audioSourceRef.current) {
+      audioSourceRef.current.playbackRate.value = newSpeed;
+    }
+    if (onSpeedChange) onSpeedChange(newSpeed);
+
+    if (recordEvent && trackId) {
+      addRecordingEvent({
+        type: 'speed_change',
+        trackId,
+        data: { oldSpeed, newSpeed, mode },
+      });
+    }
+  }, [isPlaying, audioContext, onSpeedChange, trackId, addRecordingEvent, mode]);
+
+  // Update playback rate when speed changes (e.g. from external prop sync)
   useEffect(() => {
     if (audioSourceRef.current) {
       audioSourceRef.current.playbackRate.value = currentSpeedRef.current;
@@ -1050,25 +1084,16 @@ const TrackControls = ({
               step={getTempoSpeedRange().stepSize}
               value={speed}
               disabled={disabled}
+              onInput={(e) => {
+                if (disabled) return;
+                const newSpeed = parseFloat((e.target as HTMLInputElement).value);
+                handleSpeedSliderChange(newSpeed, false);
+              }}
               onChange={(e) => {
+                // onChange fires on release in some browsers; ensure recording and final sync
                 if (disabled) return;
                 const newSpeed = parseFloat(e.target.value);
-                setSpeed(newSpeed);
-                currentSpeedRef.current = newSpeed;
-                if (onSpeedChange) onSpeedChange(newSpeed);
-                
-                // Record speed change event
-                if (trackId) {
-                  addRecordingEvent({
-                    type: 'speed_change',
-                    trackId,
-                    data: { 
-                      oldSpeed: speed,
-                      newSpeed,
-                      mode
-                    }
-                  });
-                }
+                handleSpeedSliderChange(newSpeed, true);
               }}
               className={`flex-1 h-1.5 md:h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
