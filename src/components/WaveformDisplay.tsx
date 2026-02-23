@@ -333,6 +333,17 @@ const WaveformDisplay = ({
         const handleRendered = () => {
           // Single delay to ensure wrapper width is fully updated (especially after zoom)
           setTimeout(syncContainerWidth, 200);
+          // Refresh loop region position after zoom - forces DOM/handles to re-sync
+          // without recreating (which was causing duplicate regions)
+          if (mode === 'loop' && currentRegionsRef.current.length === 1) {
+            const region = currentRegionsRef.current[0];
+            if (region?.element) {
+              const duration = wavesurfer.getDuration();
+              const start = Math.max(0, Math.min(region.start, duration - 0.05));
+              const end = Math.max(start + 0.1, Math.min(region.end, duration));
+              region.setOptions({ start, end });
+            }
+          }
         };
         
         renderer.on('rendered', handleRendered);
@@ -362,7 +373,7 @@ const WaveformDisplay = ({
     return () => {
       clearInterval(intervalId);
     };
-  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
+  }, [wavesurfer, isReady, zoomLevel, mode, calculateMinPxPerSec]);
 
   // Auto-scroll to follow playhead during playback with center-lock behavior
   useEffect(() => {
@@ -537,9 +548,16 @@ const WaveformDisplay = ({
     await clearRegions();
 
     if (mode === 'loop') {
+      const duration = wavesurfer.getDuration();
+      const epsilon = 0.05;
+      // Clamp loop region to valid bounds - prevents region extending past waveform
+      // (can happen when WaveSurfer's regions plugin gets out of sync during zoom)
+      const clampedStart = Math.max(0, Math.min(loopStart, duration - epsilon));
+      const clampedEnd = Math.max(clampedStart + 0.01, Math.min(loopEnd, duration));
+
       const region = regionsPluginRef.current.addRegion({
-        start: loopStart,
-        end: loopEnd,
+        start: clampedStart,
+        end: clampedEnd,
         color: 'rgba(0, 245, 195, 0.2)',
         drag: true, // Always allow dragging for loop regions
         resize: true, // Always allow resizing for loop regions
@@ -560,10 +578,12 @@ const WaveformDisplay = ({
       });
 
       region.on('update-end', () => {
-        // Ensure the region bounds are valid
-        const start = Math.max(0, region.start);
-        const end = Math.max(start + 0.1, region.end);
-        
+        const duration = wavesurfer.getDuration();
+        const epsilon = 0.05;
+        // Clamp to valid bounds - prevents corrupted values from zoom sync issues
+        const start = Math.max(0, Math.min(region.start, duration - epsilon));
+        const end = Math.max(start + 0.1, Math.min(region.end, duration));
+
         debouncedUpdate(() => {
           onLoopPointsChangeRef.current(start, end);
           // Update refs to prevent recreation
@@ -995,34 +1015,48 @@ const WaveformDisplay = ({
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
       const newMinPxPerSec = calculateMinPxPerSec();
       
-      // For zoom out operations from high zoom levels, immediately update container width
-      // This makes zoom out feel instant instead of waiting for renderer to update
-      if (zoomLevel <= 1 || (zoomLevel <= 4 && containerRef.current)) {
+      // For zoom levels 2x–4x, immediately update container width (makes zoom out feel instant)
+      // Skip for 1x: sync effect clears width first; we defer zoom until after layout below
+      if (zoomLevel > 1 && zoomLevel <= 4 && containerRef.current) {
         const duration = wavesurfer.getDuration();
         const expectedWidth = duration * newMinPxPerSec;
-        if (containerRef.current && expectedWidth > 0) {
+        if (expectedWidth > 0) {
           containerRef.current.style.width = `${expectedWidth}px`;
           containerRef.current.style.minWidth = `${expectedWidth}px`;
           containerRef.current.style.maxWidth = `${expectedWidth}px`;
         }
       }
       
-      // Use WaveSurfer's zoom() method which properly triggers re-render
-      // This ensures the waveform actually zooms in/out, not just scrolls
-      try {
-        if (typeof wavesurfer.zoom === 'function') {
-          wavesurfer.zoom(newMinPxPerSec);
-        } else {
-          // Fallback to setOptions if zoom method isn't available
-          wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+      const applyZoom = (minPxPerSec: number) => {
+        try {
+          if (typeof wavesurfer.zoom === 'function') {
+            wavesurfer.zoom(minPxPerSec);
+          } else {
+            wavesurfer.setOptions({ minPxPerSec });
+          }
+        } catch (e) {
+          wavesurfer.setOptions({ minPxPerSec });
         }
-      } catch (e) {
-        // If zoom fails, fallback to setOptions
-        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
-      }
+        setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 50);
+      };
       
-      // Center the playhead after zoom with a delay to allow render to complete
-      setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 50);
+      if (zoomLevel <= 1) {
+        // Defer until layout is complete: the sync effect clears container width first;
+        // WaveSurfer needs to read fresh dimensions. Without this, the first 2x→1x
+        // transition can fail because the renderer uses stale/cached dimensions.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!containerRef.current || !wavesurfer) return;
+            const scrollContainer = containerRef.current.parentElement;
+            const minPxPerSec = scrollContainer
+              ? scrollContainer.clientWidth / wavesurfer.getDuration()
+              : newMinPxPerSec;
+            applyZoom(minPxPerSec);
+          });
+        });
+      } else {
+        applyZoom(newMinPxPerSec);
+      }
     }
   }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
 
