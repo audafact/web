@@ -232,10 +232,11 @@ const Studio = () => {
   const [needsUserInteraction, setNeedsUserInteraction] = useState<boolean>(false);
   const [isInitializingAudio, setIsInitializingAudio] = useState<boolean>(false);
   const [isManuallyAddingTrack, setIsManuallyAddingTrack] = useState<boolean>(false);
-  // Loading placeholder when adding track mid-playback - keeps existing tracks visible and playing
+  // Loading placeholder - keeps existing tracks visible and playing during any track load
   const [loadingTrackPlaceholder, setLoadingTrackPlaceholder] = useState<{
     id: string;
     displayName: string;
+    mode: 'add' | 'replace'; // add = new track on top, replace = swapping first track (prev/next)
   } | null>(null);
   const [loopPlayhead, setLoopPlayhead] = useState(0);
   const [samplePlayhead, setSamplePlayhead] = useState(0);
@@ -1232,14 +1233,21 @@ const Studio = () => {
   }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets]);
 
   const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
+    const assets = availableAssets || [];
+    const safeIndex = ((index % assets.length) + assets.length) % assets.length;
+    const asset = assets[safeIndex];
+    
+    if (asset && onlyUpdateFirstTrack && tracks.length > 0) {
+      setLoadingTrackPlaceholder({
+        id: `loading-${Date.now()}`,
+        displayName: asset.name,
+        mode: 'replace'
+      });
+    }
+    
     try {
       setIsTrackLoading(true);
-
       setError(null);
-      
-      const assets = availableAssets || [];
-      const safeIndex = ((index % assets.length) + assets.length) % assets.length;
-      const asset = assets[safeIndex];
       
       // Use existing audio context if available
       let context = audioContext;
@@ -1354,6 +1362,7 @@ const Studio = () => {
       
       // Track loading is complete
       setIsTrackLoading(false);
+      setLoadingTrackPlaceholder(null);
       
       // Waveform loading will be handled by the WaveformDisplay component
       
@@ -1362,7 +1371,8 @@ const Studio = () => {
       console.error('Error loading track by index:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       setError(`Error loading track: ${errorMessage}`);
-              setIsTrackLoading(false);
+      setIsTrackLoading(false);
+      setLoadingTrackPlaceholder(null);
     }
   };
 
@@ -1376,27 +1386,34 @@ const Studio = () => {
       return;
     }
     
+    // Select a random asset that's different from existing tracks (before async work)
+    const assets = availableAssets || [];
+    if (assets.length === 0) {
+      setError('No library tracks available. Please wait for tracks to load from the library.');
+      return;
+    }
+    
+    const existingAssetIds = tracks.map(track => track.id);
+    const unusedAssets = assets.filter(asset => !existingAssetIds.includes(asset.id));
+    
+    // If all assets are used, allow duplicates but with different IDs
+    let selectedAsset;
+    if (unusedAssets.length > 0) {
+      selectedAsset = unusedAssets[Math.floor(Math.random() * unusedAssets.length)];
+    } else {
+      selectedAsset = assets[Math.floor(Math.random() * assets.length)];
+    }
+    
+    setLoadingTrackPlaceholder({
+      id: `loading-${Date.now()}`,
+      displayName: selectedAsset.name,
+      mode: 'add'
+    });
+    
     try {
       setIsAddingTrack(true);
       setAddTrackAnimation(true);
       setError(null);
-      
-      // Select a random asset that's different from existing tracks
-      const assets = availableAssets || [];
-      if (assets.length === 0) {
-        throw new Error('No library tracks available. Please wait for tracks to load from the library.');
-      }
-      
-      const existingAssetIds = tracks.map(track => track.id);
-      const unusedAssets = assets.filter(asset => !existingAssetIds.includes(asset.id));
-      
-      // If all assets are used, allow duplicates but with different IDs
-      let selectedAsset;
-      if (unusedAssets.length > 0) {
-        selectedAsset = unusedAssets[Math.floor(Math.random() * unusedAssets.length)];
-      } else {
-        selectedAsset = assets[Math.floor(Math.random() * assets.length)];
-      }
       
       // Use existing audio context
       let context = audioContext;
@@ -1462,6 +1479,7 @@ const Studio = () => {
       
       // Add new track to the beginning of the array (top of stack)
       setTracks([newTrack, ...updatedExistingTracks]);
+      setLoadingTrackPlaceholder(null); // Clear immediately so skeleton doesn't overlap with rendered track
       
       // Initialize states for the new track
       setShowMeasures(prev => ({ ...prev, [trackId]: false }));
@@ -1472,7 +1490,7 @@ const Studio = () => {
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
       setSelectedCueTrackId(prev => prev ? prev : trackId);
       
-      // Animation delay
+      // Animation delay for button state
       setTimeout(() => {
         setAddTrackAnimation(false);
         setIsAddingTrack(false);
@@ -1484,6 +1502,7 @@ const Studio = () => {
       setError(`Error adding track: ${errorMessage}`);
       setIsAddingTrack(false);
       setAddTrackAnimation(false);
+      setLoadingTrackPlaceholder(null);
     }
   };
 
@@ -2184,7 +2203,7 @@ const Studio = () => {
   // SidePanel handlers
   const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     const placeholderId = `loading-${Date.now()}`;
-    setLoadingTrackPlaceholder({ id: placeholderId, displayName: file.name });
+    setLoadingTrackPlaceholder({ id: placeholderId, displayName: file.name, mode: 'add' });
     try {
       setIsManuallyAddingTrack(true);
       setError(null);
@@ -2260,7 +2279,7 @@ const Studio = () => {
 
   const handleAddFromLibrary = async (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     const placeholderId = `loading-${Date.now()}`;
-    setLoadingTrackPlaceholder({ id: placeholderId, displayName: asset.name });
+    setLoadingTrackPlaceholder({ id: placeholderId, displayName: asset.name, mode: 'add' });
     try {
       setIsManuallyAddingTrack(true);
       setError(null);
@@ -2363,7 +2382,7 @@ const Studio = () => {
     }
 
     const placeholderId = `loading-${Date.now()}`;
-    setLoadingTrackPlaceholder({ id: placeholderId, displayName: userTrack.name });
+    setLoadingTrackPlaceholder({ id: placeholderId, displayName: userTrack.name, mode: 'add' });
     try {
       setIsManuallyAddingTrack(true);
       setError(null);
@@ -3417,9 +3436,9 @@ const Studio = () => {
             >
               <button
                 onClick={handlePreviousTrack}
-                disabled={isTrackLoading}
+                disabled={!!loadingTrackPlaceholder || isTrackLoading}
                 className={`p-2 rounded-full transition-all duration-200 ${
-                  isTrackLoading ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                  (!!loadingTrackPlaceholder || isTrackLoading) ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                 }`}
                 title="Previous Track (Left Arrow)"
               >
@@ -3430,7 +3449,7 @@ const Studio = () => {
               <button
                 disabled
                 className="flex flex-col items-center justify-center p-2 rounded-lg text-audafact-text-secondary cursor-not-allowed"
-                title="Adding track..."
+                title={loadingTrackPlaceholder?.mode === 'replace' ? 'Loading track...' : 'Adding track...'}
               >
                 <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -3438,13 +3457,13 @@ const Studio = () => {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                 </svg>
-                <span className="text-xs mt-1">Adding...</span>
+                <span className="text-xs mt-1">{loadingTrackPlaceholder?.mode === 'replace' ? 'Loading...' : 'Adding...'}</span>
               </button>
               <button
                 onClick={handleNextTrack}
-                disabled={isTrackLoading}
+                disabled={!!loadingTrackPlaceholder || isTrackLoading}
                 className={`p-2 rounded-full transition-all duration-200 ${
-                  isTrackLoading ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                  (!!loadingTrackPlaceholder || isTrackLoading) ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                 }`}
                 title="Next Track (Right Arrow)"
               >
@@ -3481,8 +3500,8 @@ const Studio = () => {
           </div>
         )}
 
-        {/* Render all tracks */}
-        {tracks.map((track, index) => (
+        {/* Render all tracks - when replace mode, first track is hidden (replaced by skeleton above) */}
+        {(loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks).map((track, index) => (
           <div 
             key={track.id} 
             className={`audafact-card overflow-hidden transition-all duration-300 relative ${
