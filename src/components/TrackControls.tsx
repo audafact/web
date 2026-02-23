@@ -134,6 +134,9 @@ const TrackControls = ({
   
   // Track mode changes to handle audio source updates
   const prevModeRef = useRef<string>(mode);
+  // Track loop point changes for mid-playback restart
+  const prevLoopStartRef = useRef<number>(loopStart);
+  const prevLoopEndRef = useRef<number>(loopEnd);
   
   // Filter refs
   const lowpassFilterRef = useRef<BiquadFilterNode | null>(null);
@@ -394,8 +397,10 @@ const TrackControls = ({
             }
           }
         } else {
-          // If inside loop region, use normal loop calculation
-          const position = loopStart + ((elapsed * playbackRate) % loopDuration);
+          // If inside loop region, calculate position from actual start (handles mid-loop restarts)
+          const rawPosition = playbackStartTimeRef.current + (elapsed * playbackRate);
+          const offsetInLoop = ((rawPosition - loopStart) % loopDuration + loopDuration) % loopDuration;
+          const position = loopStart + offsetInLoop;
           setCurrentTime(position);
           if (onPlaybackTimeChange) {
             onPlaybackTimeChange(position);
@@ -559,6 +564,66 @@ const TrackControls = ({
     // Update prevModeRef
     prevModeRef.current = mode;
   }, [mode, isPlaying, currentTime, loopStart, loopEnd, audioContext]);
+
+  // Handle loop point changes during playback - must restart audio source
+  // since BufferSourceNode loop region cannot be changed after creation
+  useEffect(() => {
+    if (
+      mode !== 'loop' ||
+      !isPlaying ||
+      !audioSourceRef.current ||
+      !audioContext ||
+      (prevLoopStartRef.current === loopStart && prevLoopEndRef.current === loopEnd)
+    ) {
+      prevLoopStartRef.current = loopStart;
+      prevLoopEndRef.current = loopEnd;
+      return;
+    }
+
+    const currentSourceNode = audioSourceRef.current;
+    const currentPosition = currentTime;
+
+    // Clamp position to new loop region for seamless transition
+    let newStartPosition: number;
+    if (currentPosition < loopStart) {
+      // Was before new loop start - jump to loop start
+      newStartPosition = loopStart;
+    } else if (currentPosition > loopEnd) {
+      // Was past new loop end - loop back to start
+      newStartPosition = loopStart;
+    } else {
+      // Within new loop region - continue from current position
+      newStartPosition = currentPosition;
+    }
+
+    // Stop current source and create new one with updated loop region
+    currentSourceNode.stop();
+
+    const audioChain = createAudioChainWithCurrentSettings();
+    if (audioChain) {
+      const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+
+      sourceNode.loop = true;
+      sourceNode.loopStart = loopStart;
+      sourceNode.loopEnd = loopEnd;
+      sourceNode.start(0, newStartPosition);
+
+      audioSourceRef.current = sourceNode;
+      gainNodeRef.current = gainNode;
+      if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
+      if (highpassFilter) highpassFilterRef.current = highpassFilter;
+
+      startTimeRef.current = audioContext.currentTime;
+      playbackStartTimeRef.current = newStartPosition;
+      setCurrentTime(newStartPosition);
+      if (onPlaybackTimeChange) {
+        onPlaybackTimeChange(newStartPosition);
+      }
+    }
+
+    prevLoopStartRef.current = loopStart;
+    prevLoopEndRef.current = loopEnd;
+  }, [mode, isPlaying, loopStart, loopEnd, currentTime, audioContext, createAudioChainWithCurrentSettings, onPlaybackTimeChange]);
 
   // Start/stop time updates
   useEffect(() => {
