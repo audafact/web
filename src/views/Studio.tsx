@@ -24,11 +24,14 @@ import DemoModeIndicator from '../components/DemoModeIndicator';
 import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
+import { Play, Pause } from 'lucide-react';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
 import { LibraryService } from '../services/libraryService';
 import { signFile } from '../lib/api';
+import { useTapTempo } from '../context/TapTempoContext';
+import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 
 // Define a Track type
 interface Track {
@@ -36,6 +39,8 @@ interface Track {
   sourceAssetId?: string;  // For restore: library asset id or upload id
   file: File;
   buffer: AudioBuffer;
+  /** Pre-decoded peaks for WaveSurfer - skips duplicate decode, faster waveform load */
+  peaks?: number[][];
   mode: 'preview' | 'loop' | 'cue';
   loopStart: number;
   loopEnd: number;
@@ -70,6 +75,7 @@ const Studio = () => {
   const { modalState, closeSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { user, libraryTracks, loading: userLoading } = useUser();
+  const { isTapTempoActive } = useTapTempo();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
@@ -88,6 +94,7 @@ const Studio = () => {
   
   // Ref to prevent multiple track loads
   const hasLoadedTrack = useRef(false);
+  const isRestoringRef = useRef(false);
 
   // Handle demo mode initialization
   useEffect(() => {
@@ -243,6 +250,8 @@ const Studio = () => {
   const [samplePlayhead, setSamplePlayhead] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedCueTrackId, setSelectedCueTrackId] = useState<string | null>(null);
+  const [armedLoopTrackIds, setArmedLoopTrackIds] = useState<Set<string>>(() => new Set());
+  const [spaceBarEnabled, setSpaceBarEnabled] = useState(true); // When true, Space bar triggers armed loops
   const [playbackTimes, setPlaybackTimes] = useState<{ [key: string]: number }>({});
   const [zoomLevels, setZoomLevels] = useState<{ [key: string]: number }>({});
   const [playbackSpeeds, setPlaybackSpeeds] = useState<{ [key: string]: number }>({});
@@ -267,12 +276,46 @@ const Studio = () => {
   // Store seek functions for each track
   const seekFunctionRefs = useRef<{ [key: string]: React.MutableRefObject<((seekTime: number) => void) | null> }>({});
   
+  // Store toggle playback functions for each track (for global space bar)
+  const togglePlaybackRefs = useRef<{ [key: string]: React.MutableRefObject<(() => void) | null> }>({});
+  
   // Get or create seek function ref for a track
   const getSeekFunctionRef = useCallback((trackId: string) => {
     if (!seekFunctionRefs.current[trackId]) {
       seekFunctionRefs.current[trackId] = { current: null };
     }
     return seekFunctionRefs.current[trackId];
+  }, []);
+
+  // Get or create toggle playback function ref for a track
+  const getTogglePlaybackRef = useCallback((trackId: string) => {
+    if (!togglePlaybackRefs.current[trackId]) {
+      togglePlaybackRefs.current[trackId] = { current: null };
+    }
+    return togglePlaybackRefs.current[trackId];
+  }, []);
+
+  // Global play: play/pause all armed loop tracks (same as space bar)
+  const handleGlobalPlay = useCallback(() => {
+    if (armedLoopTrackIds.size === 0) return;
+    const anyArmedPlaying = [...armedLoopTrackIds].some(id => playbackStates[id]);
+    armedLoopTrackIds.forEach(trackId => {
+      const isPlaying = playbackStates[trackId];
+      if (anyArmedPlaying ? isPlaying : !isPlaying) {
+        getTogglePlaybackRef(trackId).current?.();
+      }
+    });
+  }, [armedLoopTrackIds, playbackStates, getTogglePlaybackRef]);
+
+  // Global Play button: activates space bar + plays armed loops
+  const handleGlobalPlayClick = useCallback(() => {
+    setSpaceBarEnabled(true);
+    handleGlobalPlay();
+  }, [handleGlobalPlay]);
+
+  // Toggle space bar functionality — allows armed tracks to be triggered by Space bar
+  const handleGlobalArmToggle = useCallback(() => {
+    setSpaceBarEnabled(prev => !prev);
   }, []);
   
   // Filter state
@@ -305,6 +348,8 @@ const Studio = () => {
 
   // Track which waveforms have finished loading (avoids flicker on initial load/restore)
   const [waveformReadyTrackIds, setWaveformReadyTrackIds] = useState<Set<string>>(() => new Set());
+  // When adding a track, defer clearing placeholder until this track's waveform is ready
+  const addingTrackIdRef = useRef<string | null>(null);
   const trackIdsKey = useMemo(() => tracks.map(t => t.id).join(','), [tracks]);
   // Only prune removed tracks - keep ready status for existing tracks (avoids all tracks loading when adding one)
   useEffect(() => {
@@ -319,7 +364,31 @@ const Studio = () => {
   }, [trackIdsKey]);
   const handleWaveformReady = useCallback((trackId: string) => {
     setWaveformReadyTrackIds(prev => new Set(prev).add(trackId));
+    if (addingTrackIdRef.current === trackId) {
+      addingTrackIdRef.current = null;
+      setLoadingTrackPlaceholder(null);
+      setWaveformsSettled(true); // Skip 200ms debounce — existing tracks were already shown, avoid skeleton flash
+    }
   }, []);
+
+  // Fallback: if waveform never reports ready (e.g. WaveSurfer stalls on certain files), clear loading after timeout
+  const WAVEFORM_LOAD_TIMEOUT_MS = 20000;
+  useEffect(() => {
+    if (!loadingTrackPlaceholder || tracks.length === 0) return;
+    const pendingTrackId = addingTrackIdRef.current ?? tracks[0]?.id;
+    if (!pendingTrackId || waveformReadyTrackIds.has(pendingTrackId)) return;
+
+    const timer = setTimeout(() => {
+      setWaveformReadyTrackIds(prev => new Set(prev).add(pendingTrackId));
+      if (addingTrackIdRef.current === pendingTrackId) {
+        addingTrackIdRef.current = null;
+        setLoadingTrackPlaceholder(null);
+        setWaveformsSettled(true);
+      }
+    }, WAVEFORM_LOAD_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [loadingTrackPlaceholder, tracks, waveformReadyTrackIds]);
 
   const tracksToRender = useMemo(() =>
     loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks,
@@ -369,7 +438,7 @@ const Studio = () => {
   const saveStudioStateToLocal = () => {
     const stateKey = getStudioStateKey();
     if (!stateKey || tracks.length === 0) {
-      console.log('Not saving studio state:', { stateKey: !!stateKey, tracksLength: tracks.length });
+      if (!import.meta.env.PROD) console.log('Not saving studio state:', { stateKey: !!stateKey, tracksLength: tracks.length });
       return; // Only save for authorized users with tracks
     }
     
@@ -400,6 +469,7 @@ const Studio = () => {
           playbackTime: playbackTimes[track.id] || 0
         })),
         selectedCueTrackId,
+        armedLoopTrackIds: [...armedLoopTrackIds],
         currentTrackIndex,
         lastUsedVolume,
         timestamp: Date.now(),
@@ -407,16 +477,7 @@ const Studio = () => {
       };
       
       localStorage.setItem(stateKey, JSON.stringify(studioState));
-      console.log('Studio state saved for user:', user?.id, 'with', tracks.length, 'tracks');
-      console.log('Saved track settings:', tracks.map(track => ({
-        id: track.id,
-        mode: track.mode,
-        loopStart: track.loopStart,
-        loopEnd: track.loopEnd,
-        volume: volume[track.id],
-        playbackSpeed: playbackSpeeds[track.id],
-        zoomLevel: zoomLevels[track.id]
-      })));
+      if (!import.meta.env.PROD) console.log('Studio state saved for user:', user?.id, 'with', tracks.length, 'tracks');
     } catch (error) {
       console.warn('Failed to save studio state:', error);
     }
@@ -445,7 +506,7 @@ const Studio = () => {
     
     try {
       localStorage.removeItem(stateKey);
-      console.log('Studio state cleared for user:', user?.id);
+      if (!import.meta.env.PROD) console.log('Studio state cleared for user:', user?.id);
     } catch (error) {
       console.warn('Failed to clear studio state:', error);
     }
@@ -472,12 +533,25 @@ const Studio = () => {
   const loadSelectedCueTrackIdFromLocal = (): string | null => {
     return localStorage.getItem('selectedCueTrackId');
   };
+  const saveArmedLoopTrackIdsToLocal = (ids: string[]) => {
+    if (ids.length > 0) {
+      localStorage.setItem('armedLoopTrackIds', JSON.stringify(ids));
+    } else {
+      localStorage.removeItem('armedLoopTrackIds');
+    }
+  };
+  const loadArmedLoopTrackIdsFromLocal = (): string[] => {
+    const saved = localStorage.getItem('armedLoopTrackIds');
+    return saved ? JSON.parse(saved) : [];
+  };
 
   // --- PATCH: Load settings on mount ---
   useEffect(() => {
-    // Load selected cue track id
+    // Load selected cue track id and armed loop track ids
     const selected = loadSelectedCueTrackIdFromLocal();
     if (selected) setSelectedCueTrackId(selected);
+    const armedIds = loadArmedLoopTrackIdsFromLocal();
+    if (armedIds.length > 0) setArmedLoopTrackIds(new Set(armedIds));
   }, []);
 
   // --- Studio State Restoration ---
@@ -521,9 +595,9 @@ const Studio = () => {
       for (let i = 0; i < savedState.tracks.length; i++) {
         const savedTrack = savedState.tracks[i];
         try {
-          // Space out sign-file requests to avoid 429 rate limiting
+          // Space out sign-file requests to avoid 429 rate limiting (cache reduces real calls)
           if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 200));
           }
 
           // Find the asset by sourceAssetId (or id for backward compatibility)
@@ -623,6 +697,11 @@ const Studio = () => {
           
         } catch (error) {
           console.warn('Failed to restore track:', savedTrack.id, error);
+          const msg = error instanceof Error ? error.message : '';
+          if (msg.includes('429')) {
+            setError('Too many requests. Please wait a moment and try again.');
+            break;
+          }
         }
       }
       
@@ -630,6 +709,7 @@ const Studio = () => {
         setTracks(restoredTracks);
         setCurrentTrackIndex(savedState.currentTrackIndex || 0);
         setSelectedCueTrackId(savedState.selectedCueTrackId || null);
+        setArmedLoopTrackIds(Array.isArray(savedState.armedLoopTrackIds) ? new Set(savedState.armedLoopTrackIds) : new Set());
         setLastUsedVolume(savedState.lastUsedVolume || 1);
         console.log('Successfully restored', restoredTracks.length, 'tracks');
         return true;
@@ -637,6 +717,8 @@ const Studio = () => {
       
     } catch (error) {
       console.error('Error restoring studio state:', error);
+    } finally {
+      isRestoringRef.current = false;
     }
     
     return false;
@@ -776,6 +858,7 @@ const Studio = () => {
              id: currentGuestTrack.id,
              file,
              buffer,
+             peaks: extractPeaksFromBuffer(buffer),
              mode: 'cue',
              loopStart: 0,
              loopEnd: buffer.duration,
@@ -834,7 +917,14 @@ const Studio = () => {
         }
         
         // Get signed URL from Worker API
-        const audioUrl = await signFile(asset.fileKey);
+        let audioUrl: string;
+        try {
+          audioUrl = await signFile(asset.fileKey);
+        } catch (error) {
+          console.error('Failed to get signed URL for asset:', error);
+          const msg = error instanceof Error ? error.message : '';
+          throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        }
         
         // Fetch the audio file
         const response = await fetch(audioUrl);
@@ -891,6 +981,8 @@ const Studio = () => {
         
         if (newRetryCount >= 3) {
           setError('Unable to load tracks after multiple attempts. Please check your connection and try again.');
+        } else if (errorMessage.startsWith('Too many requests')) {
+          setError(errorMessage);
         } else if (error instanceof Error && error.message.includes('Failed to fetch')) {
           setError(`Connection error (attempt ${newRetryCount}/3). Please check your connection and try again.`);
         } else {
@@ -913,6 +1005,16 @@ const Studio = () => {
       const active = document.activeElement;
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active as HTMLElement)?.isContentEditable) {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
+        if (event.key === ' ') return; // Never trigger playback when typing
+      }
+
+      // Space bar: global play/pause for all armed loop tracks when enabled
+      if (event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (isTapTempoActive) return;
+        if (spaceBarEnabled && !event.repeat) handleGlobalPlay();
+        return;
       }
 
       // Handle help modal
@@ -949,9 +1051,9 @@ const Studio = () => {
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [tracks, currentTrackIndex]);
+    window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
+    return () => window.removeEventListener('keydown', handleKeyPress, true);
+  }, [tracks, currentTrackIndex, isTapTempoActive, spaceBarEnabled, handleGlobalPlay]);
 
         // Handle demo track changes
       useEffect(() => {
@@ -1352,7 +1454,8 @@ const Studio = () => {
         signedUrl = await signFile(asset.fileKey);
       } catch (error) {
         console.error('Failed to get signed URL for asset:', error);
-        throw new Error('Failed to access audio file. Please try again.');
+        const msg = error instanceof Error ? error.message : '';
+        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
       // Fetch the audio file using the signed URL
@@ -1378,6 +1481,7 @@ const Studio = () => {
         id: trackId,
         file,
         buffer,
+        peaks: extractPeaksFromBuffer(buffer),
         mode: settings.mode || 'cue', // Default to cue mode
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
@@ -1392,6 +1496,7 @@ const Studio = () => {
       
       if (onlyUpdateFirstTrack && tracks.length > 0) {
         // Only update the first track, preserve other tracks
+        const replacedTrackId = tracks[0].id;
         setTracks(prevTracks => {
           const updatedTracks = [...prevTracks];
           // Update the first track in place to preserve React's reference
@@ -1402,9 +1507,11 @@ const Studio = () => {
           };
           return updatedTracks;
         });
+        addingTrackIdRef.current = replacedTrackId; // Defer clearing placeholder until waveform is ready
       } else {
         // Replace all tracks (original behavior)
         setTracks([newTrack]);
+        addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
       }
       setCurrentTrackIndex(safeIndex);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
@@ -1430,11 +1537,8 @@ const Studio = () => {
         }, 1000);
       }
       
-      // Track loading is complete
+      // Track loading is complete (placeholder cleared when waveform is ready)
       setIsTrackLoading(false);
-      setLoadingTrackPlaceholder(null);
-      
-      // Waveform loading will be handled by the WaveformDisplay component
       
     
     } catch (error) {
@@ -1474,6 +1578,7 @@ const Studio = () => {
       selectedAsset = assets[Math.floor(Math.random() * assets.length)];
     }
     
+    addingTrackIdRef.current = null; // Clear so add skeleton shows immediately
     setLoadingTrackPlaceholder({
       id: `loading-${Date.now()}`,
       displayName: selectedAsset.name,
@@ -1507,7 +1612,8 @@ const Studio = () => {
         signedUrl = await signFile(selectedAsset.fileKey);
       } catch (error) {
         console.error('Failed to get signed URL for asset:', error);
-        throw new Error('Failed to access audio file. Please try again.');
+        const msg = error instanceof Error ? error.message : '';
+        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
       // Fetch the audio file using the signed URL
@@ -1526,6 +1632,7 @@ const Studio = () => {
         id: trackId,
         file,
         buffer,
+        peaks: extractPeaksFromBuffer(buffer),
         mode: 'cue', // New tracks always start as cue
         loopStart: 0,
         loopEnd: buffer.duration,
@@ -1549,7 +1656,7 @@ const Studio = () => {
       
       // Add new track to the beginning of the array (top of stack)
       setTracks([newTrack, ...updatedExistingTracks]);
-      setLoadingTrackPlaceholder(null); // Clear immediately so skeleton doesn't overlap with rendered track
+      addingTrackIdRef.current = trackId; // Defer clearing placeholder until waveform is ready
       
       // Initialize states for the new track
       setShowMeasures(prev => ({ ...prev, [trackId]: false }));
@@ -1564,12 +1671,12 @@ const Studio = () => {
       setTimeout(() => {
         setAddTrackAnimation(false);
         setIsAddingTrack(false);
-      }, 500);
+      }, 200);
       
     } catch (error) {
       console.error('Error adding new track:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setError(`Error adding track: ${errorMessage}`);
+      setError(errorMessage.startsWith('Too many requests') ? errorMessage : `Error adding track: ${errorMessage}`);
       setIsAddingTrack(false);
       setAddTrackAnimation(false);
       setLoadingTrackPlaceholder(null);
@@ -1629,10 +1736,15 @@ const Studio = () => {
       return rest;
     });
     
-    // Clean up selected cue track if it was removed
+    // Clean up selected cue track and armed loop if it was removed
     if (selectedCueTrackId === trackId) {
       setSelectedCueTrackId(null);
     }
+    setArmedLoopTrackIds(prev => {
+      const next = new Set(prev);
+      next.delete(trackId);
+      return next;
+    });
     
     // Clean up localStorage
     removeTrackSettingsFromLocal(trackId);
@@ -1668,21 +1780,24 @@ const Studio = () => {
     saveSelectedCueTrackIdToLocal(selectedCueTrackId);
   }, [selectedCueTrackId]);
 
+  // Persist armed loop track ids
+  useEffect(() => {
+    saveArmedLoopTrackIdsToLocal([...armedLoopTrackIds]);
+  }, [armedLoopTrackIds]);
+
   // Save studio state when tracks or settings change (for authorized users)
   useEffect(() => {
     if (!user || isGuestMode) {
-      console.log('Not saving state - user or demo mode check failed:', { user: !!user, isGuestMode });
+      if (!import.meta.env.PROD) console.log('Not saving state - user or demo mode check failed:', { user: !!user, isGuestMode });
       return; // Only save for authorized users, not in demo mode
     }
     if (tracks.length === 0) {
-      console.log('Not saving state - no tracks loaded');
+      if (!import.meta.env.PROD) console.log('Not saving state - no tracks loaded');
       return; // Don't save empty state
     }
     
-    console.log('Scheduling state save in 1 second...');
     // Debounce the save operation to avoid excessive localStorage writes
     const timeoutId = setTimeout(() => {
-      console.log('Executing scheduled state save...');
       saveStudioStateToLocal();
     }, 1000); // Save after 1 second of inactivity
     
@@ -1692,6 +1807,7 @@ const Studio = () => {
     isGuestMode, 
     tracks, 
     selectedCueTrackId, 
+    armedLoopTrackIds,
     currentTrackIndex,
     showMeasures,
     showCueThumbs,
@@ -1871,13 +1987,23 @@ const Studio = () => {
       }
       setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
     } else if (mode === 'cue') {
-      // If switching to cue mode, show cue thumbs by default
+      // If switching to cue mode, remove from armed loops and show cue thumbs
+      setArmedLoopTrackIds(prev => {
+        const next = new Set(prev);
+        next.delete(trackId);
+        return next;
+      });
       setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
       
       // Always auto-select this track when switching to Chop mode
       setSelectedCueTrackId(trackId);
     } else if (mode === 'preview') {
-      // If switching to preview mode, clear cue track selection and hide cue thumbs
+      // If switching to preview mode, remove from armed loops, clear cue selection, hide cue thumbs
+      setArmedLoopTrackIds(prev => {
+        const next = new Set(prev);
+        next.delete(trackId);
+        return next;
+      });
       if (selectedCueTrackId === trackId) {
         setSelectedCueTrackId(null);
       }
@@ -1904,6 +2030,19 @@ const Studio = () => {
   // Add this function to handle track selection
   const handleTrackSelect = (trackId: string) => {
     setSelectedCueTrackId(prevId => prevId === trackId ? null : trackId);
+  };
+
+  // Add this function to handle loop arm toggle (multiple loops can be armed)
+  const handleLoopArmToggle = (trackId: string) => {
+    setArmedLoopTrackIds(prev => {
+      const next = new Set(prev);
+      if (next.has(trackId)) {
+        next.delete(trackId);
+      } else {
+        next.add(trackId);
+      }
+      return next;
+    });
   };
 
   // Add handler for playback time updates
@@ -2280,6 +2419,7 @@ const Studio = () => {
   // SidePanel handlers
   const handleUploadTrack = async (file: File, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     const placeholderId = `loading-${Date.now()}`;
+    addingTrackIdRef.current = null;
     setLoadingTrackPlaceholder({ id: placeholderId, displayName: file.name, mode: 'add' });
     try {
       setIsManuallyAddingTrack(true);
@@ -2302,6 +2442,7 @@ const Studio = () => {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         file: file,
         buffer: buffer,
+        peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,
         loopStart: 0,
         loopEnd: buffer.duration,
@@ -2323,7 +2464,8 @@ const Studio = () => {
         
         return updatedTracks;
       });
-      
+      addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
+
       // Initialize default values for the new track
       setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
       setZoomLevels(prev => ({ ...prev, [newTrack.id]: 1 }));
@@ -2340,16 +2482,11 @@ const Studio = () => {
       setHighpassFreqs(prev => ({ ...prev, [newTrack.id]: 20 }));
       setFilterEnabled(prev => ({ ...prev, [newTrack.id]: false }));
       
-      // Set a small delay to simulate waveform loading
-      setTimeout(() => {
-        // setIsWaveformLoading(false); // This line was removed
-      }, 500);
-      
     } catch (error) {
       console.error('Error uploading track:', error);
       setError(error instanceof Error ? error.message : 'Failed to upload track');
-    } finally {
       setLoadingTrackPlaceholder(null);
+    } finally {
       setIsManuallyAddingTrack(false);
     }
   };
@@ -2378,7 +2515,8 @@ const Studio = () => {
         signedUrl = await signFile(asset.fileKey);
       } catch (error) {
         console.error('Failed to get signed URL for asset:', error);
-        throw new Error('Failed to access audio file. Please try again.');
+        const msg = error instanceof Error ? error.message : '';
+        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
       // Fetch the audio file using the signed URL
@@ -2422,7 +2560,8 @@ const Studio = () => {
         
         return updatedTracks;
       });
-      
+      addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
+
       // Initialize default values for the new track
       setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
       setZoomLevels(prev => ({ ...prev, [newTrack.id]: 1 }));
@@ -2439,16 +2578,11 @@ const Studio = () => {
       setHighpassFreqs(prev => ({ ...prev, [newTrack.id]: 20 }));
       setFilterEnabled(prev => ({ ...prev, [newTrack.id]: false }));
       
-      // Set a small delay to simulate waveform loading
-      setTimeout(() => {
-        // setIsWaveformLoading(false); // This line was removed
-      }, 500);
-      
     } catch (error) {
       console.error('Error adding from library:', error);
       setError(error instanceof Error ? error.message : 'Failed to add track from library');
-    } finally {
       setLoadingTrackPlaceholder(null);
+    } finally {
       setIsManuallyAddingTrack(false);
     }
   };
@@ -2460,6 +2594,7 @@ const Studio = () => {
     }
 
     const placeholderId = `loading-${Date.now()}`;
+    addingTrackIdRef.current = null;
     setLoadingTrackPlaceholder({ id: placeholderId, displayName: userTrack.name, mode: 'add' });
     try {
       setIsManuallyAddingTrack(true);
@@ -2482,6 +2617,7 @@ const Studio = () => {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         file: userTrack.file,
         buffer: buffer,
+        peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,
         loopStart: 0,
         loopEnd: buffer.duration,
@@ -2521,17 +2657,13 @@ const Studio = () => {
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
       setHighpassFreqs(prev => ({ ...prev, [newTrack.id]: 20 }));
       setFilterEnabled(prev => ({ ...prev, [newTrack.id]: false }));
-      
-      // Set a small delay to simulate waveform loading
-      setTimeout(() => {
-        // setIsWaveformLoading(false); // This line was removed
-      }, 500);
+      addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
       
     } catch (error) {
       console.error('Error adding user track:', error);
       setError(error instanceof Error ? error.message : 'Failed to add user track');
-    } finally {
       setLoadingTrackPlaceholder(null);
+    } finally {
       setIsManuallyAddingTrack(false);
     }
   };
@@ -2603,6 +2735,7 @@ const Studio = () => {
           id: trackId,
           file,
           buffer,
+          peaks: extractPeaksFromBuffer(buffer),
           mode: 'cue',
           loopStart: 0,
           loopEnd: buffer.duration,
@@ -2663,7 +2796,8 @@ const Studio = () => {
         signedUrl = await signFile(asset.fileKey);
       } catch (error) {
         console.error('Failed to get signed URL for asset:', error);
-        throw new Error('Failed to access audio file. Please try again.');
+        const msg = error instanceof Error ? error.message : '';
+        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
       // Fetch the audio file using the signed URL
@@ -2680,6 +2814,7 @@ const Studio = () => {
         sourceAssetId: asset.id,
         file,
         buffer,
+        peaks: extractPeaksFromBuffer(buffer),
         mode: settings.mode || 'cue',
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
@@ -2716,7 +2851,8 @@ const Studio = () => {
       setIsInitializingAudio(false);
     } catch (error) {
       console.error('Error initializing audio:', error);
-      setError('Failed to initialize audio. Please try again.');
+      const msg = error instanceof Error ? error.message : '';
+      setError(msg.startsWith('Too many requests') ? msg : 'Failed to initialize audio. Please try again.');
       setNeedsUserInteraction(true);
       setIsInitializingAudio(false);
     }
@@ -3494,6 +3630,41 @@ const Studio = () => {
           </div>
         )}
 
+        {/* Global Play & Arm Controls */}
+        <div className="flex items-center gap-2 mb-4">
+          <button
+            onClick={handleGlobalPlayClick}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm text-sm font-medium ${
+              armedLoopTrackIds.size > 0 && [...armedLoopTrackIds].some(id => playbackStates[id])
+                ? 'bg-audafact-accent-cyan text-audafact-text-primary hover:bg-opacity-90'
+                : 'bg-audafact-surface-2 text-audafact-text-primary hover:bg-audafact-surface-1 border border-audafact-divider'
+            }`}
+            title="Activate Space bar and play armed loops"
+          >
+            {armedLoopTrackIds.size > 0 && [...armedLoopTrackIds].some(id => playbackStates[id]) ? (
+              <Pause className="w-4 h-4" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            <span>Play</span>
+          </button>
+          <button
+            onClick={handleGlobalArmToggle}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm text-sm font-medium ${
+              spaceBarEnabled
+                ? 'bg-audafact-accent-cyan text-audafact-text-primary hover:bg-opacity-90'
+                : 'bg-audafact-surface-2 text-audafact-text-primary hover:bg-audafact-surface-1 border border-audafact-divider'
+            }`}
+            title={spaceBarEnabled ? 'Space bar enabled for armed tracks' : 'Space bar disabled — click to enable'}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <span>Arm</span>
+          </button>
+        </div>
+
         {/* Global Recording Controls */}
         <div className="flex justify-end mb-4">
           <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
@@ -3536,68 +3707,24 @@ const Studio = () => {
           </div>
         ))}
 
-        {/* Render loading skeleton when adding track - pushes existing tracks down - pushes existing tracks down, playback continues */}
-        {loadingTrackPlaceholder && (
+        {/* Add-track skeleton - shows immediately when add action triggered, before track data loads */}
+        {loadingTrackPlaceholder?.mode === 'add' && (addingTrackIdRef.current === null || tracks[0]?.id !== addingTrackIdRef.current) && (
           <div
-            key={loadingTrackPlaceholder.id}
+            key="add-track-skeleton"
             className="audafact-card overflow-hidden transition-all duration-300 relative border-audafact-accent-cyan shadow-card"
+            style={{ transform: 'translateY(0)' }}
           >
-            <div
-              className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
-              style={{ touchAction: 'pan-y pinch-zoom' }}
-              onWheel={handleWheel}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-            >
-              <button
-                onClick={handlePreviousTrack}
-                disabled={!!loadingTrackPlaceholder || isTrackLoading}
-                className={`p-2 rounded-full transition-all duration-200 ${
-                  (!!loadingTrackPlaceholder || isTrackLoading) ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-                }`}
-                title="Previous Track (Left Arrow)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                disabled
-                className="flex flex-col items-center justify-center p-2 rounded-lg text-audafact-text-secondary cursor-not-allowed"
-                title={loadingTrackPlaceholder?.mode === 'replace' ? 'Loading track...' : 'Adding track...'}
-              >
-                <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
-                <span className="text-xs mt-1">{loadingTrackPlaceholder?.mode === 'replace' ? 'Loading...' : 'Adding...'}</span>
-              </button>
-              <button
-                onClick={handleNextTrack}
-                disabled={!!loadingTrackPlaceholder || isTrackLoading}
-                className={`p-2 rounded-full transition-all duration-200 ${
-                  (!!loadingTrackPlaceholder || isTrackLoading) ? 'text-audafact-text-secondary cursor-not-allowed' : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-                }`}
-                title="Next Track (Right Arrow)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+            <div className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2">
+              <div className="w-10 h-10" />
+              <div className="w-10 h-10" />
+              <div className="w-10 h-10" />
             </div>
             <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
-              <div className="flex items-center gap-3">
-                <h3 className="font-medium audafact-heading truncate max-w-[420px]">
-                  {loadingTrackPlaceholder.displayName}
-                </h3>
-                <span className="flex items-center gap-2 text-sm audafact-text-secondary">
-                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-audafact-accent-cyan" />
-                  Loading...
-                </span>
-              </div>
+              <h3 className="font-medium audafact-heading truncate">{loadingTrackPlaceholder.displayName}</h3>
+              <p className="text-xs audafact-text-secondary flex items-center gap-2 mt-1">
+                <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
+                Loading waveform...
+              </p>
             </div>
             <div className="audafact-waveform-bg relative flex items-center justify-center" style={{ height: '120px' }}>
               <div className="flex items-end gap-1 h-12" aria-hidden>
@@ -3616,27 +3743,27 @@ const Studio = () => {
           </div>
         )}
 
-        {/* Render all tracks - when replace mode, first track is hidden (replaced by skeleton above)
+        {/* Render all tracks - first track shows skeleton overlay on waveform until loaded when adding/replacing
             Tracks are rendered but hidden while waveforms load (skeleton shown above) to avoid flicker */}
         <div
           className={showTrackSkeletons ? 'fixed -left-[9999px] top-0 w-full opacity-0 pointer-events-none' : undefined}
           aria-hidden={showTrackSkeletons}
         >
-        {(loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks).map((track, index) => (
+        {tracks.map((track, index) => (
           <div 
             key={track.id} 
             className={`audafact-card overflow-hidden transition-all duration-300 relative ${
-              !loadingTrackPlaceholder && index === 0
+              index === 0
                 ? 'border-audafact-accent-cyan shadow-card' // Top track styling
-                : 'border-audafact-divider shadow-sm' // Lower tracks styling (or when loading placeholder above)
+                : 'border-audafact-divider shadow-sm' // Lower tracks styling
             } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''}`}
             style={{
               transform: (loadingTrackPlaceholder || (isAddingTrack && index > 0)) ? 'translateY(10px)' : 'translateY(0)'
             }}
             data-testid={index === 0 ? 'main-track-card' : `track-card-${index}`}
           >
-            {/* Add Track and Navigation Controls - Only show on first track when no loading skeleton */}
-            {index === 0 && !loadingTrackPlaceholder && (
+            {/* Add Track and Navigation Controls - Only show on first track */}
+            {index === 0 && (
               <div 
                 className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
                 style={{ touchAction: 'pan-y pinch-zoom' }}
@@ -3750,8 +3877,15 @@ const Studio = () => {
                   <h3 className="font-medium audafact-heading truncate">
                     {track.file.name}
                   </h3>
-                  <p className="text-xs audafact-text-secondary truncate">
-                    {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
+                  <p className="text-xs audafact-text-secondary truncate flex items-center gap-2">
+                    {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
+                      <span className="flex items-center gap-1">
+                        <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
+                        Loading waveform...
+                      </span>
+                    ) : (
+                      track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'
+                    )}
                   </p>
                 </div>
                 {/* Row 3: Measures, Cues, Select */}
@@ -3802,6 +3936,23 @@ const Studio = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                       <span>Select</span>
+                    </button>
+                  )}
+                  {track.mode === 'loop' && (
+                    <button
+                      onClick={() => handleLoopArmToggle(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        armedLoopTrackIds.has(track.id)
+                          ? 'bg-audafact-accent-cyan text-audafact-text-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space Playback' : 'Arm for Space Playback'}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span>Arm</span>
                     </button>
                   )}
                 </div>
@@ -3869,8 +4020,15 @@ const Studio = () => {
                     <h3 className="font-medium audafact-heading truncate max-w-[420px]">
                       {track.file.name}
                     </h3>
-                    <p className="text-sm audafact-text-secondary">
-                      {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
+                    <p className="text-sm audafact-text-secondary flex items-center gap-2">
+                      {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
+                        <span className="flex items-center gap-1">
+                          <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
+                          Loading waveform...
+                        </span>
+                      ) : (
+                        track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -3930,6 +4088,25 @@ const Studio = () => {
                     </button>
                   )}
 
+                  {/* Loop Arm Indicator */}
+                  {track.mode === 'loop' && (
+                    <button
+                      onClick={() => handleLoopArmToggle(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        armedLoopTrackIds.has(track.id)
+                          ? 'bg-audafact-accent-cyan text-audafact-text-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space Playback' : 'Arm for Space Playback'}
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span>Arm</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleToggleControls(track.id)}
                     className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
@@ -3975,8 +4152,23 @@ const Studio = () => {
 
             {/* Waveform Display */}
             <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
+              {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-audafact-waveform-bg" aria-hidden>
+                  <div className="flex items-end gap-1 h-12" aria-hidden>
+                    {[...Array(24)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-audafact-accent-cyan/30 rounded-sm animate-pulse"
+                        style={{ height: `${20 + Math.sin(i * 0.5) * 30}%`, animationDelay: `${i * 50}ms` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
               <WaveformDisplay
                 audioFile={track.file}
+                peaks={track.peaks}
+                duration={track.peaks ? track.buffer.duration : undefined}
                 mode={track.mode}
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
@@ -4002,6 +4194,7 @@ const Studio = () => {
                 isGuestMode={isGuestMode}
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
                 onReady={() => handleWaveformReady(track.id)}
+                suppressLoadingOverlay={!!(loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id))}
               />
             </div>
 
@@ -4037,6 +4230,7 @@ const Studio = () => {
                 onDelete={() => removeTrack(track.id)}
                 trackId={track.id}
                 seekFunctionRef={getSeekFunctionRef(track.id)}
+                togglePlaybackFunctionRef={getTogglePlaybackRef(track.id)}
                 recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
                 cueDragState={cueDragStates[track.id] || null}
               />
@@ -4044,6 +4238,11 @@ const Studio = () => {
               {track.mode === 'cue' && track.id === selectedCueTrackId && (
                 <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
                   Press keyboard keys 1-0 to trigger cue points
+                </div>
+              )}
+              {track.mode === 'loop' && armedLoopTrackIds.has(track.id) && (
+                <div className="mt-3 bg-audafact-accent-cyan bg-opacity-10 p-2 rounded text-audafact-accent-cyan text-xs">
+                  Space: Play/Pause armed loops
                 </div>
               )}
             </div>

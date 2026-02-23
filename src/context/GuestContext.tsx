@@ -154,7 +154,6 @@ export const GuestProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 export const useGuest = () => {
   const context = useContext(GuestContext);
-  console.log('useGuest', context);
   if (!context) {
     throw new Error('useGuest must be used within GuestProvider');
   }

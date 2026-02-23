@@ -120,6 +120,8 @@ interface TrackControlsProps {
   trackId?: string;
   // Seek function ref
   seekFunctionRef?: React.MutableRefObject<((seekTime: number) => void) | null>;
+  // Toggle playback function ref (for global space bar trigger)
+  togglePlaybackFunctionRef?: React.MutableRefObject<(() => void) | null>;
   // Recording destination for audio capture
   recordingDestination?: MediaStreamAudioDestinationNode | null;
   // Add drag state props for real-time timestamp updates
@@ -153,6 +155,7 @@ const TrackControls = ({
   onDelete,
   trackId,
   seekFunctionRef,
+  togglePlaybackFunctionRef,
   recordingDestination,
   cueDragState = null
 }: TrackControlsProps) => {
@@ -952,6 +955,18 @@ const TrackControls = ({
       setIsPlaying(false);
     }
   };
+
+  // Expose togglePlayback to parent for global space bar trigger
+  useEffect(() => {
+    if (togglePlaybackFunctionRef) {
+      togglePlaybackFunctionRef.current = togglePlayback;
+    }
+    return () => {
+      if (togglePlaybackFunctionRef) {
+        togglePlaybackFunctionRef.current = null;
+      }
+    };
+  }, [togglePlaybackFunctionRef, togglePlayback]);
   
   // Play from a specific cue point
   const playCuePoint = async (index: number) => {
