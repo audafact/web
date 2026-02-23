@@ -10,6 +10,68 @@ const formatCueTimestamp = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
 };
 
+// Frequency filter logarithmic scale helpers (20Hz - 20kHz)
+const FREQ_MIN = 20;
+const FREQ_MAX = 20000;
+const FREQ_RATIO = FREQ_MAX / FREQ_MIN; // 1000
+
+const sliderToFreq = (sliderValue: number): number => {
+  const t = sliderValue / 100; // 0-100 -> 0-1
+  return FREQ_MIN * Math.pow(FREQ_RATIO, t);
+};
+
+const freqToSlider = (freq: number): number => {
+  const clamped = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+  return 100 * (Math.log(clamped / FREQ_MIN) / Math.log(FREQ_RATIO));
+};
+
+const formatFreqDisplay = (freq: number): string => {
+  return freq >= 1000 ? `${(freq / 1000).toFixed(1)}kHz` : `${Math.round(freq)}Hz`;
+};
+
+const formatVolumeDisplay = (vol: number): string => `${Math.round(vol * 100)}%`;
+
+const formatSpeedDisplay = (s: number): string => `${s.toFixed(2)}x`;
+
+const parseFreqInput = (input: string): number | null => {
+  const trimmed = input.replace(/\s/g, '').toLowerCase();
+  const match = trimmed.match(/^([\d.]+)\s*(hz|khz|k)?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  const unit = match[2];
+  if (unit === 'k' || unit === 'khz') val *= 1000;
+  return Math.max(FREQ_MIN, Math.min(FREQ_MAX, val));
+};
+
+const parseVolumeInput = (input: string): number | null => {
+  const trimmed = input.replace(/\s/g, '');
+  const match = trimmed.match(/^([\d.]+)\s*%?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  if (val > 1) val /= 100;
+  return Math.max(0, Math.min(1, val));
+};
+
+const parseSpeedInput = (
+  input: string,
+  minSpeed: number,
+  maxSpeed: number,
+  trackTempo: number
+): number | null => {
+  const trimmed = input.replace(/\s/g, '').toLowerCase();
+  const match = trimmed.match(/^([\d.]+)\s*(x|bpm)?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  const unit = match[2];
+  if (unit === 'bpm' && trackTempo > 0) {
+    val = val / trackTempo;
+  }
+  return Math.max(minSpeed, Math.min(maxSpeed, val));
+};
+
 // Helper function to get current timestamp for a cue point (considering drag state)
 const getCurrentCueTimestamp = (cuePoints: number[], cueDragState: { [index: number]: number } | null, index: number): number => {
   // If this cue point is being dragged, use the drag state value
@@ -119,6 +181,14 @@ const TrackControls = ({
   const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
   const [internalHighpassFreq, setInternalHighpassFreq] = useState(highpassFreq || 20);
   const [isFilterSectionExpanded, setIsFilterSectionExpanded] = useState(false);
+  const [lowpassInputValue, setLowpassInputValue] = useState(formatFreqDisplay(lowpassFreq || 20000));
+  const [highpassInputValue, setHighpassInputValue] = useState(formatFreqDisplay(highpassFreq || 20));
+  const [volumeInputValue, setVolumeInputValue] = useState(() => formatVolumeDisplay(volume));
+  const [speedInputValue, setSpeedInputValue] = useState(() => formatSpeedDisplay(playbackSpeed));
+  const volumeInputFocusedRef = useRef(false);
+  const speedInputFocusedRef = useRef(false);
+  const lowpassInputFocusedRef = useRef(false);
+  const highpassInputFocusedRef = useRef(false);
   
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -164,7 +234,30 @@ const TrackControls = ({
     }
   }, [highpassFreq]);
 
+  // Sync editable input values when props change (when not focused)
+  useEffect(() => {
+    if (!lowpassInputFocusedRef.current) {
+      setLowpassInputValue(formatFreqDisplay(lowpassFreq ?? internalLowpassFreq ?? 20000));
+    }
+  }, [lowpassFreq, internalLowpassFreq]);
 
+  useEffect(() => {
+    if (!highpassInputFocusedRef.current) {
+      setHighpassInputValue(formatFreqDisplay(highpassFreq ?? internalHighpassFreq ?? 20));
+    }
+  }, [highpassFreq, internalHighpassFreq]);
+
+  useEffect(() => {
+    if (!volumeInputFocusedRef.current) {
+      setVolumeInputValue(formatVolumeDisplay(volume));
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    if (!speedInputFocusedRef.current) {
+      setSpeedInputValue(formatSpeedDisplay(speed));
+    }
+  }, [speed]);
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
@@ -188,15 +281,26 @@ const TrackControls = ({
     return speedToTempo(speed);
   }, [speed, speedToTempo]);
 
+  const FILTER_RAMP_DURATION = 0.03; // 30ms smooth transition
+
   // Filter control functions
   const handleLowpassFreqChange = useCallback((freq: number) => {
-    setInternalLowpassFreq(freq);
-    currentLowpassFreqRef.current = freq;
-    if (lowpassFilterRef.current) {
-      lowpassFilterRef.current.frequency.setValueAtTime(freq, audioContext?.currentTime || 0);
+    const clampedFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+    setInternalLowpassFreq(clampedFreq);
+    currentLowpassFreqRef.current = clampedFreq;
+    if (lowpassFilterRef.current && audioContext) {
+      const now = audioContext.currentTime;
+      lowpassFilterRef.current.frequency.setValueAtTime(
+        lowpassFilterRef.current.frequency.value,
+        now
+      );
+      lowpassFilterRef.current.frequency.exponentialRampToValueAtTime(
+        clampedFreq,
+        now + FILTER_RAMP_DURATION
+      );
     }
     if (onLowpassFreqChange) {
-      onLowpassFreqChange(freq);
+      onLowpassFreqChange(clampedFreq);
     }
     
     // Record filter change event
@@ -207,7 +311,7 @@ const TrackControls = ({
         data: { 
           filterType: 'lowpass',
           oldFreq: internalLowpassFreq,
-          newFreq: freq,
+          newFreq: clampedFreq,
           mode
         }
       });
@@ -215,13 +319,22 @@ const TrackControls = ({
   }, [audioContext, onLowpassFreqChange, trackId, addRecordingEvent, internalLowpassFreq, mode]);
 
   const handleHighpassFreqChange = useCallback((freq: number) => {
-    setInternalHighpassFreq(freq);
-    currentHighpassFreqRef.current = freq;
-    if (highpassFilterRef.current) {
-      highpassFilterRef.current.frequency.setValueAtTime(freq, audioContext?.currentTime || 0);
+    const clampedFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+    setInternalHighpassFreq(clampedFreq);
+    currentHighpassFreqRef.current = clampedFreq;
+    if (highpassFilterRef.current && audioContext) {
+      const now = audioContext.currentTime;
+      highpassFilterRef.current.frequency.setValueAtTime(
+        highpassFilterRef.current.frequency.value,
+        now
+      );
+      highpassFilterRef.current.frequency.exponentialRampToValueAtTime(
+        clampedFreq,
+        now + FILTER_RAMP_DURATION
+      );
     }
     if (onHighpassFreqChange) {
-      onHighpassFreqChange(freq);
+      onHighpassFreqChange(clampedFreq);
     }
     
     // Record filter change event
@@ -232,14 +345,52 @@ const TrackControls = ({
         data: { 
           filterType: 'highpass',
           oldFreq: internalHighpassFreq,
-          newFreq: freq,
+          newFreq: clampedFreq,
           mode
         }
       });
     }
   }, [audioContext, onHighpassFreqChange, trackId, addRecordingEvent, internalHighpassFreq, mode]);
 
+  const handleLowpassInputBlur = useCallback(() => {
+    lowpassInputFocusedRef.current = false;
+    const parsed = parseFreqInput(lowpassInputValue);
+    if (parsed !== null) {
+      handleLowpassFreqChange(parsed);
+      setLowpassInputValue(formatFreqDisplay(parsed));
+    } else {
+      setLowpassInputValue(formatFreqDisplay(lowpassFreq ?? internalLowpassFreq ?? 20000));
+    }
+  }, [lowpassInputValue, lowpassFreq, internalLowpassFreq, handleLowpassFreqChange]);
 
+  const handleHighpassInputBlur = useCallback(() => {
+    highpassInputFocusedRef.current = false;
+    const parsed = parseFreqInput(highpassInputValue);
+    if (parsed !== null) {
+      handleHighpassFreqChange(parsed);
+      setHighpassInputValue(formatFreqDisplay(parsed));
+    } else {
+      setHighpassInputValue(formatFreqDisplay(highpassFreq ?? internalHighpassFreq ?? 20));
+    }
+  }, [highpassInputValue, highpassFreq, internalHighpassFreq, handleHighpassFreqChange]);
+
+  const handleVolumeInputBlur = useCallback(() => {
+    volumeInputFocusedRef.current = false;
+    const parsed = parseVolumeInput(volumeInputValue);
+    if (parsed !== null && onVolumeChange) {
+      onVolumeChange(parsed);
+      if (trackId) {
+        addRecordingEvent({
+          type: 'volume_change',
+          trackId,
+          data: { oldVolume: volume, newVolume: parsed, mode },
+        });
+      }
+      setVolumeInputValue(formatVolumeDisplay(parsed));
+    } else {
+      setVolumeInputValue(formatVolumeDisplay(volume));
+    }
+  }, [volumeInputValue, volume, onVolumeChange, trackId, addRecordingEvent, mode]);
 
   // Check if filters are actually active (have non-default values)
   const areFiltersActive = useCallback(() => {
@@ -646,6 +797,12 @@ const TrackControls = ({
   // Handle keyboard events for cue points
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // Skip when user is typing in an input (volume, speed, filters, etc.)
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
       // Only handle key presses if this is a cue track AND it's selected
       if (mode !== 'cue' || !isSelected) return;
 
@@ -950,6 +1107,20 @@ const TrackControls = ({
     }
   }, [isPlaying, audioContext, onSpeedChange, trackId, addRecordingEvent, mode]);
 
+  const handleSpeedInputBlur = useCallback(() => {
+    speedInputFocusedRef.current = false;
+    const range = getTempoSpeedRange();
+    const minSpeed = range.minTempo / trackTempo;
+    const maxSpeed = range.maxTempo / trackTempo;
+    const parsed = parseSpeedInput(speedInputValue, minSpeed, maxSpeed, trackTempo);
+    if (parsed !== null) {
+      handleSpeedSliderChange(parsed, true);
+      setSpeedInputValue(formatSpeedDisplay(parsed));
+    } else {
+      setSpeedInputValue(formatSpeedDisplay(speed));
+    }
+  }, [speedInputValue, speed, getTempoSpeedRange, trackTempo, handleSpeedSliderChange]);
+
   // Update playback rate when speed changes (e.g. from external prop sync)
   useEffect(() => {
     if (audioSourceRef.current) {
@@ -1066,7 +1237,17 @@ const TrackControls = ({
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-xs md:text-sm audafact-text-secondary w-10 md:w-12">{Math.round(volume * 100)}%</span>
+            <input
+              type="text"
+              value={volumeInputValue}
+              onChange={(e) => setVolumeInputValue(e.target.value)}
+              onFocus={() => { volumeInputFocusedRef.current = true; }}
+              onBlur={() => handleVolumeInputBlur()}
+              onKeyDown={(e) => e.key === 'Enter' && handleVolumeInputBlur()}
+              disabled={disabled}
+              className="w-10 md:w-12 px-1.5 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan audafact-text-secondary"
+              aria-label="Volume"
+            />
           </div>
         </div>
 
@@ -1099,9 +1280,18 @@ const TrackControls = ({
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-xs md:text-sm text-gray-600 w-14 md:w-16">
-              {getCurrentEffectiveTempo()} BPM
-            </span>
+            <input
+              type="text"
+              value={speedInputValue}
+              onChange={(e) => setSpeedInputValue(e.target.value)}
+              onFocus={() => { speedInputFocusedRef.current = true; }}
+              onBlur={() => handleSpeedInputBlur()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSpeedInputBlur()}
+              disabled={disabled}
+              className="w-14 md:w-16 px-1.5 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan audafact-text-secondary"
+              aria-label="Playback speed"
+              title={`${getCurrentEffectiveTempo()} BPM`}
+            />
           </div>
         </div>
       </div>
@@ -1145,27 +1335,43 @@ const TrackControls = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium audafact-heading">
-                    Low Pass Filter: {(lowpassFreq || 20000) >= 1000 
-                      ? `${((lowpassFreq || 20000) / 1000).toFixed(1)}kHz` 
-                      : `${(lowpassFreq || 20000)}Hz`}
+                    Low Pass Filter: {formatFreqDisplay(lowpassFreq || 20000)}
                   </label>
                 </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="20000"
-                  step="1"
-                  value={lowpassFreq || 20000}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    if (disabled) return;
-                    const freq = parseInt(e.target.value);
-                    handleLowpassFreqChange(freq);
-                  }}
-                  className={`w-full h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
-                    disabled ? 'cursor-not-allowed opacity-50' : ''
-                  }`}
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={freqToSlider(lowpassFreq || 20000)}
+                    disabled={disabled}
+                    onInput={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat((e.target as HTMLInputElement).value));
+                      handleLowpassFreqChange(freq);
+                    }}
+                    onChange={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat(e.target.value));
+                      handleLowpassFreqChange(freq);
+                    }}
+                    className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
+                      disabled ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    value={lowpassInputValue}
+                    onChange={(e) => setLowpassInputValue(e.target.value)}
+                    onFocus={() => { lowpassInputFocusedRef.current = true; }}
+                    onBlur={() => handleLowpassInputBlur()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLowpassInputBlur()}
+                    disabled={disabled}
+                    className="w-16 px-2 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan"
+                    aria-label="Low pass frequency"
+                  />
+                </div>
                 <div className="flex justify-between text-xs audafact-text-secondary">
                   <span>20Hz</span>
                   <span>20kHz</span>
@@ -1175,27 +1381,43 @@ const TrackControls = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium audafact-heading">
-                    High Pass Filter: {(highpassFreq || 20) >= 1000 
-                      ? `${((highpassFreq || 20) / 1000).toFixed(1)}kHz` 
-                      : `${(highpassFreq || 20)}Hz`}
+                    High Pass Filter: {formatFreqDisplay(highpassFreq || 20)}
                   </label>
                 </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="20000"
-                  step="1"
-                  value={highpassFreq || 20}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    if (disabled) return;
-                    const freq = parseInt(e.target.value);
-                    handleHighpassFreqChange(freq);
-                  }}
-                  className={`w-full h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
-                    disabled ? 'cursor-not-allowed opacity-50' : ''
-                  }`}
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={freqToSlider(highpassFreq || 20)}
+                    disabled={disabled}
+                    onInput={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat((e.target as HTMLInputElement).value));
+                      handleHighpassFreqChange(freq);
+                    }}
+                    onChange={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat(e.target.value));
+                      handleHighpassFreqChange(freq);
+                    }}
+                    className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
+                      disabled ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    value={highpassInputValue}
+                    onChange={(e) => setHighpassInputValue(e.target.value)}
+                    onFocus={() => { highpassInputFocusedRef.current = true; }}
+                    onBlur={() => handleHighpassInputBlur()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleHighpassInputBlur()}
+                    disabled={disabled}
+                    className="w-16 px-2 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan"
+                    aria-label="High pass frequency"
+                  />
+                </div>
                 <div className="flex justify-between text-xs audafact-text-secondary">
                   <span>20Hz</span>
                   <span>20kHz</span>
