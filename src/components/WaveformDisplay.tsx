@@ -39,6 +39,8 @@ interface WaveformDisplayProps {
   isGuestMode?: boolean;
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange?: (index: number, time: number | null) => void;
+  // Called when waveform has finished loading and is ready for display
+  onReady?: () => void;
 }
 
 const WaveformDisplay = ({
@@ -74,6 +76,7 @@ const WaveformDisplay = ({
   isGuestMode = false,
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange,
+  onReady,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -180,7 +183,12 @@ const WaveformDisplay = ({
     plugins: plugins,
   });
 
-
+  // Notify parent when waveform is ready for display
+  useEffect(() => {
+    if (isReady && onReady) {
+      onReady();
+    }
+  }, [isReady, onReady]);
 
   // Track playback state internally
   useEffect(() => {

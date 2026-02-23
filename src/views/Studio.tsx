@@ -33,6 +33,7 @@ import { signFile } from '../lib/api';
 // Define a Track type
 interface Track {
   id: string;
+  sourceAssetId?: string;  // For restore: library asset id or upload id
   file: File;
   buffer: AudioBuffer;
   mode: 'preview' | 'loop' | 'cue';
@@ -302,6 +303,42 @@ const Studio = () => {
   const [isTrackLoading, setIsTrackLoading] = useState<boolean>(false);
   const [trackLoadRetryCount, setTrackLoadRetryCount] = useState<number>(0);
 
+  // Track which waveforms have finished loading (avoids flicker on initial load/restore)
+  const [waveformReadyTrackIds, setWaveformReadyTrackIds] = useState<Set<string>>(() => new Set());
+  const trackIdsKey = useMemo(() => tracks.map(t => t.id).join(','), [tracks]);
+  // Only prune removed tracks - keep ready status for existing tracks (avoids all tracks loading when adding one)
+  useEffect(() => {
+    setWaveformReadyTrackIds(prev => {
+      const currentIds = new Set(tracks.map(t => t.id));
+      const pruned = new Set<string>();
+      for (const id of prev) {
+        if (currentIds.has(id)) pruned.add(id);
+      }
+      return pruned;
+    });
+  }, [trackIdsKey]);
+  const handleWaveformReady = useCallback((trackId: string) => {
+    setWaveformReadyTrackIds(prev => new Set(prev).add(trackId));
+  }, []);
+
+  const tracksToRender = useMemo(() =>
+    loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks,
+    [tracks, loadingTrackPlaceholder?.mode]);
+  const allWaveformsReady = tracksToRender.length === 0 || tracksToRender.every(t => waveformReadyTrackIds.has(t.id));
+
+  // Debounce: only show tracks after waveforms have been ready for 200ms (reduces restore flicker)
+  const [waveformsSettled, setWaveformsSettled] = useState(false);
+  useEffect(() => {
+    if (!allWaveformsReady) {
+      setWaveformsSettled(false);
+      return;
+    }
+    const t = setTimeout(() => setWaveformsSettled(true), 200);
+    return () => clearTimeout(t);
+  }, [allWaveformsReady]);
+
+  const showTrackSkeletons = !loadingTrackPlaceholder && tracksToRender.length > 0 && !waveformsSettled;
+
   // Add drag and drop state
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [dragTarget, setDragTarget] = useState<string | null>(null);
@@ -340,6 +377,7 @@ const Studio = () => {
       const studioState = {
         tracks: tracks.map(track => ({
           id: track.id,
+          sourceAssetId: track.sourceAssetId ?? track.id,
           fileName: track.file.name,
           fileSize: track.file.size,
           fileType: track.file.type,
@@ -480,12 +518,19 @@ const Studio = () => {
       const restoredTracks: Track[] = [];
       const assets = availableAssets || [];
       
-      for (const savedTrack of savedState.tracks) {
+      for (let i = 0; i < savedState.tracks.length; i++) {
+        const savedTrack = savedState.tracks[i];
         try {
-          // Find the asset by ID
-          const asset = assets.find(a => a.id === savedTrack.id);
+          // Space out sign-file requests to avoid 429 rate limiting
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          // Find the asset by sourceAssetId (or id for backward compatibility)
+          const lookupId = savedTrack.sourceAssetId ?? savedTrack.id;
+          const asset = assets.find(a => a.id === lookupId);
           if (!asset) {
-            console.warn('Asset not found for saved track:', savedTrack.id);
+            console.warn('Asset not found for saved track:', lookupId);
             continue;
           }
           
@@ -498,15 +543,31 @@ const Studio = () => {
           // Load the audio buffer
           const buffer = await loadAudioBuffer(file, context);
           
-          // Recreate the track with saved settings
+          // Validate and restore cue points (chops) - prevent reset to 00:00
+          const rawCuePoints = savedTrack.cuePoints;
+          const isAllZeros = Array.isArray(rawCuePoints) && rawCuePoints.every(v => v === 0);
+          let validCuePoints: number[];
+          if (Array.isArray(rawCuePoints) && rawCuePoints.length > 0 && rawCuePoints.every(v => typeof v === 'number') && !isAllZeros) {
+            validCuePoints = rawCuePoints.map(t => Math.max(0, Math.min(t, buffer.duration)));
+          } else {
+            // Fallback: try per-track localStorage (saved on each cue drag), then defaults
+            const fromLocal = loadCuePointsFromLocal(savedTrack.id);
+            const fromLocalValid = Array.isArray(fromLocal) && fromLocal.length > 0 && fromLocal.every(v => typeof v === 'number') && !fromLocal.every(v => v === 0);
+            validCuePoints = fromLocalValid
+              ? fromLocal.map(t => Math.max(0, Math.min(t, buffer.duration)))
+              : Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
+          }
+          
+          // Recreate the track with saved settings (defensive defaults for older saves)
           const restoredTrack: Track = {
             id: savedTrack.id,
+            sourceAssetId: lookupId,
             file,
             buffer,
-            mode: savedTrack.mode,
-            loopStart: savedTrack.loopStart,
-            loopEnd: savedTrack.loopEnd,
-            cuePoints: savedTrack.cuePoints,
+            mode: (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue',
+            loopStart: typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0,
+            loopEnd: typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration,
+            cuePoints: validCuePoints,
             tempo: savedTrack.tempo,
             timeSignature: savedTrack.timeSignature,
             firstMeasureTime: savedTrack.firstMeasureTime,
@@ -514,11 +575,14 @@ const Studio = () => {
           };
           
           // Save the restored settings to individual track settings to prevent override
+          const restoredMode = (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue';
+          const restoredLoopStart = typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0;
+          const restoredLoopEnd = typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration;
           const trackSettings = {
-            mode: savedTrack.mode,
-            loopStart: savedTrack.loopStart,
-            loopEnd: savedTrack.loopEnd,
-            cuePoints: savedTrack.cuePoints,
+            mode: restoredMode,
+            loopStart: restoredLoopStart,
+            loopEnd: restoredLoopEnd,
+            cuePoints: validCuePoints,
             tempo: savedTrack.tempo,
             timeSignature: savedTrack.timeSignature,
             firstMeasureTime: savedTrack.firstMeasureTime,
@@ -532,7 +596,7 @@ const Studio = () => {
             filterEnabled: savedTrack.filterEnabled
           };
           saveTrackSettingsToLocal(savedTrack.id, trackSettings);
-          saveCuePointsToLocal(savedTrack.id, savedTrack.cuePoints);
+          saveCuePointsToLocal(savedTrack.id, validCuePoints);
           
           restoredTracks.push(restoredTrack);
           
@@ -1645,6 +1709,7 @@ const Studio = () => {
   }, [user]);
 
   // Save state before page unload (refresh/navigation)
+  // Must include tracks so handler has fresh state when loop/mode change
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (user && !isGuestMode && tracks.length > 0) {
@@ -1657,7 +1722,7 @@ const Studio = () => {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [user, isGuestMode, tracks.length]);
+  }, [user, isGuestMode, tracks]);
 
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     if (!context) throw new Error('Audio context not initialized');
@@ -1703,11 +1768,14 @@ const Studio = () => {
     if (!tracks) return;
     
     setTracks(prev => 
-      prev.map(track => 
-        track && track.id === trackId 
-          ? { ...track, loopStart: start, loopEnd: end } 
-          : track
-      )
+      prev.map(track => {
+        if (!track || track.id !== trackId) return track;
+        const updated = { ...track, loopStart: start, loopEnd: end };
+        // Persist immediately so save/restore captures loop positions
+        const settings = loadTrackSettingsFromLocal(trackId) || {};
+        saveTrackSettingsToLocal(trackId, { ...settings, loopStart: start, loopEnd: end });
+        return updated;
+      })
     );
   };
   
@@ -1778,10 +1846,13 @@ const Studio = () => {
           const autoCues = Array.from({ length: 10 }, (_, i) => duration * (i / 10));
           // persist cue points
           const settings = loadTrackSettingsFromLocal(trackId) || {};
-          saveTrackSettingsToLocal(trackId, { ...settings, cuePoints: autoCues });
+          saveTrackSettingsToLocal(trackId, { ...settings, mode, cuePoints: autoCues });
           saveCuePointsToLocal(trackId, autoCues);
           return { ...track, mode, cuePoints: autoCues };
         }
+        // Persist mode immediately so save/restore captures it
+        const settings = loadTrackSettingsFromLocal(trackId) || {};
+        saveTrackSettingsToLocal(trackId, { ...settings, mode });
         return { ...track, mode };
       })
     );
@@ -2319,6 +2390,7 @@ const Studio = () => {
       // Create a new track
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sourceAssetId: asset.id,
         file: file,
         buffer: buffer,
         mode: trackType,
@@ -2599,6 +2671,7 @@ const Studio = () => {
       
       const newTrack: Track = {
         id: trackId,
+        sourceAssetId: asset.id,
         file,
         buffer,
         mode: settings.mode || 'cue',
@@ -3420,7 +3493,44 @@ const Studio = () => {
           <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
         </div>
 
-        {/* Render loading skeleton when adding track - pushes existing tracks down, playback continues */}
+        {/* Track skeleton - shown while waveforms load to prevent flicker */}
+        {showTrackSkeletons && tracksToRender.map((track, idx) => (
+          <div
+            key={`skeleton-${track.id}`}
+            className="audafact-card overflow-hidden transition-all duration-300 relative border-audafact-divider shadow-sm"
+            style={{ transform: idx > 0 ? 'translateY(10px)' : 'translateY(0)' }}
+          >
+            <div className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2">
+              <div className="w-10 h-10" />
+              <div className="flex items-center gap-2 text-audafact-text-secondary">
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-audafact-accent-cyan" />
+                <span className="text-xs">Loading...</span>
+              </div>
+              <div className="w-10 h-10" />
+            </div>
+            <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
+              <div className="flex items-center gap-3">
+                <div className="h-5 w-48 bg-audafact-surface-2 rounded animate-pulse" />
+              </div>
+            </div>
+            <div className="audafact-waveform-bg relative flex items-center justify-center" style={{ height: '120px' }}>
+              <div className="flex items-end gap-1 h-12" aria-hidden>
+                {[...Array(24)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 bg-audafact-accent-cyan/30 rounded-sm animate-pulse"
+                    style={{ height: `${20 + Math.sin(i * 0.5) * 30}%`, animationDelay: `${i * 50}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="p-4 bg-audafact-surface-1">
+              <div className="h-10 bg-audafact-surface-2 rounded animate-pulse" />
+            </div>
+          </div>
+        ))}
+
+        {/* Render loading skeleton when adding track - pushes existing tracks down - pushes existing tracks down, playback continues */}
         {loadingTrackPlaceholder && (
           <div
             key={loadingTrackPlaceholder.id}
@@ -3500,7 +3610,12 @@ const Studio = () => {
           </div>
         )}
 
-        {/* Render all tracks - when replace mode, first track is hidden (replaced by skeleton above) */}
+        {/* Render all tracks - when replace mode, first track is hidden (replaced by skeleton above)
+            Tracks are rendered but hidden while waveforms load (skeleton shown above) to avoid flicker */}
+        <div
+          className={showTrackSkeletons ? 'fixed -left-[9999px] top-0 w-full opacity-0 pointer-events-none' : undefined}
+          aria-hidden={showTrackSkeletons}
+        >
         {(loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks).map((track, index) => (
           <div 
             key={track.id} 
@@ -3880,6 +3995,7 @@ const Studio = () => {
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
                 isGuestMode={isGuestMode}
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
+                onReady={() => handleWaveformReady(track.id)}
               />
             </div>
 
@@ -3927,12 +4043,9 @@ const Studio = () => {
             </div>
           </div>
         ))}
+        </div>
       </div>
 
-
-      
-
-      
       {/* Signup Modal */}
       <SignupModal
         isOpen={modalState.isOpen}
