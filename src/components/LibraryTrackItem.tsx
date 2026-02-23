@@ -24,6 +24,11 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
     onAddToStudio();
   };
 
+  const genresText = [track.genre, ...(track.tags ?? [])]
+    .filter(Boolean)
+    .flatMap((s) => String(s).split(',').map((x) => x.trim()).filter(Boolean))
+    .join(', ');
+
   const handleDragStart = (e: React.DragEvent) => {
     if (tier.id === 'guest') {
       e.preventDefault();
@@ -58,16 +63,15 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
         )}
         
         <div className="track-meta">
-          <span className="track-genre">{track.genre}</span>
           <span className="track-bpm">{track.bpm} BPM</span>
           {track.key && <span className="track-key">{track.key}</span>}
         </div>
-        
-        <div className="track-tags">
-          {track.tags.slice(0, 3).map(tag => (
-            <span key={tag} className="track-tag">{tag}</span>
-          ))}
-        </div>
+
+        {genresText && (
+          <p className="track-genres" title={genresText}>
+            {genresText}
+          </p>
+        )}
       </div>
       
       <div className="track-actions">
