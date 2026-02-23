@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout from '../components/Layout';
+import { TapTempoProvider } from '../context/TapTempoContext';
 import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
 import { AuthVerification } from '../auth/AuthVerification';
@@ -42,9 +43,11 @@ export const router = createBrowserRouter([
       {
         path: 'studio',
         element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <Studio />
-          </Suspense>
+          <TapTempoProvider>
+            <Suspense fallback={<LoadingSpinner />}>
+              <Studio />
+            </Suspense>
+          </TapTempoProvider>
         ),
       },
       // {

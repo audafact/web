@@ -10,7 +10,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const shortcuts = [
-    { key: 'Space', description: 'Play/Pause current track' },
+    { key: 'Space', description: 'Play/Pause all armed loops' },
     { key: 'Left/Right Arrow', description: 'Navigate between tracks' },
     { key: '1-0', description: 'Trigger cue points (in Chop mode)' },
     { key: 'Escape', description: 'Close modals and dialogs' },

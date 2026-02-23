@@ -41,6 +41,12 @@ interface WaveformDisplayProps {
   onCueDragStateChange?: (index: number, time: number | null) => void;
   // Called when waveform has finished loading and is ready for display
   onReady?: () => void;
+  // When true, hide the internal loading overlay (parent provides its own, e.g. skeleton)
+  suppressLoadingOverlay?: boolean;
+  /** Pre-decoded peaks - skips WaveSurfer decode for faster load */
+  peaks?: number[][];
+  /** Duration in seconds - required when peaks provided */
+  duration?: number;
 }
 
 const WaveformDisplay = ({
@@ -77,6 +83,9 @@ const WaveformDisplay = ({
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange,
   onReady,
+  suppressLoadingOverlay = false,
+  peaks: peaksProp,
+  duration: durationProp,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -112,10 +121,16 @@ const WaveformDisplay = ({
 
   const onLoopPointsChangeRef = useRef(onLoopPointsChange);
   const onCuePointChangeRef = useRef(onCuePointChange);
+  const onReadyRef = useRef(onReady);
+  const onReadyCalledRef = useRef(false);
 
   useEffect(() => {
     onLoopPointsChangeRef.current = onLoopPointsChange;
   }, [onLoopPointsChange]);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   useEffect(() => {
     onCuePointChangeRef.current = onCuePointChange;
@@ -147,6 +162,7 @@ const WaveformDisplay = ({
   useEffect(() => {
     const newUrl = URL.createObjectURL(audioFile);
     setAudioUrl(newUrl);
+    onReadyCalledRef.current = false; // Reset when loading new file
 
     return () => {
       URL.revokeObjectURL(newUrl);
@@ -170,10 +186,11 @@ const WaveformDisplay = ({
     };
   }, [audioUrl]);
 
-  // useWavesurfer hook
+  // useWavesurfer hook - peaks+duration skip decode for faster waveform display
   const { wavesurfer, isReady, currentTime } = useWavesurfer({
     container: containerRef,
     url: audioUrl,
+    ...(peaksProp && durationProp ? { peaks: peaksProp, duration: durationProp } : {}),
     waveColor: '#008CFF',
     progressColor: '#00F5C3',
     cursorColor: '#00F5C3',
@@ -183,11 +200,11 @@ const WaveformDisplay = ({
     plugins: plugins,
   });
 
-  // Notify parent when waveform is ready for display
+  // Notify parent when waveform is ready for display (only once per load to prevent infinite loop)
   useEffect(() => {
-    if (isReady && onReady) {
-      onReady();
-    }
+    if (!isReady || !onReady || onReadyCalledRef.current) return;
+    onReadyCalledRef.current = true;
+    onReady();
   }, [isReady, onReady]);
 
   // Track playback state internally
@@ -203,15 +220,24 @@ const WaveformDisplay = ({
     const handleFinish = () => {
       setInternalIsPlaying(false);
     };
+    const handleError = (err: Error) => {
+      console.warn('WaveSurfer load error, clearing loading state:', err?.message);
+      if (!onReadyCalledRef.current && onReadyRef.current) {
+        onReadyCalledRef.current = true;
+        onReadyRef.current();
+      }
+    };
 
     wavesurfer.on('play', handlePlay);
     wavesurfer.on('pause', handlePause);
     wavesurfer.on('finish', handleFinish);
+    wavesurfer.on('error', handleError);
 
     return () => {
       wavesurfer.un('play', handlePlay);
       wavesurfer.un('pause', handlePause);
       wavesurfer.un('finish', handleFinish);
+      wavesurfer.un('error', handleError);
     };
   }, [wavesurfer]);
 
@@ -1271,7 +1297,7 @@ const WaveformDisplay = ({
           </svg>
         </button>
       </div>
-      {!isReady && (
+      {!isReady && !suppressLoadingOverlay && (
         <div className="absolute inset-0 flex items-center justify-center audafact-text-secondary bg-audafact-surface-1 z-10">
           {`Loading waveform... ${mode}`}
         </div>
