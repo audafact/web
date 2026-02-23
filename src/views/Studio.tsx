@@ -1332,7 +1332,9 @@ const Studio = () => {
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
       setShowCueThumbs(prev => ({ ...prev, [trackId]: settings.showCueThumbs !== undefined ? !!settings.showCueThumbs : true }));
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
-      setSelectedCueTrackId(trackId);
+      if (!onlyUpdateFirstTrack) {
+        setSelectedCueTrackId(trackId);
+      }
       // Reset playback speed but keep volume
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
       // Set volume based on mode
@@ -1468,7 +1470,7 @@ const Studio = () => {
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
       setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-      setSelectedCueTrackId(trackId);
+      setSelectedCueTrackId(prev => prev ? prev : trackId);
       
       // Animation delay
       setTimeout(() => {
@@ -2235,7 +2237,7 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
-      setSelectedCueTrackId(newTrack.id);
+      setSelectedCueTrackId(prev => prev ? prev : newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2333,7 +2335,7 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
-      setSelectedCueTrackId(newTrack.id);
+      setSelectedCueTrackId(prev => prev ? prev : newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2416,7 +2418,7 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
-      setSelectedCueTrackId(newTrack.id);
+      setSelectedCueTrackId(prev => prev ? prev : newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
