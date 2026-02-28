@@ -2051,6 +2051,14 @@ const Studio = () => {
       ...prev,
       [trackId]: time
     }));
+    // Sync loopPlayhead/samplePlayhead so both playhead and playbackTime stay consistent during playback.
+    // Without this, WaveformDisplay can briefly show stale playhead during React's batched updates.
+    const track = tracks.find(t => t.id === trackId);
+    if (track?.mode === 'loop') {
+      setLoopPlayhead(time);
+    } else {
+      setSamplePlayhead(time);
+    }
   };
 
   // Handle waveform scroll state changes

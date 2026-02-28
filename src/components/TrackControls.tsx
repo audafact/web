@@ -221,6 +221,8 @@ const TrackControls = ({
   
   // Track when we're processing a seek to prevent interference from update loop
   const isSeekingRef = useRef<boolean>(false);
+  // Track if current source is looping - avoids stale currentTime in updatePlaybackTime closure
+  const isSourceLoopingRef = useRef<boolean>(false);
 
   // Sync internal filter state with external props
   useEffect(() => {
@@ -503,15 +505,14 @@ const TrackControls = ({
       if (mode === 'loop') {
         // For loop mode, calculate position within loop region
         const loopDuration = loopEnd - loopStart;
-        
-        // Check if we're currently outside the loop region
-        const currentVisualPosition = currentTime;
-        const isOutsideLoop = currentVisualPosition < loopStart || currentVisualPosition > loopEnd;
-        
+        // Use isSourceLoopingRef - currentTime (React state) is stale in this rAF callback
+        const isOutsideLoop = !isSourceLoopingRef.current;
+
         if (isOutsideLoop) {
           // If outside loop region, continue from current position until we reach the loop
           const currentPlaybackTime = playbackStartTimeRef.current + (elapsed * playbackRate);
-          const finalTime = currentPlaybackTime >= audioBuffer.duration ? 0 : currentPlaybackTime;
+          // Clamp to duration instead of wrapping to 0 - keeps playhead at end when playing post-loop to finish
+          const finalTime = Math.min(currentPlaybackTime, audioBuffer.duration);
           setCurrentTime(finalTime);
           if (onPlaybackTimeChange) {
             onPlaybackTimeChange(finalTime);
@@ -534,11 +535,12 @@ const TrackControls = ({
               sourceNode.loop = true;
               sourceNode.loopStart = loopStart;
               sourceNode.loopEnd = loopEnd;
-              
+              isSourceLoopingRef.current = true;
+
               // Start from the current position within the loop
               const positionInLoop = finalTime - loopStart;
               sourceNode.start(0, loopStart + positionInLoop);
-              
+
               // Update refs
               audioSourceRef.current = sourceNode;
               gainNodeRef.current = gainNode;
@@ -563,7 +565,8 @@ const TrackControls = ({
       } else {
         // For non-loop mode, calculate position from the actual starting position
         const currentPlaybackTime = playbackStartTimeRef.current + (elapsed * playbackRate);
-        const finalTime = currentPlaybackTime >= audioBuffer.duration ? 0 : currentPlaybackTime;
+        // Clamp to duration instead of wrapping - keeps playhead at end until source stops
+        const finalTime = Math.min(currentPlaybackTime, audioBuffer.duration);
         setCurrentTime(finalTime);
         if (onPlaybackTimeChange) {
           onPlaybackTimeChange(finalTime);
@@ -611,15 +614,18 @@ const TrackControls = ({
           sourceNode.loop = true;
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;
+          isSourceLoopingRef.current = true;
           sourceNode.start(0, seekTime);
         } else {
           // If seeking outside loop region, don't loop yet
           sourceNode.loop = false;
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, seekTime);
         }
       } else {
         // Preview or cue mode - no looping
         sourceNode.loop = false;
+        isSourceLoopingRef.current = false;
         sourceNode.start(0, seekTime);
       }
       
@@ -684,22 +690,26 @@ const TrackControls = ({
             sourceNode.loop = true;
             sourceNode.loopStart = loopStart;
             sourceNode.loopEnd = loopEnd;
+            isSourceLoopingRef.current = true;
             sourceNode.start(0, currentTime);
             playbackStartTimeRef.current = currentTime;
           } else if (isAfterLoop) {
             // If after loop region, continue without looping
             sourceNode.loop = false;
+            isSourceLoopingRef.current = false;
             sourceNode.start(0, currentTime);
             playbackStartTimeRef.current = currentTime;
           } else {
             // If before loop region, start from current position but prepare for looping
             sourceNode.loop = false; // Don't loop yet
+            isSourceLoopingRef.current = false;
             sourceNode.start(0, currentTime);
             playbackStartTimeRef.current = currentTime;
           }
         } else {
           // Preview or cue mode - no looping
           sourceNode.loop = false;
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, currentTime);
           playbackStartTimeRef.current = currentTime;
         }
@@ -760,6 +770,7 @@ const TrackControls = ({
       sourceNode.loop = true;
       sourceNode.loopStart = loopStart;
       sourceNode.loopEnd = loopEnd;
+      isSourceLoopingRef.current = true;
       sourceNode.start(0, newStartPosition);
 
       audioSourceRef.current = sourceNode;
@@ -881,14 +892,17 @@ const TrackControls = ({
           sourceNode.loop = true;
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;
+          isSourceLoopingRef.current = true;
           sourceNode.start(0, loopStart);
           playbackStartTimeRef.current = loopStart;
         } else if (mode === 'cue' && activeCueIndex !== null) {
           const cueStartTime = cuePoints[activeCueIndex];
           cueStartTimeRef.current = cueStartTime;
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, cueStartTime);
           playbackStartTimeRef.current = cueStartTime;
         } else {
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, currentTime);
           playbackStartTimeRef.current = currentTime;
         }
@@ -1015,7 +1029,8 @@ const TrackControls = ({
       // Store references
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
-      
+      isSourceLoopingRef.current = false;
+
       // Store filter references if they exist
       if (lowpassFilter) {
         lowpassFilterRef.current = lowpassFilter;
@@ -1023,10 +1038,10 @@ const TrackControls = ({
       if (highpassFilter) {
         highpassFilterRef.current = highpassFilter;
       }
-      
+
       // Store start time
       startTimeRef.current = audioContext.currentTime;
-      
+
       sourceNode.start(0, cueTime);
       playbackStartTimeRef.current = cueTime;
       setIsPlaying(true);
