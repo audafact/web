@@ -1021,7 +1021,13 @@ const Studio = () => {
     const handleKeyPress = (event: KeyboardEvent) => {
       // Skip shortcuts when user is typing in an input (volume, speed, filters, etc.)
       const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active as HTMLElement)?.isContentEditable) {
+      const isTypingInput =
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement ||
+        (active as HTMLElement)?.isContentEditable ||
+        (active instanceof HTMLInputElement &&
+          (active as HTMLInputElement).type !== 'range');
+      if (isTypingInput) {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
         if (event.key === ' ') return; // Never trigger playback when typing
       }

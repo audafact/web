@@ -813,7 +813,17 @@ const TrackControls = ({
     const handleKeyPress = (event: KeyboardEvent) => {
       // Skip when user is typing in an input (volume, speed, filters, etc.)
       const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active as HTMLElement)?.isContentEditable) {
+      if (
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement ||
+        (active as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      if (
+        active instanceof HTMLInputElement &&
+        (active as HTMLInputElement).type !== 'range'
+      ) {
         return;
       }
 
