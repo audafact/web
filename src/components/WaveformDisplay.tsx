@@ -52,7 +52,7 @@ interface WaveformDisplayProps {
 const WaveformDisplay = ({
   audioFile,
   mode,
-  playhead,
+  playhead: _playhead, // Not used: we use playbackTime as single source of truth
   loopStart,
   loopEnd,
   cuePoints,
@@ -108,7 +108,6 @@ const WaveformDisplay = ({
   const prevLoopEndRef = useRef<number>(loopEnd);
   const prevCuePointsRef = useRef<number[]>(cuePoints);
   const prevModeRef = useRef<string>(mode);
-  const prevPlayheadRef = useRef<number | undefined>(playhead);
   const prevPlaybackTimeRef = useRef<number>(playbackTime);
   
   // Ref to track current cuePoints value for use in createRegions callback
@@ -245,9 +244,8 @@ const WaveformDisplay = ({
   useEffect(() => {
     if (!wavesurfer || !onPlayheadChange) return;
 
-    const handleSeek = () => {
-      // Allow position changes during both playback and when paused
-      const newTime = wavesurfer.getCurrentTime();
+    // Use newTime from event - getCurrentTime() can have timing race with async updates
+    const handleSeek = (newTime: number) => {
       onPlayheadChange(newTime);
     };
 
@@ -420,7 +418,8 @@ const WaveformDisplay = ({
     if (!isPlaying) return;
 
     const pxPerSec = calculateMinPxPerSec();
-    const playheadPosition = (currentTime ?? 0) * pxPerSec;
+    // Use playbackTime (canonical) not WaveSurfer's currentTime - keeps scroll in sync with actual audio
+    const playheadPosition = playbackTime * pxPerSec;
     const containerWidth = parentContainer.clientWidth;
     const containerCenter = containerWidth / 2;
     
@@ -440,7 +439,7 @@ const WaveformDisplay = ({
         behavior: 'auto' // Use 'auto' for immediate scrolling during playback
       });
     }
-  }, [currentTime, wavesurfer, isReady, zoomLevel, isPlaying]);
+  }, [playbackTime, wavesurfer, isReady, zoomLevel, isPlaying]);
 
   // Improved playhead centering function
   const centerPlayheadAfterZoom = useCallback((targetZoomLevel = zoomLevel) => {
@@ -1171,16 +1170,21 @@ const WaveformDisplay = ({
     };
   }, [onScrollStateChange]);
 
+  // Single source of truth: always use playbackTime (canonical from TrackControls/Studio).
+  // Studio now syncs loopPlayhead/samplePlayhead in handlePlaybackTimeChange, so playbackTime
+  // is authoritative for both playing and paused states.
+  const displayTime = playbackTime;
+
   // Optimized playhead update with throttling
   useEffect(() => {
     if (!wavesurfer || !isReady) return;
 
-    const prevPlaybackTime = prevPlaybackTimeRef.current;
-    
+    const prevDisplayTime = prevPlaybackTimeRef.current;
+
     // Detect significant jumps (cue triggers) - threshold of 0.5 seconds
     const jumpThreshold = 0.5;
-    const isSignificantJump = Math.abs(playbackTime - prevPlaybackTime) > jumpThreshold;
-    
+    const isSignificantJump = Math.abs(displayTime - prevDisplayTime) > jumpThreshold;
+
     const now = performance.now();
     // For significant jumps, don't throttle - update immediately
     // For normal playback, throttle updates to 30fps for smoother performance
@@ -1188,42 +1192,19 @@ const WaveformDisplay = ({
       return;
     }
 
-    wavesurfer.setTime(playbackTime);
+    wavesurfer.setTime(displayTime);
     lastUpdateTimeRef.current = now;
-    
+
     // If there's a significant jump and we're zoomed in, scroll to the playhead
     if (isSignificantJump && zoomLevel > 1) {
       // Use a small delay to ensure wavesurfer has updated
       setTimeout(() => {
-        scrollToPlayhead(playbackTime);
+        scrollToPlayhead(displayTime);
       }, 10);
     }
-    
-    prevPlaybackTimeRef.current = playbackTime;
-  }, [playbackTime, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
 
-  // Handle explicit playhead updates (less frequent)
-  useEffect(() => {
-    if (wavesurfer && isReady && typeof playhead === 'number') {
-      const prevPlayhead = prevPlayheadRef.current;
-      
-      // Detect significant jumps (cue triggers) - threshold of 0.5 seconds
-      const jumpThreshold = 0.5;
-      const isSignificantJump = prevPlayhead !== undefined && Math.abs(playhead - prevPlayhead) > jumpThreshold;
-      
-      wavesurfer.setTime(playhead);
-      
-      // If there's a significant jump and we're zoomed in, scroll to the playhead
-      if (isSignificantJump && zoomLevel > 1) {
-        // Use a small delay to ensure wavesurfer has updated
-        setTimeout(() => {
-          scrollToPlayhead(playhead);
-        }, 10);
-      }
-      
-      prevPlayheadRef.current = playhead;
-    }
-  }, [playhead, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
+    prevPlaybackTimeRef.current = displayTime;
+  }, [displayTime, wavesurfer, isReady, zoomLevel, scrollToPlayhead]);
 
   useEffect(() => {
     if (wavesurfer && isReady && initialSetupDoneRef.current) {
