@@ -37,6 +37,7 @@ import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 interface Track {
   id: string;
   sourceAssetId?: string;  // For restore: library asset id or upload id
+  fileKey?: string;        // For restore: used to fetch audio via signFile (library + user uploads)
   file: File;
   buffer: AudioBuffer;
   /** Pre-decoded peaks for WaveSurfer - skips duplicate decode, faster waveform load */
@@ -95,6 +96,26 @@ const Studio = () => {
   // Ref to prevent multiple track loads
   const hasLoadedTrack = useRef(false);
   const isRestoringRef = useRef(false);
+
+  // Ref to hold latest studio state for save (avoids stale closures in beforeunload/debounced save)
+  const studioStateForSaveRef = useRef({
+    tracks: [] as Track[],
+    availableAssets: [] as AudioAsset[],
+    showMeasures: {} as Record<string, boolean>,
+    showCueThumbs: {} as Record<string, boolean>,
+    zoomLevels: {} as Record<string, number>,
+    playbackSpeeds: {} as Record<string, number>,
+    volume: {} as Record<string, number>,
+    lowpassFreqs: {} as Record<string, number>,
+    highpassFreqs: {} as Record<string, number>,
+    filterEnabled: {} as Record<string, boolean>,
+    expandedControls: {} as Record<string, boolean>,
+    playbackTimes: {} as Record<string, number>,
+    selectedCueTrackId: null as string | null,
+    armedLoopTrackIds: new Set<string>(),
+    currentTrackIndex: 0,
+    lastUsedVolume: 1,
+  });
 
   // Handle demo mode initialization
   useEffect(() => {
@@ -437,52 +458,88 @@ const Studio = () => {
   
   const saveStudioStateToLocal = () => {
     const stateKey = getStudioStateKey();
-    if (!stateKey || tracks.length === 0) {
-      if (!import.meta.env.PROD) console.log('Not saving studio state:', { stateKey: !!stateKey, tracksLength: tracks.length });
-      return; // Only save for authorized users with tracks
-    }
-    
+    if (!stateKey || !user || isGuestMode) return;
+
+    const ref = studioStateForSaveRef.current;
+    if (!ref.tracks.length) return;
+
     try {
       const studioState = {
-        tracks: tracks.map(track => ({
-          id: track.id,
-          sourceAssetId: track.sourceAssetId ?? track.id,
-          fileName: track.file.name,
-          fileSize: track.file.size,
-          fileType: track.file.type,
-          mode: track.mode,
-          loopStart: track.loopStart,
-          loopEnd: track.loopEnd,
-          cuePoints: track.cuePoints,
-          tempo: track.tempo,
-          timeSignature: track.timeSignature,
-          firstMeasureTime: track.firstMeasureTime,
-          showMeasures: showMeasures[track.id] || false,
-          showCueThumbs: showCueThumbs[track.id] || false,
-          zoomLevel: zoomLevels[track.id] || 1,
-          playbackSpeed: playbackSpeeds[track.id] || 1,
-          volume: volume[track.id] || 1,
-          lowpassFreq: lowpassFreqs[track.id] || 20000,
-          highpassFreq: highpassFreqs[track.id] || 20,
-          filterEnabled: filterEnabled[track.id] || false,
-          expandedControls: expandedControls[track.id] || false,
-          playbackTime: playbackTimes[track.id] || 0
-        })),
-        selectedCueTrackId,
-        armedLoopTrackIds: [...armedLoopTrackIds],
-        currentTrackIndex,
-        lastUsedVolume,
+        tracks: ref.tracks.map(track => {
+          let fileKey = track.fileKey ?? (track.sourceAssetId && ref.availableAssets.find(a => a.id === track.sourceAssetId)?.fileKey);
+          // Fallback: match by id prefix or fileName when exact lookup fails (handles tier/timing mismatches)
+          if (!fileKey && (track.sourceAssetId || track.id)) {
+            const lookupId = track.sourceAssetId ?? track.id;
+            const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
+            let fallbackAsset = ref.availableAssets.find(a => a.id === basePrefix || a.id.startsWith(basePrefix + '-'));
+            if (!fallbackAsset && track.file?.name) {
+              const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
+              fallbackAsset = ref.availableAssets.find(a =>
+                a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) || a.id.toLowerCase().includes(fn)
+              ) ?? undefined;
+            }
+            fileKey = fallbackAsset?.fileKey;
+          }
+          return {
+            id: track.id,
+            sourceAssetId: track.sourceAssetId ?? track.id,
+            fileKey: fileKey ?? undefined,
+            fileName: track.file.name,
+            fileSize: track.file.size,
+            fileType: track.file.type,
+            mode: track.mode,
+            loopStart: track.loopStart,
+            loopEnd: track.loopEnd,
+            cuePoints: track.cuePoints,
+            tempo: track.tempo,
+            timeSignature: track.timeSignature,
+            firstMeasureTime: track.firstMeasureTime,
+            showMeasures: ref.showMeasures[track.id] || false,
+            showCueThumbs: ref.showCueThumbs[track.id] || false,
+            zoomLevel: ref.zoomLevels[track.id] || 1,
+            playbackSpeed: ref.playbackSpeeds[track.id] || 1,
+            volume: ref.volume[track.id] || 1,
+            lowpassFreq: ref.lowpassFreqs[track.id] || 20000,
+            highpassFreq: ref.highpassFreqs[track.id] || 20,
+            filterEnabled: ref.filterEnabled[track.id] || false,
+            expandedControls: ref.expandedControls[track.id] || false,
+            playbackTime: ref.playbackTimes[track.id] || 0
+          };
+        }),
+        selectedCueTrackId: ref.selectedCueTrackId,
+        armedLoopTrackIds: [...ref.armedLoopTrackIds],
+        currentTrackIndex: ref.currentTrackIndex,
+        lastUsedVolume: ref.lastUsedVolume,
         timestamp: Date.now(),
-        version: 1 // For future migrations
+        version: 1
       };
-      
+
       localStorage.setItem(stateKey, JSON.stringify(studioState));
-      if (!import.meta.env.PROD) console.log('Studio state saved for user:', user?.id, 'with', tracks.length, 'tracks');
     } catch (error) {
       console.warn('Failed to save studio state:', error);
     }
   };
   
+  // Keep ref in sync for reliable save (beforeunload/debounce can fire with stale closures)
+  studioStateForSaveRef.current = {
+    tracks,
+    availableAssets: availableAssets || [],
+    showMeasures,
+    showCueThumbs,
+    zoomLevels,
+    playbackSpeeds,
+    volume,
+    lowpassFreqs,
+    highpassFreqs,
+    filterEnabled,
+    expandedControls,
+    playbackTimes,
+    selectedCueTrackId,
+    armedLoopTrackIds,
+    currentTrackIndex,
+    lastUsedVolume,
+  };
+
   const loadStudioStateFromLocal = (): any | null => {
     const stateKey = getStudioStateKey();
     if (!stateKey) return null;
@@ -491,9 +548,7 @@ const Studio = () => {
       const saved = localStorage.getItem(stateKey);
       if (!saved) return null;
       
-      const studioState = JSON.parse(saved);
-      console.log('Studio state loaded for user:', user?.id);
-      return studioState;
+      return JSON.parse(saved);
     } catch (error) {
       console.warn('Failed to load studio state:', error);
       return null;
@@ -506,7 +561,6 @@ const Studio = () => {
     
     try {
       localStorage.removeItem(stateKey);
-      if (!import.meta.env.PROD) console.log('Studio state cleared for user:', user?.id);
     } catch (error) {
       console.warn('Failed to clear studio state:', error);
     }
@@ -556,19 +610,12 @@ const Studio = () => {
 
   // --- Studio State Restoration ---
   const restoreStudioStateFromLocal = async () => {
-    if (!user || isGuestMode) {
-      console.log('Not restoring studio state:', { user: !!user, isGuestMode });
-      return false; // Only restore for authorized users, not in demo mode
-    }
+    if (!user || isGuestMode) return false;
     
     const savedState = loadStudioStateFromLocal();
-    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) {
-      console.log('No saved state to restore:', { savedState: !!savedState, tracks: savedState?.tracks?.length });
-      return false;
-    }
+    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) return false;
     
     try {
-      console.log('Restoring studio state with', savedState.tracks.length, 'tracks');
       
       // Use existing audio context if available
       let context = audioContext;
@@ -588,7 +635,7 @@ const Studio = () => {
         return false;
       }
       
-      // Restore tracks by finding them in available assets
+      // Restore tracks: use fileKey when present (works for library + user uploads), else lookup in availableAssets
       const restoredTracks: Track[] = [];
       const assets = availableAssets || [];
       
@@ -600,16 +647,34 @@ const Studio = () => {
             await new Promise(resolve => setTimeout(resolve, 200));
           }
 
-          // Find the asset by sourceAssetId (or id for backward compatibility)
-          const lookupId = savedTrack.sourceAssetId ?? savedTrack.id;
-          const asset = assets.find(a => a.id === lookupId);
-          if (!asset) {
-            console.warn('Asset not found for saved track:', lookupId);
-            continue;
+          // Prefer fileKey (persisted for library + user uploads); fallback to availableAssets lookup
+          let fileKeyToUse: string | undefined;
+          if (savedTrack.fileKey) {
+            fileKeyToUse = savedTrack.fileKey;
+          } else {
+            const lookupId = savedTrack.sourceAssetId ?? savedTrack.id;
+            let asset = assets.find(a => a.id === lookupId);
+            // Fallback: match by id prefix (handles ids like "groove-vibes-version-4-1772305503663" -> "groove-vibes-version-4-1c328d1b2c")
+            if (!asset && lookupId) {
+              const basePrefix = lookupId.replace(/-?\d{10,}$/, ''); // strip trailing timestamp
+              asset = assets.find(a => a.id === basePrefix || a.id.startsWith(basePrefix + '-'));
+            }
+            // Fallback: match by fileName (e.g. "Groove Vibes.mp3" or "groove-vibes-version-4.mp3")
+            if (!asset && savedTrack.fileName) {
+              const fn = (savedTrack.fileName as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
+              asset = assets.find(a => {
+                const an = a.name.toLowerCase().replace(/\s+/g, '-');
+                return fn.includes(an) || an.includes(fn) || a.id.toLowerCase().includes(fn);
+              });
+            }
+            if (!asset) continue;
+            fileKeyToUse = asset.fileKey;
           }
           
+          if (!fileKeyToUse) continue;
+          
           // Get signed URL and fetch the audio
-          const signedUrl = await signFile(asset.fileKey);
+          const signedUrl = await signFile(fileKeyToUse);
           const response = await fetch(signedUrl);
           const blob = await response.blob();
           const file = new File([blob], savedTrack.fileName, { type: savedTrack.fileType });
@@ -635,7 +700,8 @@ const Studio = () => {
           // Recreate the track with saved settings (defensive defaults for older saves)
           const restoredTrack: Track = {
             id: savedTrack.id,
-            sourceAssetId: lookupId,
+            sourceAssetId: savedTrack.sourceAssetId ?? savedTrack.id,
+            fileKey: fileKeyToUse,
             file,
             buffer,
             mode: (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue',
@@ -674,16 +740,6 @@ const Studio = () => {
           
           restoredTracks.push(restoredTrack);
           
-          // Restore UI states
-          console.log('Restoring settings for track:', savedTrack.id, {
-            mode: savedTrack.mode,
-            loopStart: savedTrack.loopStart,
-            loopEnd: savedTrack.loopEnd,
-            volume: savedTrack.volume,
-            playbackSpeed: savedTrack.playbackSpeed,
-            zoomLevel: savedTrack.zoomLevel
-          });
-          
           setShowMeasures(prev => ({ ...prev, [savedTrack.id]: savedTrack.showMeasures }));
           setShowCueThumbs(prev => ({ ...prev, [savedTrack.id]: savedTrack.showCueThumbs }));
           setZoomLevels(prev => ({ ...prev, [savedTrack.id]: savedTrack.zoomLevel }));
@@ -696,7 +752,6 @@ const Studio = () => {
           setPlaybackTimes(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackTime || 0 }));
           
         } catch (error) {
-          console.warn('Failed to restore track:', savedTrack.id, error);
           const msg = error instanceof Error ? error.message : '';
           if (msg.includes('429')) {
             setError('Too many requests. Please wait a moment and try again.');
@@ -711,12 +766,11 @@ const Studio = () => {
         setSelectedCueTrackId(savedState.selectedCueTrackId || null);
         setArmedLoopTrackIds(Array.isArray(savedState.armedLoopTrackIds) ? new Set(savedState.armedLoopTrackIds) : new Set());
         setLastUsedVolume(savedState.lastUsedVolume || 1);
-        console.log('Successfully restored', restoredTracks.length, 'tracks');
         return true;
       }
       
-    } catch (error) {
-      console.error('Error restoring studio state:', error);
+    } catch {
+      // Restore failed
     } finally {
       isRestoringRef.current = false;
     }
@@ -774,43 +828,7 @@ const Studio = () => {
     }
   }, [libraryTracks, isGuestMode, user]);
 
-  // Attempt to restore studio state when user and assets are available
-  useEffect(() => {
-    if (!user || isGuestMode || isTrackLoading || userLoading) {
-      console.log('Skipping restoration:', { user: !!user, isGuestMode, isTrackLoading, userLoading });
-      return;
-    }
-    if (!availableAssets || availableAssets.length === 0) {
-      console.log('No assets available for restoration');
-      return;
-    }
-    if (tracks.length > 0) {
-      console.log('Tracks already loaded, skipping restoration');
-      return; // Already have tracks loaded
-    }
-    if (hasLoadedTrack.current) {
-      console.log('Already attempted to load, skipping restoration');
-      return; // Already attempted to load
-    }
-    
-    console.log('Attempting to restore studio state...');
-    const attemptRestore = async () => {
-      try {
-        const restored = await restoreStudioStateFromLocal();
-        if (restored) {
-          hasLoadedTrack.current = true;
-          setIsInitializingAudio(false);
-          console.log('Studio state restored successfully');
-        } else {
-          console.log('Restoration failed or no saved state found');
-        }
-      } catch (error) {
-        console.warn('Failed to restore studio state:', error);
-      }
-    };
-    
-    attemptRestore();
-  }, [user, isGuestMode, availableAssets, tracks.length, isTrackLoading, userLoading]);
+  // No automatic restoration on load - user must explicitly choose "Start digging" or "Restore previous session"
 
   // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
@@ -1479,6 +1497,8 @@ const Studio = () => {
       
       const newTrack: Track = {
         id: trackId,
+        sourceAssetId: asset.id,
+        fileKey: asset.fileKey,
         file,
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
@@ -1787,14 +1807,8 @@ const Studio = () => {
 
   // Save studio state when tracks or settings change (for authorized users)
   useEffect(() => {
-    if (!user || isGuestMode) {
-      if (!import.meta.env.PROD) console.log('Not saving state - user or demo mode check failed:', { user: !!user, isGuestMode });
-      return; // Only save for authorized users, not in demo mode
-    }
-    if (tracks.length === 0) {
-      if (!import.meta.env.PROD) console.log('Not saving state - no tracks loaded');
-      return; // Don't save empty state
-    }
+    if (!user || isGuestMode) return;
+    if (tracks.length === 0) return;
     
     // Debounce the save operation to avoid excessive localStorage writes
     const timeoutId = setTimeout(() => {
@@ -2543,6 +2557,7 @@ const Studio = () => {
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         sourceAssetId: asset.id,
+        fileKey: asset.fileKey,
         file: file,
         buffer: buffer,
         mode: trackType,
@@ -2623,6 +2638,7 @@ const Studio = () => {
       // Create a new track
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        fileKey: userTrack.fileKey,
         file: userTrack.file,
         buffer: buffer,
         peaks: extractPeaksFromBuffer(buffer),
@@ -2820,6 +2836,7 @@ const Studio = () => {
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
+        fileKey: asset.fileKey,
         file,
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
@@ -3208,281 +3225,87 @@ const Studio = () => {
           )}
 
           <div className="max-w-6xl mx-auto p-6">
-            <div className="relative overflow-hidden audafact-card p-12 text-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
-              {/* Vinyl record background element */}
-              <div className="absolute inset-0 opacity-5">
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border-8 border-slate-600"></div>
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full border-4 border-slate-500"></div>
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-slate-400"></div>
+            {/* Static track skeleton - initial load interface */}
+            <div
+              key="static-track-skeleton"
+              className="audafact-card overflow-hidden transition-all duration-300 relative border-audafact-accent-cyan shadow-card"
+              style={{ transform: 'translateY(0)' }}
+            >
+              <div className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2">
+                <div className="w-10 h-10" />
+                <div className="w-10 h-10" />
+                <div className="w-10 h-10" />
               </div>
-              
-              {/* Animated groove lines */}
-              <div className="absolute inset-0 opacity-10">
-                {[...Array(20)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full border border-slate-500"
-                    style={{
-                      width: `${200 + i * 8}px`,
-                      height: `${200 + i * 8}px`,
-                      animation: `vinyl-spin ${20 + i * 0.5}s linear infinite`,
-                      animationDelay: `${i * 0.1}s`
-                    }}
-                  ></div>
-                ))}
+              <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
+                <h3 className="font-medium audafact-heading truncate">Get started</h3>
               </div>
-
-              {/* Main content */}
-              <div className="relative z-10">
-                {/* Icon/Logo area */}
-                <div className="mb-8">
-                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-audafact-accent-cyan to-audafact-accent-purple mb-4 shadow-lg">
-                    <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                    </svg>
-                  </div>
-                </div>
-
-                {user ? (
-                  // Registered Users Content
-                  <>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
-                      {isDemoMode ? 'Welcome to Audafact Studio Demo' : 'Welcome Back to Audafact Studio'}
-                    </h1>
-                    
-                    <div className="max-w-2xl mx-auto">
-                      {isDemoMode && (
-                        <div className="mb-4">
-                          <div className="bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple bg-opacity-10 border border-audafact-accent-cyan border-opacity-30 rounded-lg p-4 mb-4">
-                            <p className="text-sm text-audafact-accent-cyan flex items-center gap-2">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              You're in demo mode! Explore the full features of Audafact Studio with your library tracks.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      {availableAssets.length > 0 && (
-                        <div className="mb-4">
-                          <p className="text-lg text-slate-300 mb-2 leading-relaxed">
-                            {isDemoMode ? 'Explore your library and start creating:' : `You have ${availableAssets.length} tracks available. Start creating by:`}
-                          </p>
-                          {(() => {
-                            const savedState = loadStudioStateFromLocal();
-                            return savedState && savedState.tracks && savedState.tracks.length > 0 ? (
-                              <div className="bg-audafact-accent-cyan bg-opacity-10 border border-audafact-accent-cyan border-opacity-30 rounded-lg p-3 mb-4">
-                                <p className="text-sm text-audafact-accent-cyan flex items-center gap-2">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  Previous session found with {savedState.tracks.length} track{savedState.tracks.length !== 1 ? 's' : ''}. Load a track to restore your session.
-                                </p>
-                              </div>
-                            ) : null;
-                          })()}
-                        </div>
-                      )}
-                      {availableAssets.length === 0 && (
-                        <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                          Start creating by:
-                        </p>
-                      )}
-                      
-                      <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Looping segments</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Adjusting cue points</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Creating real-time remixes</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Adding tracks from your library</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📤 Uploading new samples</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎙️ Recording your live performances</span>
-                      </div>
-                      
-                      {/* Library Loading Indicator */}
-                      {availableAssets.length === 0 && (
-                        <div className="text-center mb-4">
-                          <div className="inline-flex items-center gap-2 text-slate-400">
-                            <div className="w-4 h-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></div>
-                            <span>Loading library tracks...</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                      <button
-                        onClick={async () => {
-                          // Check if there's a saved state to restore
-                          const savedState = loadStudioStateFromLocal();
-                          if (savedState && savedState.tracks && savedState.tracks.length > 0) {
-                            // Restore saved state instead of loading random track
-                            try {
-                              setIsInitializingAudio(true);
-                              const restored = await restoreStudioStateFromLocal();
-                              if (restored) {
-                                hasLoadedTrack.current = true;
-                                setIsInitializingAudio(false);
-                                console.log('Restored previous session');
-                                return;
-                              }
-                            } catch (error) {
-                              console.warn('Failed to restore session, falling back to random track:', error);
-                            }
+              <div className="audafact-waveform-bg relative flex flex-col items-center justify-center gap-3" style={{ height: '120px' }}>
+                <button
+                  onClick={handleInitializeAudio}
+                  className="group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  disabled={(user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading)}
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    {(user ? isInitializingAudio : isInitializingAudio || isGuestLoading) ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Start digging
+                      </>
+                    )}
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                </button>
+                {user && (() => {
+                  const savedState = loadStudioStateFromLocal();
+                  const hasSavedSession = savedState?.tracks?.length > 0;
+                  if (!hasSavedSession) return null;
+                  return (
+                    <button
+                      onClick={async () => {
+                        try {
+                          setIsInitializingAudio(true);
+                          const restored = await restoreStudioStateFromLocal();
+                          if (restored) {
+                            hasLoadedTrack.current = true;
+                            setIsInitializingAudio(false);
+                            return;
                           }
-                          // Fallback to loading random track
-                          handleInitializeAudio();
-                        }}
-                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                        disabled={isInitializingAudio || availableAssets.length === 0}
-                      >
-                        <span className="relative z-10 flex items-center gap-2">
-                          {isInitializingAudio ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Loading...
-                            </>
-                          ) : availableAssets.length === 0 ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Loading Library...
-                            </>
-                          ) : (() => {
-                            const savedState = loadStudioStateFromLocal();
-                            return savedState && savedState.tracks && savedState.tracks.length > 0 ? (
-                              <>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Restore Previous Session
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                                </svg>
-                                Load a Random Track
-                              </>
-                            );
-                          })()}
-                        </span>
-                        <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                      </button>
-
-                      {(() => {
-                        const savedState = loadStudioStateFromLocal();
-                        return savedState && savedState.tracks && savedState.tracks.length > 0 ? (
-                          <button
-                            onClick={handleInitializeAudio}
-                            className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                            disabled={isInitializingAudio}
-                          >
-                            <span className="relative z-10 flex items-center gap-2">
-                              {isInitializingAudio ? (
-                                <>
-                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                  Loading...
-                                </>
-                              ) : (
-                                <>
-                                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                                  </svg>
-                                  Load Random Track
-                                </>
-                              )}
-                            </span>
-                          </button>
-                        ) : null;
-                      })()}
-
-                      <button
-                        onClick={toggleSidePanel}
-                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
-                      >
-                        <span className="relative z-10 flex items-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                          </svg>
-                          Select from Your Library
-                        </span>
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  // Anonymous Users Content
-                  <>
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan via-audafact-accent-purple to-audafact-accent-cyan bg-clip-text text-transparent mb-6 tracking-tight">
-                      Welcome to Audafact Studio
-                    </h1>
-                    
-                    <div className="max-w-2xl mx-auto">
-                      <p className="text-lg text-slate-300 mb-6 leading-relaxed">
-                        Explore the basics of Audafact in this interactive demo:
-                      </p>
-                      
-                      <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Preview curated tracks</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create loops from segments</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Trigger cues for playback</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">⬅️➡️ Navigate with buttons/swipe</span>
-                        <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">📚 Browse curated library</span>
-                      </div>
-
-                      <p className="text-slate-300 mb-8 font-medium">
-                        Ready for more? Sign up to unlock advanced tools and features.
-                      </p>
-                      
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                      <button
-                        onClick={async () => {
-                          if (currentGuestTrack) {
-                            loadRandomTrack();
-                          } else {
-                            // If no current bundled track, load a random one first
-                            await loadRandomGuestTrack();
-                            // Then load the track
-                            if (currentGuestTrack) {
-                              loadRandomTrack();
-                            }
-                          }
-                        }}
-                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                        disabled={isGuestLoading}
-                      >
-                        <span className="relative z-10 flex items-center gap-2">
-                          {isGuestLoading ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Loading...
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                              </svg>
-                              Load a Random Track
-                            </>
-                          )}
-                        </span>
-                        <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                      </button>
-
-                      <button
-                        onClick={toggleSidePanel}
-                        className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500"
-                      >
-                        <span className="relative z-10 flex items-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                          </svg>
-                          Browse Curated Library
-                        </span>
-                      </button>
-                    </div>
-                  </>
-                )}
+                        } catch {
+                          // Fall back to random track
+                        }
+                        handleInitializeAudio();
+                      }}
+                      className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                      disabled={isInitializingAudio}
+                    >
+                      <span className="relative z-10 flex items-center gap-2">
+                        {isInitializingAudio ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Restore previous session
+                          </>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })()}
+              </div>
+              <div className="p-4 bg-audafact-surface-1">
+                <div className="h-10 bg-audafact-surface-2 rounded animate-pulse" />
               </div>
             </div>
           </div>

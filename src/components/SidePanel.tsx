@@ -368,8 +368,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
             const updatedTracks = [...userTracks, userTrack];
             setUserTracks(updatedTracks);
 
-            // Default to preview mode for uploaded files
-            onUploadTrack(file, 'preview');
+            // Add to studio with fileKey for session restore (onAddUserTrack persists fileKey)
+            onAddUserTrack(userTrack, 'preview');
             
             // Only close the sidebar on mobile and tablets (full-width mode)
             // On desktop (lg and above), keep the sidebar open
