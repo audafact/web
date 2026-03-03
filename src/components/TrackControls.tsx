@@ -418,59 +418,40 @@ const TrackControls = ({
     sourceNode.playbackRate.value = currentSpeed;
     gainNode.gain.value = currentVolume;
     
-    // Create Web Audio API filters if they have non-default values
+    // Always create filter nodes so real-time adjustments work from first playback.
+    // Passthrough values (20Hz highpass, 20kHz lowpass) when "inactive" are sonically equivalent to no filter.
     const lowpassFreq = currentLowpassFreqRef.current;
     const highpassFreq = currentHighpassFreqRef.current;
-    const isLowpassActive = lowpassFreq < 20000;
-    const isHighpassActive = highpassFreq > 20;
     
-    if (isLowpassActive || isHighpassActive) {
-      const lowpassFilter = audioContext.createBiquadFilter();
-      lowpassFilter.type = 'lowpass';
-      lowpassFilter.frequency.value = lowpassFreq;
-      lowpassFilter.Q.value = 1;
-      
-      const highpassFilter = audioContext.createBiquadFilter();
-      highpassFilter.type = 'highpass';
-      highpassFilter.frequency.value = highpassFreq;
-      highpassFilter.Q.value = 1;
-      
-      // Store filter refs
-      lowpassFilterRef.current = lowpassFilter;
-      highpassFilterRef.current = highpassFilter;
-      
-      // Connect: source -> highpass -> lowpass -> gain -> destination
-      sourceNode.connect(highpassFilter);
-      highpassFilter.connect(lowpassFilter);
-      lowpassFilter.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Also connect to recording destination if available
-      if (recordingDestination) {
-        // Create a separate gain node for recording to avoid conflicts
-        const recordingGain = audioContext.createGain();
-        recordingGain.gain.value = gainNode.gain.value;
-        lowpassFilter.connect(recordingGain);
-        recordingGain.connect(recordingDestination);
-      }
-      
-      return { sourceNode, gainNode, lowpassFilter, highpassFilter };
-    } else {
-      // Connect: source -> gain -> destination (no filters)
-      sourceNode.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Also connect to recording destination if available
-      if (recordingDestination) {
-        // Create a separate gain node for recording to avoid conflicts
-        const recordingGain = audioContext.createGain();
-        recordingGain.gain.value = gainNode.gain.value;
-        sourceNode.connect(recordingGain);
-        recordingGain.connect(recordingDestination);
-      }
-      
-      return { sourceNode, gainNode };
+    const lowpassFilter = audioContext.createBiquadFilter();
+    lowpassFilter.type = 'lowpass';
+    lowpassFilter.frequency.value = lowpassFreq;
+    lowpassFilter.Q.value = 1;
+    
+    const highpassFilter = audioContext.createBiquadFilter();
+    highpassFilter.type = 'highpass';
+    highpassFilter.frequency.value = highpassFreq;
+    highpassFilter.Q.value = 1;
+    
+    // Store filter refs for real-time updates
+    lowpassFilterRef.current = lowpassFilter;
+    highpassFilterRef.current = highpassFilter;
+    
+    // Connect: source -> highpass -> lowpass -> gain -> destination
+    sourceNode.connect(highpassFilter);
+    highpassFilter.connect(lowpassFilter);
+    lowpassFilter.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // Also connect to recording destination if available
+    if (recordingDestination) {
+      const recordingGain = audioContext.createGain();
+      recordingGain.gain.value = gainNode.gain.value;
+      lowpassFilter.connect(recordingGain);
+      recordingGain.connect(recordingDestination);
     }
+    
+    return { sourceNode, gainNode, lowpassFilter, highpassFilter };
   }, [audioContext, audioBuffer, recordingDestination, trackId, mode]);
 
   // Optimized time update function using requestAnimationFrame
@@ -544,8 +525,8 @@ const TrackControls = ({
               // Update refs
               audioSourceRef.current = sourceNode;
               gainNodeRef.current = gainNode;
-              if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
-              if (highpassFilter) highpassFilterRef.current = highpassFilter;
+              lowpassFilterRef.current = lowpassFilter;
+              highpassFilterRef.current = highpassFilter;
               
               // Update start time for accurate position calculation
               startTimeRef.current = audioContext.currentTime;
@@ -632,8 +613,8 @@ const TrackControls = ({
       // Update refs
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
-      if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
-      if (highpassFilter) highpassFilterRef.current = highpassFilter;
+      lowpassFilterRef.current = lowpassFilter;
+      highpassFilterRef.current = highpassFilter;
       
       // Update timing references for accurate position calculation
       startTimeRef.current = audioContext.currentTime;
@@ -717,8 +698,8 @@ const TrackControls = ({
         // Update refs
         audioSourceRef.current = sourceNode;
         gainNodeRef.current = gainNode;
-        if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
-        if (highpassFilter) highpassFilterRef.current = highpassFilter;
+        lowpassFilterRef.current = lowpassFilter;
+        highpassFilterRef.current = highpassFilter;
         
         // Update start time for accurate position calculation
         startTimeRef.current = audioContext?.currentTime || 0;
@@ -919,14 +900,8 @@ const TrackControls = ({
 
         audioSourceRef.current = sourceNode;
         gainNodeRef.current = gainNode;
-        
-        // Store filter references if they exist
-        if (lowpassFilter) {
-          lowpassFilterRef.current = lowpassFilter;
-        }
-        if (highpassFilter) {
-          highpassFilterRef.current = highpassFilter;
-        }
+        lowpassFilterRef.current = lowpassFilter;
+        highpassFilterRef.current = highpassFilter;
         setIsPlaying(true);
         if (onPlaybackStateChange) {
           onPlaybackStateChange(true);
@@ -1039,15 +1014,9 @@ const TrackControls = ({
       // Store references
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
+      lowpassFilterRef.current = lowpassFilter;
+      highpassFilterRef.current = highpassFilter;
       isSourceLoopingRef.current = false;
-
-      // Store filter references if they exist
-      if (lowpassFilter) {
-        lowpassFilterRef.current = lowpassFilter;
-      }
-      if (highpassFilter) {
-        highpassFilterRef.current = highpassFilter;
-      }
 
       // Store start time
       startTimeRef.current = audioContext.currentTime;
