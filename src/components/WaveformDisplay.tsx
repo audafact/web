@@ -102,6 +102,8 @@ const WaveformDisplay = ({
   const lastUpdateTimeRef = useRef<number>(0);
   const initialSetupDoneRef = useRef<boolean>(false);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const oneXRetryTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const zoomLevelRef = useRef<number>(zoomLevel);
   
   // Track previous values to detect changes
   const prevLoopStartRef = useRef<number>(loopStart);
@@ -134,6 +136,10 @@ const WaveformDisplay = ({
   useEffect(() => {
     onCuePointChangeRef.current = onCuePointChange;
   }, [onCuePointChange]);
+
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+  }, [zoomLevel]);
 
   // Keep currentCuePointsRef in sync with cuePoints prop
   useEffect(() => {
@@ -177,11 +183,15 @@ const WaveformDisplay = ({
 
     // Reset setup flag when file changes
     initialSetupDoneRef.current = false;
+    oneXRetryTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    oneXRetryTimeoutsRef.current = [];
 
     return () => {
       regionsPluginRef.current = null;
       currentRegionsRef.current = [];
       setPlugins([]);
+      oneXRetryTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      oneXRetryTimeoutsRef.current = [];
     };
   }, [audioUrl]);
 
@@ -273,18 +283,6 @@ const WaveformDisplay = ({
     }
     return 40 * zoomLevel;
   }, [wavesurfer, isReady, zoomLevel]);
-
-  // Set initial width for both containers when ready
-  useEffect(() => {
-    if (wavesurfer && isReady && !initialSetupDoneRef.current) {
-      const minPxPerSec = calculateMinPxPerSec();
-      
-      // Simply set minPxPerSec - WaveSurfer's multicanvas renderer will handle
-      // splitting into multiple canvases automatically when width exceeds 8000px
-      // Only set initial value, don't update on zoom changes (handled by zoom effect)
-      wavesurfer.setOptions({ minPxPerSec });
-    }
-  }, [wavesurfer, isReady, calculateMinPxPerSec]);
 
   // Sync container width to WaveSurfer's wrapper width when zoomed in
   // This prevents scrolling past the end of the waveform
@@ -1014,32 +1012,71 @@ const WaveformDisplay = ({
   useEffect(() => {
     const setupRegions = async () => {
       if (wavesurfer && isReady && !initialSetupDoneRef.current) {
-        // Set initial zoom level using calculated minPxPerSec
-        const newMinPxPerSec = calculateMinPxPerSec();
-        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
-        
-        // Create initial regions
-        await createRegions();
-        
-        // Set initial position
-        const initialTime = currentTime || playbackTime || 0;
-        setTimeout(() => {
-          if (wavesurfer && isReady) {
-            wavesurfer.setTime(initialTime);
+        const applyInitialZoomAndSetup = async () => {
+          if (!containerRef.current || !wavesurfer || initialSetupDoneRef.current) return;
+          const scrollContainer = containerRef.current.parentElement;
+          const minPxPerSec =
+            zoomLevel <= 1 && scrollContainer && scrollContainer.clientWidth > 0
+              ? scrollContainer.clientWidth / wavesurfer.getDuration()
+              : calculateMinPxPerSec();
+          wavesurfer.setOptions({ minPxPerSec });
+          await createRegions();
+          const initialTime = currentTime || playbackTime || 0;
+          setTimeout(() => {
+            if (wavesurfer && isReady) {
+              wavesurfer.setTime(initialTime);
+            }
+          }, 100);
+          initialSetupDoneRef.current = true;
+          prevLoopStartRef.current = loopStart;
+          prevLoopEndRef.current = loopEnd;
+          prevCuePointsRef.current = [...cuePoints];
+          currentCuePointsRef.current = [...cuePoints];
+          prevModeRef.current = mode;
+
+          // Delayed retries for 1x: first track loads before Studio layout settles.
+          // ResizeObserver only fires on size *change*; retries catch wrong initial size.
+          if (zoomLevel <= 1) {
+            const reapplyOneX = () => {
+              if (zoomLevelRef.current > 1 || !containerRef.current || !wavesurfer) return;
+              const sc = containerRef.current.parentElement;
+              // Fallback to grandparent if scroll container has no width yet (layout not ready)
+              const widthSource = sc?.clientWidth && sc.clientWidth > 0
+                ? sc
+                : sc?.parentElement;
+              const width = widthSource?.clientWidth ?? widthSource?.getBoundingClientRect?.()?.width;
+              if (!width || width <= 0) return;
+              const duration = wavesurfer.getDuration();
+              const newMinPxPerSec = width / duration;
+              wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+            };
+            const delays = [50, 150, 350, 600];
+            delays.forEach((delay) => {
+              const id = setTimeout(() => {
+                requestAnimationFrame(() => {
+                  reapplyOneX();
+                  oneXRetryTimeoutsRef.current = oneXRetryTimeoutsRef.current.filter((t) => t !== id);
+                });
+              }, delay);
+              oneXRetryTimeoutsRef.current.push(id);
+            });
           }
-        }, 100);
-        
-        initialSetupDoneRef.current = true;
-        
-        // Update previous values
-        prevLoopStartRef.current = loopStart;
-        prevLoopEndRef.current = loopEnd;
-        prevCuePointsRef.current = [...cuePoints];
-        currentCuePointsRef.current = [...cuePoints];
-        prevModeRef.current = mode;
+        };
+
+        if (zoomLevel <= 1) {
+          // Defer until layout is complete: scrollContainer.clientWidth may be stale
+          // on first load. Same pattern used for zoom-out-to-1x.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              applyInitialZoomAndSetup();
+            });
+          });
+        } else {
+          await applyInitialZoomAndSetup();
+        }
       }
     };
-    
+
     setupRegions();
   }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode, createRegions, calculateMinPxPerSec]);
 
@@ -1121,6 +1158,30 @@ const WaveformDisplay = ({
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, [zoomLevel, wavesurfer, isReady]);
+
+  // ResizeObserver at 1x zoom: fixes first-load case where scroll container had
+  // wrong/zero dimensions when double rAF ran (e.g. cold start, empty-to-first-track).
+  useEffect(() => {
+    if (zoomLevel > 1 || !wavesurfer || !isReady || !initialSetupDoneRef.current) return;
+
+    const scrollContainer = containerRef.current?.parentElement;
+    if (!scrollContainer) return;
+
+    const observer = new ResizeObserver(() => {
+      if (zoomLevel > 1 || !wavesurfer || !containerRef.current) return;
+      const sc = containerRef.current.parentElement;
+      if (!sc || sc.clientWidth <= 0) return;
+      // Waveform overflowing viewport = wrong minPxPerSec on initial load
+      if (sc.scrollWidth > sc.clientWidth + 2) {
+        const duration = wavesurfer.getDuration();
+        const newMinPxPerSec = sc.clientWidth / duration;
+        wavesurfer.setOptions({ minPxPerSec: newMinPxPerSec });
+      }
+    });
+
+    observer.observe(scrollContainer);
+    return () => observer.disconnect();
   }, [zoomLevel, wavesurfer, isReady]);
 
   // Effect to manage scroll container width at 1x zoom
