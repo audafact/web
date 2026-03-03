@@ -2875,6 +2875,7 @@ const Studio = () => {
         : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
       setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
+      if (newTrack.mode === 'cue') setSelectedCueTrackId(trackId);
       
       // Start onboarding only for anonymous users when first track loads
       // Logged-in users should only get walkthrough when explicitly clicking "Load a random track"  
