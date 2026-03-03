@@ -21,6 +21,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
   ];
 
   const tips = [
+    'Use the Switch & add tracks bar to switch tracks, add new ones, or swipe to navigate',
+    'Drag any track from the library panel into the studio to add it',
     'Loop tracks are armed by default — use Space to play/pause. Click Arm to disarm.',
     'Click anywhere on the waveform to jump to that position',
     'Drag on the waveform to set loop start and end points',
@@ -93,6 +95,16 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </ul>
           </div>
 
+          {/* Multi-track & Switch & add tracks */}
+          <div>
+            <h3 className="text-lg font-medium text-audafact-text-primary mb-3">
+              Multi-track
+            </h3>
+            <p className="text-sm text-audafact-text-secondary mb-3">
+              The Switch & add tracks bar controls which track is on top and lets you add more. Use Prev/Next or swipe left/right to switch tracks. Use the Add button or swipe down to add a new track. You can also drag tracks from the library into the studio.
+            </p>
+          </div>
+
           {/* Modes Explanation */}
           <div>
             <h3 className="text-lg font-medium text-audafact-text-primary mb-3">
@@ -127,7 +139,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </h3>
             <div className="space-y-2 text-sm text-audafact-text-secondary">
               <p>
-                1. <strong>Load a track</strong> - Use the navigation arrows or browse the library
+                1. <strong>Load a track</strong> - Use Prev/Next or swipe left/right. Add more with the Add button, swipe down, or drag from the library
               </p>
               <p>
                 2. <strong>Play and explore</strong> - Try different playback modes and controls

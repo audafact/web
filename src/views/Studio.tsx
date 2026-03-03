@@ -24,6 +24,7 @@ import DemoModeIndicator from '../components/DemoModeIndicator';
 import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
+import Tooltip from '../components/Tooltip';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
@@ -3598,68 +3599,86 @@ const Studio = () => {
             {/* Add Track and Navigation Controls - Only show on first track */}
             {index === 0 && (
               <div 
-                className="flex items-center justify-between bg-audafact-surface-2 border-b border-audafact-divider py-1 px-2"
+                className="relative flex justify-center items-center py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
                 style={{ touchAction: 'pan-y pinch-zoom' }}
                 onWheel={handleWheel}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
+                data-testid="track-loader-bar"
               >
-                <button
-                  onClick={handlePreviousTrack}
-                  disabled={isTrackLoading}
-                  className={`p-2 rounded-full transition-all duration-200 ${
-                    isTrackLoading
-                      ? 'text-audafact-text-secondary cursor-not-allowed'
-                      : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-                  }`}
-                  title="Previous Track (Left Arrow)"
-                  data-testid="previous-track-button"
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-audafact-text-secondary">
+                  <span className="sm:hidden">Switch/add</span>
+                  <span className="hidden sm:inline">Switch & add tracks</span>
+                </span>
+                <div
+                  className="flex items-center w-full max-w-2xl mx-auto"
+                  style={{ justifyContent: 'space-evenly', transform: 'translateX(16px)' }}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                  
-                {/* Add Track Button */}
-                <button
-                  onClick={addNewTrack}
-                  disabled={!canAddTrack || isAddingTrack || isTrackLoading || isGuestMode}
-                  className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
-                    !canAddTrack || isAddingTrack || isTrackLoading || isGuestMode
-                      ? 'text-audafact-text-secondary cursor-not-allowed'
-                      : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-                  } ${addTrackAnimation ? 'animate-pulse' : ''}`}
-                  title={isGuestMode ? 'Add tracks not available in demo mode' : (canAddTrack ? 'Add New Track' : 'Change current track mode to enable adding tracks')}
-                >
-                  <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                  {isAddingTrack && (
-                    <span className="text-xs mt-1">Adding...</span>
-                  )}
-                </button>
-                
-
-                  
-              <button
-                onClick={handleNextTrack}
-                disabled={isTrackLoading}
-                className={`p-2 rounded-full transition-all duration-200 ${
-                  isTrackLoading
-                    ? 'text-audafact-text-secondary cursor-not-allowed'
-                    : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
-                }`}
-                title="Next Track (Right Arrow)"
-                data-testid="next-track-button"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+                  <Tooltip content="Go to previous track" position="top" delay={150}>
+                    <button
+                      onClick={handlePreviousTrack}
+                      disabled={isTrackLoading}
+                      className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
+                        isTrackLoading
+                          ? 'text-audafact-text-secondary cursor-not-allowed'
+                          : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                      }`}
+                      data-testid="previous-track-button"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                      <span className="text-[10px] mt-0.5">Prev</span>
+                    </button>
+                  </Tooltip>
+                  <Tooltip
+                    content={isGuestMode ? 'Add track (demo mode)' : (canAddTrack ? 'Add a new track' : 'Add track (change mode first)')}
+                    position="top"
+                    delay={150}
+                  >
+                    <span>
+                      <button
+                        onClick={addNewTrack}
+                        disabled={!canAddTrack || isAddingTrack || isTrackLoading || isGuestMode}
+                        className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
+                          !canAddTrack || isAddingTrack || isTrackLoading || isGuestMode
+                            ? 'text-audafact-text-secondary cursor-not-allowed'
+                            : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                        } ${addTrackAnimation ? 'animate-pulse' : ''}`}
+                        data-testid="add-track-button"
+                      >
+                        {isAddingTrack ? (
+                          <span className="text-xs">Adding...</span>
+                        ) : (
+                          <>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span className="text-[10px] mt-0.5">Add</span>
+                          </>
+                        )}
+                      </button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip content="Go to next track" position="top" delay={150}>
+                    <button
+                      onClick={handleNextTrack}
+                      disabled={isTrackLoading}
+                      className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
+                        isTrackLoading
+                          ? 'text-audafact-text-secondary cursor-not-allowed'
+                          : 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
+                      }`}
+                      data-testid="next-track-button"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      <span className="text-[10px] mt-0.5">Next</span>
+                    </button>
+                  </Tooltip>
+                </div>
             </div>
             )}
 
