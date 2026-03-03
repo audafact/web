@@ -51,7 +51,20 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
       className={`track-item ${isProOnly ? 'pro-only' : ''}`}
       draggable={canAddToStudio}
       onDragStart={handleDragStart}
+      title={canAddToStudio ? 'Drag to studio or click + to add' : undefined}
     >
+      {canAddToStudio && (
+        <div className="flex flex-col gap-0.5 self-center text-audafact-text-secondary opacity-60 mr-2" aria-hidden>
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <circle cx="9" cy="6" r="1.5" />
+            <circle cx="15" cy="6" r="1.5" />
+            <circle cx="9" cy="12" r="1.5" />
+            <circle cx="15" cy="12" r="1.5" />
+            <circle cx="9" cy="18" r="1.5" />
+            <circle cx="15" cy="18" r="1.5" />
+          </svg>
+        </div>
+      )}
       <div className="track-info">
         <div className="track-header">
           <h4 className="track-name">{track.name}</h4>
