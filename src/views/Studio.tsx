@@ -495,7 +495,7 @@ const Studio = () => {
             timeSignature: track.timeSignature,
             firstMeasureTime: track.firstMeasureTime,
             showMeasures: ref.showMeasures[track.id] || false,
-            showCueThumbs: ref.showCueThumbs[track.id] || false,
+            showCueThumbs: (ref.showCueThumbs[track.id] ?? true),
             zoomLevel: ref.zoomLevels[track.id] || 1,
             playbackSpeed: ref.playbackSpeeds[track.id] || 1,
             volume: ref.volume[track.id] || 1,
@@ -1545,6 +1545,8 @@ const Studio = () => {
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
       if (!onlyUpdateFirstTrack) {
         setSelectedCueTrackId(trackId);
+      } else if (newTrack.mode === 'cue') {
+        setSelectedCueTrackId(trackId);
       }
       // Reset playback speed but keep volume
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
@@ -1691,7 +1693,7 @@ const Studio = () => {
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
       setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-      setSelectedCueTrackId(prev => prev ? prev : trackId);
+      setSelectedCueTrackId(trackId);
       
       // Animation delay for button state
       setTimeout(() => {
@@ -1762,9 +1764,11 @@ const Studio = () => {
       return rest;
     });
     
-    // Clean up selected cue track and armed loop if it was removed
+    // Clean up selected cue track and armed loop if it was removed; fall back to another cue track
     if (selectedCueTrackId === trackId) {
-      setSelectedCueTrackId(null);
+      const remaining = tracks.filter((t) => t.id !== trackId);
+      const otherCueTrack = remaining.find((t) => t.mode === 'cue');
+      setSelectedCueTrackId(otherCueTrack?.id ?? null);
     }
     setArmedLoopTrackIds(prev => {
       const next = new Set(prev);
@@ -1789,7 +1793,7 @@ const Studio = () => {
         timeSignature: track.timeSignature,
         firstMeasureTime: track.firstMeasureTime,
         showMeasures: showMeasures[track.id] || false,
-        showCueThumbs: showCueThumbs[track.id] || false,
+        showCueThumbs: (showCueThumbs[track.id] ?? true),
         zoomLevel: zoomLevels[track.id] || 1,
         playbackSpeed: playbackSpeeds[track.id] || 1   };
       
@@ -2001,9 +2005,10 @@ const Studio = () => {
     
     // Handle state transitions when switching modes
     if (mode === 'loop') {
-      // If switching to loop mode, clear cue track selection and hide cue thumbs
+      // If switching to loop mode, fall back to another cue track or clear selection
       if (selectedCueTrackId === trackId) {
-        setSelectedCueTrackId(null);
+        const otherCueTrack = tracks.find((t) => t.mode === 'cue' && t.id !== trackId);
+        setSelectedCueTrackId(otherCueTrack?.id ?? null);
       }
       setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
     } else if (mode === 'cue') {
@@ -2018,14 +2023,15 @@ const Studio = () => {
       // Always auto-select this track when switching to Chop mode
       setSelectedCueTrackId(trackId);
     } else if (mode === 'preview') {
-      // If switching to preview mode, remove from armed loops, clear cue selection, hide cue thumbs
+      // If switching to preview mode, remove from armed loops, fall back to another cue track, hide cue thumbs
       setArmedLoopTrackIds(prev => {
         const next = new Set(prev);
         next.delete(trackId);
         return next;
       });
       if (selectedCueTrackId === trackId) {
-        setSelectedCueTrackId(null);
+        const otherCueTrack = tracks.find((t) => t.mode === 'cue' && t.id !== trackId);
+        setSelectedCueTrackId(otherCueTrack?.id ?? null);
       }
       setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
     }
@@ -2421,7 +2427,7 @@ const Studio = () => {
         timeSignature: track.timeSignature,
         firstMeasureTime: track.firstMeasureTime,
         showMeasures: showMeasures[track.id] || false,
-        showCueThumbs: showCueThumbs[track.id] || false,
+        showCueThumbs: (showCueThumbs[track.id] ?? true),
         zoomLevel: zoomLevels[track.id] || 1,
         playbackSpeed: playbackSpeeds[track.id] || 1,
         volume: volume[track.id] || 1,
@@ -2503,7 +2509,7 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
-      setSelectedCueTrackId(prev => prev ? prev : newTrack.id);
+      if (trackType === 'cue') setSelectedCueTrackId(newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2600,7 +2606,7 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
-      setSelectedCueTrackId(prev => prev ? prev : newTrack.id);
+      if (trackType === 'cue') setSelectedCueTrackId(newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2681,7 +2687,7 @@ const Studio = () => {
       setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
-      setSelectedCueTrackId(prev => prev ? prev : newTrack.id);
+      if (trackType === 'cue') setSelectedCueTrackId(newTrack.id);
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2861,7 +2867,7 @@ const Studio = () => {
       setTracks([newTrack]);
       setCurrentTrackIndex(0);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
-      setShowCueThumbs(prev => ({ ...prev, [trackId]: !!settings.showCueThumbs }));
+      setShowCueThumbs(prev => ({ ...prev, [trackId]: settings.showCueThumbs !== undefined ? !!settings.showCueThumbs : true }));
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
       setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
       const trackVolume = newTrack.mode === 'preview' 
@@ -3746,11 +3752,11 @@ const Studio = () => {
                     <button
                       onClick={() => handleToggleCueThumbs(track.id)}
                       className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                        showCueThumbs[track.id]
+                        (showCueThumbs[track.id] ?? true)
                           ? 'bg-audafact-alert-red text-audafact-text-primary'
                           : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
                       }`}
-                      title={showCueThumbs[track.id] ? 'Hide Cue Points' : 'Show Cue Points'}
+                      title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -3893,11 +3899,11 @@ const Studio = () => {
                     <button
                       onClick={() => handleToggleCueThumbs(track.id)}
                       className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                        showCueThumbs[track.id]
+                        (showCueThumbs[track.id] ?? true)
                           ? 'bg-audafact-alert-red text-audafact-text-primary'
                           : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
                       }`}
-                      title={showCueThumbs[track.id] ? 'Hide Cue Points' : 'Show Cue Points'}
+                      title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
@@ -4024,7 +4030,7 @@ const Studio = () => {
                 timeSignature={track.timeSignature}
                 firstMeasureTime={track.firstMeasureTime}
                 onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
-                showCueThumbs={showCueThumbs[track.id]}
+                showCueThumbs={(showCueThumbs[track.id] ?? true)}
                 isPlaying={playbackStates[track.id] || false}
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
