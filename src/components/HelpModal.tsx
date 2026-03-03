@@ -10,7 +10,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const shortcuts = [
-    { key: 'Space', description: 'Play/Pause all armed loops' },
+    { key: 'Space', description: 'Play/Pause armed loops (loop tracks are armed by default)' },
     { key: 'Left/Right Arrow', description: 'Navigate between tracks' },
     { key: '1-0', description: 'Trigger cue points (in Chop mode)' },
     { key: 'Escape', description: 'Close modals and dialogs' },
@@ -21,6 +21,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
   ];
 
   const tips = [
+    'Loop tracks are armed by default — use Space to play/pause. Click Arm to disarm.',
     'Click anywhere on the waveform to jump to that position',
     'Drag on the waveform to set loop start and end points',
     'Use the side panel to browse and preview tracks from your library',

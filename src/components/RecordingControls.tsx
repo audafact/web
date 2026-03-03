@@ -63,8 +63,8 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
   };
 
   return (
-    <div className={`flex items-center justify-between w-full ${className}`}>
-      {/* Save Button - Left Side */}
+    <div className={`flex items-center gap-6 w-full ${className}`}>
+      {/* Save Button */}
       <button
         onClick={handleSave}
         disabled={!onSave || isSaving}
@@ -92,7 +92,7 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
         )}
       </button>
 
-              {/* Record Button and Status - Right Side */}
+      {/* Record Button and Status */}
         <div className="flex items-center gap-3">
           {isRecordingPerformance && currentPerformance && (
             <div className="flex items-center gap-2 text-sm audafact-text-secondary">
