@@ -24,7 +24,6 @@ import DemoModeIndicator from '../components/DemoModeIndicator';
 import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
-import { Play, Pause } from 'lucide-react';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
@@ -272,7 +271,6 @@ const Studio = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedCueTrackId, setSelectedCueTrackId] = useState<string | null>(null);
   const [armedLoopTrackIds, setArmedLoopTrackIds] = useState<Set<string>>(() => new Set());
-  const [spaceBarEnabled, setSpaceBarEnabled] = useState(true); // When true, Space bar triggers armed loops
   const [playbackTimes, setPlaybackTimes] = useState<{ [key: string]: number }>({});
   const [zoomLevels, setZoomLevels] = useState<{ [key: string]: number }>({});
   const [playbackSpeeds, setPlaybackSpeeds] = useState<{ [key: string]: number }>({});
@@ -328,17 +326,6 @@ const Studio = () => {
     });
   }, [armedLoopTrackIds, playbackStates, getTogglePlaybackRef]);
 
-  // Global Play button: activates space bar + plays armed loops
-  const handleGlobalPlayClick = useCallback(() => {
-    setSpaceBarEnabled(true);
-    handleGlobalPlay();
-  }, [handleGlobalPlay]);
-
-  // Toggle space bar functionality — allows armed tracks to be triggered by Space bar
-  const handleGlobalArmToggle = useCallback(() => {
-    setSpaceBarEnabled(prev => !prev);
-  }, []);
-  
   // Filter state
   const [lowpassFreqs, setLowpassFreqs] = useState<{ [key: string]: number }>({});
   const [highpassFreqs, setHighpassFreqs] = useState<{ [key: string]: number }>({});
@@ -1029,15 +1016,16 @@ const Studio = () => {
           (active as HTMLInputElement).type !== 'range');
       if (isTypingInput) {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
-        if (event.key === ' ') return; // Never trigger playback when typing
+        if (event.key === ' ') return; // Never trigger playback when typing in text inputs
       }
 
-      // Space bar: global play/pause for all armed loop tracks when enabled
+      // Space bar: global play/pause for all armed loop tracks (disabled when text inputs are focused)
       if (event.key === ' ') {
+        if (isTypingInput) return; // Ensure we never trigger playback while user is typing
         event.preventDefault();
         event.stopPropagation();
         if (isTapTempoActive) return;
-        if (spaceBarEnabled && !event.repeat) handleGlobalPlay();
+        if (!event.repeat) handleGlobalPlay();
         return;
       }
 
@@ -1077,7 +1065,7 @@ const Studio = () => {
 
     window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
     return () => window.removeEventListener('keydown', handleKeyPress, true);
-  }, [tracks, currentTrackIndex, isTapTempoActive, spaceBarEnabled, handleGlobalPlay]);
+  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay]);
 
         // Handle demo track changes
       useEffect(() => {
@@ -2005,6 +1993,8 @@ const Studio = () => {
     
     // Handle state transitions when switching modes
     if (mode === 'loop') {
+      // Default-arm when switching to loop mode
+      setArmedLoopTrackIds(prev => new Set(prev).add(trackId));
       // If switching to loop mode, fall back to another cue track or clear selection
       if (selectedCueTrackId === trackId) {
         const otherCueTrack = tracks.find((t) => t.mode === 'cue' && t.id !== trackId);
@@ -2510,6 +2500,7 @@ const Studio = () => {
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
       if (trackType === 'cue') setSelectedCueTrackId(newTrack.id);
+      if (trackType === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(newTrack.id));
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2607,6 +2598,7 @@ const Studio = () => {
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
       if (trackType === 'cue') setSelectedCueTrackId(newTrack.id);
+      if (trackType === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(newTrack.id));
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -2688,6 +2680,7 @@ const Studio = () => {
       setPlaybackStates(prev => ({ ...prev, [newTrack.id]: false }));
       setExpandedControls(prev => ({ ...prev, [newTrack.id]: false }));
       if (trackType === 'cue') setSelectedCueTrackId(newTrack.id);
+      if (trackType === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(newTrack.id));
       
       // Initialize filter state
       setLowpassFreqs(prev => ({ ...prev, [newTrack.id]: 20000 }));
@@ -3474,44 +3467,40 @@ const Studio = () => {
           </div>
         )}
 
-        {/* Global Play & Arm Controls */}
-        <div className="flex items-center gap-2 mb-4">
-          <button
-            onClick={handleGlobalPlayClick}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm text-sm font-medium ${
-              armedLoopTrackIds.size > 0 && [...armedLoopTrackIds].some(id => playbackStates[id])
-                ? 'bg-audafact-accent-cyan text-audafact-text-primary hover:bg-opacity-90'
-                : 'bg-audafact-surface-2 text-audafact-text-primary hover:bg-audafact-surface-1 border border-audafact-divider'
-            }`}
-            title="Activate Space bar and play armed loops"
-          >
-            {armedLoopTrackIds.size > 0 && [...armedLoopTrackIds].some(id => playbackStates[id]) ? (
-              <Pause className="w-4 h-4" />
-            ) : (
-              <Play className="w-4 h-4" />
-            )}
-            <span>Play</span>
-          </button>
-          <button
-            onClick={handleGlobalArmToggle}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors shadow-sm text-sm font-medium ${
-              spaceBarEnabled
-                ? 'bg-audafact-accent-cyan text-audafact-text-primary hover:bg-opacity-90'
-                : 'bg-audafact-surface-2 text-audafact-text-primary hover:bg-audafact-surface-1 border border-audafact-divider'
-            }`}
-            title={spaceBarEnabled ? 'Space bar enabled for armed tracks' : 'Space bar disabled — click to enable'}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <span>Arm</span>
-          </button>
-        </div>
-
-        {/* Global Recording Controls */}
-        <div className="flex justify-end mb-4">
-          <RecordingControls onSave={handleSaveCurrentState} audioContext={audioContext || undefined} />
+        {/* Global Controls: Save, Record, keyboard indicators */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+          <RecordingControls
+            className="w-auto shrink-0"
+            onSave={handleSaveCurrentState}
+            audioContext={audioContext || undefined}
+          />
+          <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
+            {(() => {
+              if (armedLoopTrackIds.size === 0) return 'Space: Arm loop tracks to enable';
+              const nums = [...armedLoopTrackIds]
+                .map(id => tracks.findIndex(t => t.id === id) + 1)
+                .filter(n => n > 0)
+                .sort((a, b) => a - b);
+              if (nums.length === 0) return 'Space: Arm loop tracks to enable';
+              const label = nums.length === 1
+                ? `Track ${nums[0]}`
+                : nums.length === 2
+                  ? `Track ${nums[0]} & ${nums[1]}`
+                  : `Track ${nums.slice(0, -1).join(', ')} & ${nums[nums.length - 1]}`;
+              return `Space: Play/Pause ${label} loop${nums.length === 1 ? '' : 's'}`;
+            })()}
+          </span>
+          <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
+            {selectedCueTrackId
+              ? (() => {
+                  const idx = tracks.findIndex(t => t.id === selectedCueTrackId);
+                  if (idx < 0) return '1-0: Trigger Chop track cue points';
+                  return `1-0: Trigger Track ${idx + 1} cue points`;
+                })()
+              : tracks.some(t => t.mode === 'cue')
+                ? '1-0: Select Chop track to trigger cues'
+                : '1-0: Switch to Chop mode to trigger cues'}
+          </span>
         </div>
 
         {/* Track skeleton - shown while waveforms load to prevent flicker */}
@@ -3790,7 +3779,7 @@ const Studio = () => {
                           ? 'bg-audafact-accent-cyan text-audafact-text-primary'
                           : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
                       }`}
-                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space Playback' : 'Arm for Space Playback'}
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -3941,7 +3930,7 @@ const Studio = () => {
                           ? 'bg-audafact-accent-cyan text-audafact-text-primary'
                           : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
                       }`}
-                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space Playback' : 'Arm for Space Playback'}
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -4086,7 +4075,7 @@ const Studio = () => {
               )}
               {track.mode === 'loop' && armedLoopTrackIds.has(track.id) && (
                 <div className="mt-3 bg-audafact-accent-cyan bg-opacity-10 p-2 rounded text-audafact-accent-cyan text-xs">
-                  Space: Play/Pause armed loops
+                  Armed — Space controls playback
                 </div>
               )}
             </div>
