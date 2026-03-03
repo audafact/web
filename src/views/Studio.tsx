@@ -1951,21 +1951,21 @@ const Studio = () => {
   const handleCueDragStateChange = (trackId: string, index: number, time: number | null) => {
     setCueDragStates(prev => {
       const newState = { ...prev };
-      if (!newState[trackId]) {
-        newState[trackId] = {};
-      }
-      
+      const trackState = newState[trackId] ? { ...newState[trackId] } : {};
+
       if (time === null) {
         // Remove drag state when drag ends
-        delete newState[trackId][index];
-        if (Object.keys(newState[trackId]).length === 0) {
+        delete trackState[index];
+        if (Object.keys(trackState).length === 0) {
           delete newState[trackId];
+        } else {
+          newState[trackId] = trackState;
         }
       } else {
-        // Update drag state with current position
-        newState[trackId][index] = time;
+        // Update drag state with current position (new object so React/effects detect the change)
+        newState[trackId] = { ...trackState, [index]: time };
       }
-      
+
       return newState;
     });
   };

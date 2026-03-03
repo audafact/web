@@ -223,6 +223,7 @@ const TrackControls = ({
   const isSeekingRef = useRef<boolean>(false);
   // Track if current source is looping - avoids stale currentTime in updatePlaybackTime closure
   const isSourceLoopingRef = useRef<boolean>(false);
+  const playCuePointRef = useRef<(index: number) => void>(() => {});
 
   // Sync internal filter state with external props
   useEffect(() => {
@@ -820,7 +821,7 @@ const TrackControls = ({
       const cueIndex = keyMap[event.key];
 
       if (cueIndex !== undefined && cueIndex < cuePoints.length) {
-        playCuePoint(cueIndex);
+        playCuePointRef.current(cueIndex);
       }
     };
 
@@ -998,7 +999,8 @@ const TrackControls = ({
       // Set the active cue index and update refs immediately
       setActiveCueIndex(index);
       activeCueIndexRef.current = index;
-      const cueTime = cuePoints[index];
+      // Use current node position (incl. drag) when triggering; playback won't follow drag
+      const cueTime = getCurrentCueTimestamp(cuePoints, cueDragState, index);
       cueStartTimeRef.current = cueTime;
       setCurrentTime(cueTime);
       if (onPlaybackTimeChange) {
@@ -1073,7 +1075,11 @@ const TrackControls = ({
       setIsPlaying(false);
     }
   };
-  
+
+  useEffect(() => {
+    playCuePointRef.current = playCuePoint;
+  });
+
   // Update volume when it changes
   useEffect(() => {
     currentVolumeRef.current = volume;
