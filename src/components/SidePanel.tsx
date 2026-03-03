@@ -132,26 +132,29 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
   
-  // Collapsible menu state
+  // Collapsible menu state - Tracks open by default, but Sessions/Recordings use saved preference
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
     const saved = localStorage.getItem('sidePanelExpandedMenus');
-    const defaultState = { 'audio-library': false, 'sessions': false, 'recordings': false };
-    
-    return saved ? JSON.parse(saved) : defaultState;
+    const defaultState = { 'audio-library': true, 'sessions': false, 'recordings': false };
+    if (!saved) return defaultState;
+    try {
+      const parsed = JSON.parse(saved);
+      // Always start with Tracks (audio-library) open - don't restore from localStorage
+      return { ...parsed, 'audio-library': true };
+    } catch {
+      return defaultState;
+    }
   });
   
-  // Active submenu items (null means no submenu item is selected)
-  const [activeAudioTab, setActiveAudioTab] = useState<'my-tracks' | 'library' | null>(() => {
-    const savedTab = localStorage.getItem('sidePanelActiveAudioTab');
-    return (savedTab as 'my-tracks' | 'library' | null) || 'library'; // Default to library
-  });
+  // Active submenu items - always start with none selected so Audafact Library content is hidden until user clicks
+  const [activeAudioTab, setActiveAudioTab] = useState<'my-tracks' | 'library' | null>(null);
   
   const [activeSessionsTab, setActiveSessionsTab] = useState<'saved' | 'shared' | null>(() => {
     const savedTab = localStorage.getItem('sidePanelActiveSessionsTab');
     return (savedTab as 'saved' | 'shared' | null) || 'saved'; // Default to saved sessions
   });
   // When true, allow user to collapse the submenu without auto-selecting another
-  const [allowEmptyAudioTab, setAllowEmptyAudioTab] = useState(false);
+  const [allowEmptyAudioTab, setAllowEmptyAudioTab] = useState(true); // Start with Audafact Library tab closed
   const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
   
 
@@ -218,10 +221,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       localStorage.setItem('sidePanelExpandedMenus', JSON.stringify(newState));
       return newState;
     });
-    // Reset empty-allow flags when menus are toggled so defaults work on next open
-    if (menuKey === 'audio-library') {
-      setAllowEmptyAudioTab(false);
-    }
+    // Reset empty-allow for sessions only - keep allowEmptyAudioTab true so expanding Tracks doesn't auto-show Audafact Library
     if (menuKey === 'sessions') {
       setAllowEmptySessionsTab(false);
     }

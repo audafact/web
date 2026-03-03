@@ -2921,6 +2921,17 @@ const Studio = () => {
             </div>
           </div>
         </div>
+
+        {/* Help Button - show during loading so users can access help immediately */}
+        <HelpButton
+          onStartTutorial={onboarding.startOnboarding}
+          onShowHelp={() => setShowHelpModal(true)}
+          hideTutorial={false}
+        />
+        <HelpModal
+          isOpen={showHelpModal}
+          onClose={() => setShowHelpModal(false)}
+        />
       </>
     );
   }
@@ -2946,6 +2957,16 @@ const Studio = () => {
             </button>
           </div>
         </div>
+
+        <HelpButton
+          onStartTutorial={onboarding.startOnboarding}
+          onShowHelp={() => setShowHelpModal(true)}
+          hideTutorial={false}
+        />
+        <HelpModal
+          isOpen={showHelpModal}
+          onClose={() => setShowHelpModal(false)}
+        />
       </>
     );
   }
@@ -3041,6 +3062,16 @@ const Studio = () => {
             </div>
           </div>
         )}
+        
+        <HelpButton
+          onStartTutorial={onboarding.startOnboarding}
+          onShowHelp={() => setShowHelpModal(true)}
+          hideTutorial={false}
+        />
+        <HelpModal
+          isOpen={showHelpModal}
+          onClose={() => setShowHelpModal(false)}
+        />
         
         <div 
           className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
@@ -3318,8 +3349,16 @@ const Studio = () => {
           </div>
         </div>
 
-
-
+        {/* Help Button - show with skeleton UI so users can access help before track loads */}
+        <HelpButton
+          onStartTutorial={onboarding.startOnboarding}
+          onShowHelp={() => setShowHelpModal(true)}
+          hideTutorial={false}
+        />
+        <HelpModal
+          isOpen={showHelpModal}
+          onClose={() => setShowHelpModal(false)}
+        />
       </>
     );
   }
