@@ -30,7 +30,7 @@ const HelpButton: React.FC<HelpButtonProps> = ({
   };
 
   return (
-    <div className={`fixed bottom-6 right-6 z-40 ${className}`}>
+    <div className={`fixed bottom-6 right-6 z-[70] ${className}`}>
       {/* Help Menu */}
       {isOpen && (
         <div className="absolute bottom-16 right-0 bg-audafact-surface-1 border border-audafact-divider rounded-lg shadow-xl p-2 min-w-48">
