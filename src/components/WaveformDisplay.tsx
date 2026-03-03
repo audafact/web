@@ -71,7 +71,7 @@ const WaveformDisplay = ({
   firstMeasureTime = 0,
   onFirstMeasureChange,
   // Cue thumb props
-  showCueThumbs = false,
+  showCueThumbs = true,
   // Playback control
   isPlaying = false,
   // Playhead position change callback
