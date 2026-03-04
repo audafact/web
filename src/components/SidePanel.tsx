@@ -119,6 +119,7 @@ interface SidePanelProps {
   onUploadTrack: (file: File, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddFromLibrary: (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddUserTrack: (track: UserTrack, trackType: 'preview' | 'loop' | 'cue') => void;
+  onRestoreSession?: (session: { events?: Array<{ data?: any }>; full_state?: any }) => Promise<void>;
   initialMode?: 'upload' | 'library';
 }
 
@@ -128,10 +129,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onUploadTrack,
   onAddFromLibrary,
   onAddUserTrack,
+  onRestoreSession,
   initialMode
 }) => {
 
-  const { savedSessions, performances, exportSession, exportPerformance, exportByFileKey, savePerformanceName, updateRecordingName, deleteSession, deletePerformance, pendingExport, clearPendingExport, discardPerformance, savedRecordings, deleteSavedRecording } = useRecording();
+  const { savedSessions, performances, exportSession, exportPerformance, exportByFileKey, savePerformanceName, updateRecordingName, deleteSession, renameSession, deletePerformance, pendingExport, clearPendingExport, pendingSession, clearPendingSession, discardPerformance, savedRecordings, deleteSavedRecording } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
@@ -178,6 +180,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
     feature: string;
   }>({ show: false, message: '', feature: '' });
   const [renameModalRecording, setRenameModalRecording] = useState<{ recordingId: string; currentName: string } | null>(null);
+  const [renameModalSession, setRenameModalSession] = useState<{ sessionId: string; currentName: string } | null>(null);
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
   const [downloadDropdownOpen, setDownloadDropdownOpen] = useState<string | null>(null);
   const [downloadDropdownPosition, setDownloadDropdownPosition] = useState({ top: 0, left: 0 });
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -256,6 +260,20 @@ const SidePanel: React.FC<SidePanelProps> = ({
       }
     }
   }, [pendingExport, performances, user]);
+
+  // Open rename modal when a session is just saved (name the new session)
+  useEffect(() => {
+    if (pendingSession && user) {
+      const session = savedSessions.find(s => s.id === pendingSession.sessionId);
+      if (session) {
+        setRenameModalSession({
+          sessionId: session.id,
+          currentName: session.session_name ?? `Studio Session ${new Date(session.startTime).toLocaleString()}`
+        });
+        setExpandedMenus(prev => ({ ...prev, sessions: true }));
+      }
+    }
+  }, [pendingSession, savedSessions, user]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -930,7 +948,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           {savedSessions.map((session) => {
                             const isStateSnapshot = session.id.startsWith('session_');
                             const isRecording = session.id.startsWith('recording_');
-                            
+                            const sessionWithFullState = session as { events?: Array<{ data?: any }>; full_state?: any };
+                            const hasRestorableData = (sessionWithFullState.events?.[0]?.data?.tracks?.length > 0) || (sessionWithFullState.full_state?.tracks?.length > 0);
+
                             return (
                               <div
                                 key={session.id}
@@ -939,8 +959,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 <div className="flex items-start justify-between mb-2">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <h4 className="font-medium audafact-text-primary text-sm">
-                                        {new Date(session.startTime).toLocaleDateString()} at {new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      <h4 className="font-medium audafact-text-primary text-sm truncate">
+                                        {session.session_name ?? (new Date(session.startTime).toLocaleDateString() + ' at ' + new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}
                                       </h4>
                                       {isStateSnapshot && (
                                         <span className="px-2 py-0.5 text-xs bg-audafact-accent-cyan text-audafact-bg-primary rounded-full">
@@ -959,71 +979,61 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                       </p>
                                     )}
                                     <p className="text-xs audafact-text-secondary">
-                                      {isStateSnapshot ? 'Studio snapshot' : `${session.events.length} events`} • {session.tracks.length} tracks
+                                      {session.tracks.length} track{session.tracks.length !== 1 ? 's' : ''}
                                     </p>
                                   </div>
-                                  <div className="flex items-center gap-1 ml-2">
-                                    {canAccessFeature('download') && (
+                                    <div className="flex items-center gap-1 ml-2">
+                                    <Tooltip content="Rename Session" position="top" delay={150}>
                                       <button
-                                        onClick={async () => {
-                                          const canDownload = await canPerformAction('download');
-                                          if (!canDownload) {
-                                            setShowUpgradePrompt({
-                                              show: true,
-                                              message: getUpgradeMessage('download'),
-                                              feature: 'Download'
-                                            });
-                                            return;
-                                          }
-                                          exportSession(session.id);
-                                        }}
+                                        onClick={() => setRenameModalSession({ sessionId: session.id, currentName: session.session_name ?? (new Date(session.startTime).toLocaleDateString() + ' at ' + new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) })}
                                         className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                        title="Export Session"
                                       >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                         </svg>
                                       </button>
+                                    </Tooltip>
+                                    {onRestoreSession && (
+                                      <Tooltip content={hasRestorableData ? 'Load Session' : 'Legacy session - cannot load'} position="top" delay={150}>
+                                        <button
+                                          onClick={async () => {
+                                            if (!hasRestorableData) return;
+                                            setLoadingSessionId(session.id);
+                                            try {
+                                              await onRestoreSession(sessionWithFullState);
+                                            } finally {
+                                              setLoadingSessionId(null);
+                                            }
+                                          }}
+                                          disabled={!hasRestorableData}
+                                          className={`p-1 rounded transition-colors duration-200 flex items-center justify-center min-w-[1.5rem] ${
+                                            hasRestorableData
+                                              ? 'text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2'
+                                              : 'text-audafact-text-secondary opacity-50 cursor-not-allowed'
+                                          }`}
+                                        >
+                                          {loadingSessionId === session.id ? (
+                                            <span className="animate-spin block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
+                                          ) : (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                            </svg>
+                                          )}
+                                        </button>
+                                      </Tooltip>
                                     )}
-                                    <button
-                                      onClick={async () => await deleteSession(session.id)}
-                                      className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                      title="Delete Session"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                      </svg>
-                                    </button>
+                                    <Tooltip content="Delete Session" position="top" delay={150}>
+                                      <button
+                                        onClick={async () => await deleteSession(session.id)}
+                                        className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                      </button>
+                                    </Tooltip>
                                   </div>
                                 </div>
-                              
-                                {session.events.length > 0 && (
-                                  <details className="mt-2">
-                                    <summary className="text-xs audafact-text-secondary cursor-pointer hover:text-audafact-text-primary">
-                                      View Events ({session.events.length})
-                                    </summary>
-                                    <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                                      {session.events.slice(0, 5).map((event, index) => (
-                                        <div key={index} className="text-xs bg-audafact-surface-3 p-2 rounded">
-                                          <div className="flex justify-between">
-                                            <span className="font-mono text-audafact-accent-cyan">
-                                              {Math.floor(event.timestamp / 1000)}:{((event.timestamp % 1000) / 10).toFixed(0).padStart(2, '0')}
-                                            </span>
-                                            <span className="text-audafact-alert-red">{event.type}</span>
-                                          </div>
-                                          <div className="text-audafact-text-secondary">
-                                            Track: {event.trackId.substring(0, 8)}...
-                                          </div>
-                                        </div>
-                                      ))}
-                                      {session.events.length > 5 && (
-                                        <div className="text-xs text-center audafact-text-secondary py-1">
-                                          ...and {session.events.length - 5} more events
-                                        </div>
-                                      )}
-                                    </div>
-                                  </details>
-                                )}
                               </div>
                             );
                           })}
@@ -1427,6 +1437,24 @@ const SidePanel: React.FC<SidePanelProps> = ({
           if (!renameModalRecording) return;
           await updateRecordingName(renameModalRecording.recordingId, newName);
         }}
+      />
+
+      {/* Rename Session Modal (used for naming new sessions and renaming existing) */}
+      <RenameRecordingModal
+        isOpen={!!renameModalSession}
+        onClose={() => {
+          setRenameModalSession(null);
+          clearPendingSession();
+        }}
+        currentName={renameModalSession?.currentName ?? ''}
+        onSave={async (newName) => {
+          if (!renameModalSession) return;
+          await renameSession(renameModalSession.sessionId, newName);
+          clearPendingSession();
+          setRenameModalSession(null);
+        }}
+        isSession
+        isNewSession={!!pendingSession}
       />
 
       {/* Upgrade Prompt Modal */}

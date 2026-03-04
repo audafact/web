@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { DatabaseService } from '../services/databaseService';
-import { Recording } from '../types/music';
+import { Recording, Session } from '../types/music';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
 import { supabase } from '../services/supabase';
@@ -22,6 +22,7 @@ interface RecordingSession {
   events: RecordingEvent[];
   tracks: string[];
   duration: number;
+  session_name?: string;
 }
 
 interface Performance {
@@ -79,9 +80,12 @@ interface RecordingContextValue {
   exportAudioRecording: (recordingId: string) => void;
   deletePerformance: (performanceId: string, options?: { fileKey?: string }) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  renameSession: (sessionId: string, newName: string) => Promise<void>;
   deleteAudioRecording: (recordingId: string) => Promise<void>;
   pendingExport: { performanceId: string; canSave: boolean } | null;
   clearPendingExport: () => void;
+  pendingSession: { sessionId: string } | null;
+  clearPendingSession: () => void;
   discardPerformance: (performanceId: string) => void;
   savedRecordings: Recording[];
   refreshSavedRecordings: () => Promise<void>;
@@ -124,6 +128,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const audioCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordingDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const [pendingExport, setPendingExport] = useState<{ performanceId: string; canSave: boolean } | null>(null);
+  const [pendingSession, setPendingSession] = useState<{ sessionId: string } | null>(null);
   const [savedRecordings, setSavedRecordings] = useState<Recording[]>([]);
 
   const refreshSavedRecordings = useCallback(async () => {
@@ -144,6 +149,34 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     refreshSavedRecordings();
   }, [refreshSavedRecordings]);
+
+  // Hydrate savedSessions from DB when user logs in (merge DB + local)
+  useEffect(() => {
+    if (!user?.id) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const dbSessions = await DatabaseService.getUserSessions(user.id);
+        if (!mounted) return;
+        const dbAsRecording: RecordingSession[] = dbSessions.map((s: Session) => ({
+          id: s.id,
+          startTime: s.created_at ? new Date(s.created_at).getTime() : Date.now(),
+          events: [{ timestamp: 0, type: 'cue_trigger' as const, trackId: 'studio', data: s.full_state ?? {} }],
+          tracks: s.full_state?.tracks?.map((t: { id: string }) => t.id) ?? s.track_ids ?? [],
+          duration: 0,
+          session_name: s.session_name
+        }));
+        setSavedSessions(prev => {
+          const dbIds = new Set(dbAsRecording.map(x => x.id));
+          const localOnly = prev.filter(p => !dbIds.has(p.id));
+          return [...dbAsRecording, ...localOnly];
+        });
+      } catch (err) {
+        console.error('Error hydrating sessions from DB:', err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [user?.id]);
 
   // Refresh saved recordings when a new one is saved
   useEffect(() => {
@@ -457,6 +490,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const sessionId = `session_${Date.now()}`;
     const currentTime = Date.now();
     
+    const sessionName = `Studio Session ${new Date().toLocaleString()}`;
     const stateSession: RecordingSession = {
       id: sessionId,
       startTime: currentTime,
@@ -468,7 +502,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         data: studioState
       }],
       tracks: studioState.tracks?.map((track: any) => track.id) || [],
-      duration: 0
+      duration: 0,
+      session_name: sessionName
     };
     
     // Save to local state immediately for UI responsiveness
@@ -518,27 +553,27 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ?.map((track: any) => track.id)
           .filter((id: string) => isValidUUID(id)) || [];
 
-        // Save to database
+        // Save to database (full_state contains complete restore data; legacy columns kept for compatibility)
         const dbSession = await DatabaseService.createSession({
           user_id: user.id,
-          session_name: `Studio Session ${new Date().toLocaleString()}`,
-          track_ids: validTrackIds, // Only include valid UUIDs
-          cuepoints: studioState.tracks?.flatMap((track: any) => track.cuePoints || []) || [],
+          session_name: sessionName,
+          track_ids: validTrackIds,
+          cuepoints: studioState.tracks?.map((track: any) => ({ trackId: track.id, cuePoints: track.cuePoints || [] })) || [],
           loop_regions: studioState.tracks?.map((track: any) => ({
             trackId: track.id,
             start: track.loopStart,
             end: track.loopEnd
           })).filter((region: any) => region.start !== undefined && region.end !== undefined) || [],
-          mode: 'loop'
+          mode: 'loop',
+          full_state: studioState
         });
         
         if (dbSession) {
-          // Update local session with database ID
+          // Update local session with database ID and name
           setSavedSessions(prev => prev.map(s => 
-            s.id === sessionId ? { ...s, id: dbSession.id } : s
+            s.id === sessionId ? { ...s, id: dbSession.id, session_name: dbSession.session_name } : s
           ));
-          
-          // Dispatch event to notify that session was saved
+          setPendingSession({ sessionId: dbSession.id });
           window.dispatchEvent(new CustomEvent('sessionSaved', {
             detail: { userId: user.id, sessionCount: currentSessionCount + 1 }
           }));
@@ -740,11 +775,35 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const success = await DatabaseService.deleteSession(sessionId, user.id);
         if (!success) {
           console.error('Failed to delete session from database');
-          // Could add error handling here (e.g., show toast, restore to local state)
         }
       } catch (error) {
         console.error('Error deleting session from database:', error);
-        // Could add error handling here
+      }
+    } else {
+      // Guest or not authenticated: still add locally and prompt for name
+      setPendingSession({ sessionId });
+    }
+  }, [user]);
+
+  const renameSession = useCallback(async (sessionId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    setSavedSessions(prev => prev.map(s =>
+      s.id === sessionId ? { ...s, session_name: trimmed } : s
+    ));
+
+    const isValidUUID = (str: string): boolean =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+
+    if (user?.id && isValidUUID(sessionId)) {
+      try {
+        const updated = await DatabaseService.updateSession(sessionId, user.id, { session_name: trimmed });
+        if (!updated) {
+          console.error('Failed to rename session in database');
+        }
+      } catch (error) {
+        console.error('Error renaming session in database:', error);
       }
     }
   }, [user]);
@@ -774,6 +833,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const clearPendingExport = useCallback(() => {
     setPendingExport(null);
+  }, []);
+
+  const clearPendingSession = useCallback(() => {
+    setPendingSession(null);
   }, []);
 
   const discardPerformance = useCallback((performanceId: string) => {
@@ -811,9 +874,12 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     exportAudioRecording,
     deletePerformance,
     deleteSession,
+    renameSession,
     deleteAudioRecording,
     pendingExport,
     clearPendingExport,
+    pendingSession,
+    clearPendingSession,
     discardPerformance,
     savedRecordings,
     refreshSavedRecordings,

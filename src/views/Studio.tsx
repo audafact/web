@@ -613,15 +613,12 @@ const Studio = () => {
   }, []);
 
   // --- Studio State Restoration ---
-  const restoreStudioStateFromLocal = async () => {
-    if (!user || isGuestMode) return false;
-    
-    const savedState = loadStudioStateFromLocal();
-    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) return false;
-    
+  // Shared restore logic: fetches audio by fileKey, restores tracks + params. Uses defaults for zoomLevel (1) and playbackTime (0) when missing.
+  const restoreFromState = useCallback(async (savedState: any): Promise<boolean> => {
+    if (!savedState?.tracks?.length) return false;
+
     try {
-      
-      // Use existing audio context if available
+      isRestoringRef.current = true;
       let context = audioContext;
       if (!context) {
         try {
@@ -633,37 +630,31 @@ const Studio = () => {
           return false;
         }
       }
-      
       if (!context) {
         setNeedsUserInteraction(true);
         return false;
       }
-      
-      // Restore tracks: use fileKey when present (works for library + user uploads), else lookup in availableAssets
+
       const restoredTracks: Track[] = [];
       const assets = availableAssets || [];
-      
+
       for (let i = 0; i < savedState.tracks.length; i++) {
         const savedTrack = savedState.tracks[i];
         try {
-          // Space out sign-file requests to avoid 429 rate limiting (cache reduces real calls)
           if (i > 0) {
             await new Promise(resolve => setTimeout(resolve, 200));
           }
 
-          // Prefer fileKey (persisted for library + user uploads); fallback to availableAssets lookup
           let fileKeyToUse: string | undefined;
           if (savedTrack.fileKey) {
             fileKeyToUse = savedTrack.fileKey;
           } else {
             const lookupId = savedTrack.sourceAssetId ?? savedTrack.id;
             let asset = assets.find(a => a.id === lookupId);
-            // Fallback: match by id prefix (handles ids like "groove-vibes-version-4-1772305503663" -> "groove-vibes-version-4-1c328d1b2c")
             if (!asset && lookupId) {
-              const basePrefix = lookupId.replace(/-?\d{10,}$/, ''); // strip trailing timestamp
+              const basePrefix = lookupId.replace(/-?\d{10,}$/, '');
               asset = assets.find(a => a.id === basePrefix || a.id.startsWith(basePrefix + '-'));
             }
-            // Fallback: match by fileName (e.g. "Groove Vibes.mp3" or "groove-vibes-version-4.mp3")
             if (!asset && savedTrack.fileName) {
               const fn = (savedTrack.fileName as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
               asset = assets.find(a => {
@@ -674,34 +665,28 @@ const Studio = () => {
             if (!asset) continue;
             fileKeyToUse = asset.fileKey;
           }
-          
+
           if (!fileKeyToUse) continue;
-          
-          // Get signed URL and fetch the audio
+
           const signedUrl = await signFile(fileKeyToUse);
           const response = await fetch(signedUrl);
           const blob = await response.blob();
           const file = new File([blob], savedTrack.fileName, { type: savedTrack.fileType });
-          
-          // Load the audio buffer
           const buffer = await loadAudioBuffer(file, context);
-          
-          // Validate and restore cue points (chops) - prevent reset to 00:00
+
           const rawCuePoints = savedTrack.cuePoints;
           const isAllZeros = Array.isArray(rawCuePoints) && rawCuePoints.every(v => v === 0);
           let validCuePoints: number[];
           if (Array.isArray(rawCuePoints) && rawCuePoints.length > 0 && rawCuePoints.every(v => typeof v === 'number') && !isAllZeros) {
             validCuePoints = rawCuePoints.map(t => Math.max(0, Math.min(t, buffer.duration)));
           } else {
-            // Fallback: try per-track localStorage (saved on each cue drag), then defaults
             const fromLocal = loadCuePointsFromLocal(savedTrack.id);
             const fromLocalValid = Array.isArray(fromLocal) && fromLocal.length > 0 && fromLocal.every(v => typeof v === 'number') && !fromLocal.every(v => v === 0);
             validCuePoints = fromLocalValid
               ? fromLocal.map(t => Math.max(0, Math.min(t, buffer.duration)))
               : Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
           }
-          
-          // Recreate the track with saved settings (defensive defaults for older saves)
+
           const restoredTrack: Track = {
             id: savedTrack.id,
             sourceAssetId: savedTrack.sourceAssetId ?? savedTrack.id,
@@ -712,13 +697,12 @@ const Studio = () => {
             loopStart: typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0,
             loopEnd: typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration,
             cuePoints: validCuePoints,
-            tempo: savedTrack.tempo,
-            timeSignature: savedTrack.timeSignature,
-            firstMeasureTime: savedTrack.firstMeasureTime,
-            showMeasures: savedTrack.showMeasures
+            tempo: savedTrack.tempo ?? 120,
+            timeSignature: savedTrack.timeSignature ?? { numerator: 4, denominator: 4 },
+            firstMeasureTime: savedTrack.firstMeasureTime ?? 0,
+            showMeasures: savedTrack.showMeasures ?? false
           };
-          
-          // Save the restored settings to individual track settings to prevent override
+
           const restoredMode = (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue';
           const restoredLoopStart = typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0;
           const restoredLoopEnd = typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration;
@@ -727,34 +711,33 @@ const Studio = () => {
             loopStart: restoredLoopStart,
             loopEnd: restoredLoopEnd,
             cuePoints: validCuePoints,
-            tempo: savedTrack.tempo,
-            timeSignature: savedTrack.timeSignature,
-            firstMeasureTime: savedTrack.firstMeasureTime,
-            showMeasures: savedTrack.showMeasures,
-            showCueThumbs: savedTrack.showCueThumbs,
-            zoomLevel: savedTrack.zoomLevel,
-            playbackSpeed: savedTrack.playbackSpeed,
-            volume: savedTrack.volume,
-            lowpassFreq: savedTrack.lowpassFreq,
-            highpassFreq: savedTrack.highpassFreq,
-            filterEnabled: savedTrack.filterEnabled
+            tempo: savedTrack.tempo ?? 120,
+            timeSignature: savedTrack.timeSignature ?? { numerator: 4, denominator: 4 },
+            firstMeasureTime: savedTrack.firstMeasureTime ?? 0,
+            showMeasures: savedTrack.showMeasures ?? false,
+            showCueThumbs: savedTrack.showCueThumbs ?? true,
+            zoomLevel: savedTrack.zoomLevel ?? 1,
+            playbackSpeed: savedTrack.playbackSpeed ?? 1,
+            volume: savedTrack.volume ?? 1,
+            lowpassFreq: savedTrack.lowpassFreq ?? 20000,
+            highpassFreq: savedTrack.highpassFreq ?? 20,
+            filterEnabled: savedTrack.filterEnabled ?? false
           };
           saveTrackSettingsToLocal(savedTrack.id, trackSettings);
           saveCuePointsToLocal(savedTrack.id, validCuePoints);
-          
+
           restoredTracks.push(restoredTrack);
-          
-          setShowMeasures(prev => ({ ...prev, [savedTrack.id]: savedTrack.showMeasures }));
-          setShowCueThumbs(prev => ({ ...prev, [savedTrack.id]: savedTrack.showCueThumbs }));
-          setZoomLevels(prev => ({ ...prev, [savedTrack.id]: savedTrack.zoomLevel }));
-          setPlaybackSpeeds(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackSpeed }));
-          setVolume(prev => ({ ...prev, [savedTrack.id]: savedTrack.volume }));
-          setLowpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.lowpassFreq }));
-          setHighpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.highpassFreq }));
-          setFilterEnabled(prev => ({ ...prev, [savedTrack.id]: savedTrack.filterEnabled }));
-          setExpandedControls(prev => ({ ...prev, [savedTrack.id]: savedTrack.expandedControls }));
-          setPlaybackTimes(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackTime || 0 }));
-          
+
+          setShowMeasures(prev => ({ ...prev, [savedTrack.id]: savedTrack.showMeasures ?? false }));
+          setShowCueThumbs(prev => ({ ...prev, [savedTrack.id]: savedTrack.showCueThumbs ?? true }));
+          setZoomLevels(prev => ({ ...prev, [savedTrack.id]: savedTrack.zoomLevel ?? 1 }));
+          setPlaybackSpeeds(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackSpeed ?? 1 }));
+          setVolume(prev => ({ ...prev, [savedTrack.id]: savedTrack.volume ?? 1 }));
+          setLowpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.lowpassFreq ?? 20000 }));
+          setHighpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.highpassFreq ?? 20 }));
+          setFilterEnabled(prev => ({ ...prev, [savedTrack.id]: savedTrack.filterEnabled ?? false }));
+          setExpandedControls(prev => ({ ...prev, [savedTrack.id]: savedTrack.expandedControls ?? false }));
+          setPlaybackTimes(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackTime ?? 0 }));
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
           if (msg.includes('429')) {
@@ -763,24 +746,41 @@ const Studio = () => {
           }
         }
       }
-      
+
       if (restoredTracks.length > 0) {
         setTracks(restoredTracks);
-        setCurrentTrackIndex(savedState.currentTrackIndex || 0);
-        setSelectedCueTrackId(savedState.selectedCueTrackId || null);
+        setCurrentTrackIndex(savedState.currentTrackIndex ?? 0);
+        setSelectedCueTrackId(savedState.selectedCueTrackId ?? null);
         setArmedLoopTrackIds(Array.isArray(savedState.armedLoopTrackIds) ? new Set(savedState.armedLoopTrackIds) : new Set());
-        setLastUsedVolume(savedState.lastUsedVolume || 1);
+        setLastUsedVolume(savedState.lastUsedVolume ?? 1);
         return true;
       }
-      
     } catch {
       // Restore failed
     } finally {
       isRestoringRef.current = false;
     }
-    
     return false;
-  };
+  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, signFile]);
+
+  const restoreStudioStateFromLocal = useCallback(async (): Promise<boolean> => {
+    if (!user || isGuestMode) return false;
+    const savedState = loadStudioStateFromLocal();
+    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) return false;
+    return restoreFromState(savedState);
+  }, [user, isGuestMode, loadStudioStateFromLocal, restoreFromState]);
+
+  // Restore from saved session (RecordingSession or DB Session with full_state)
+  const restoreStudioStateFromSession = useCallback(async (session: { events?: Array<{ data?: any }>; full_state?: any }): Promise<boolean> => {
+    if (!user || isGuestMode) return false;
+    const savedState = session.events?.[0]?.data ?? session.full_state;
+    if (!savedState?.tracks?.length) return false;
+    return restoreFromState(savedState);
+  }, [user, isGuestMode, restoreFromState]);
+
+  const handleRestoreSession = useCallback(async (session: { events?: Array<{ data?: any }>; full_state?: any }) => {
+    await restoreStudioStateFromSession(session);
+  }, [restoreStudioStateFromSession]);
 
   // Note: We're not implementing localStorage persistence for studio tracks
   // because:
@@ -2415,7 +2415,7 @@ const Studio = () => {
     setFilterEnabled(prev => ({ ...prev, [trackId]: enabled }));
   };
 
-  // Handle save current studio state
+  // Handle save current studio state (full state for restore: fileKey, volume, tempo, filters; excludes zoom, playbackTime)
   const handleSaveCurrentState = async () => {
     // Check session save limits
     const canSaveSession = await canPerformAction('save_session');
@@ -2428,30 +2428,54 @@ const Studio = () => {
       return;
     }
 
+    const assets = availableAssets || [];
     const studioState = {
-      tracks: tracks.map(track => ({
-        id: track.id,
-        name: track.file.name,
-        mode: track.mode,
-        loopStart: track.loopStart,
-        loopEnd: track.loopEnd,
-        cuePoints: track.cuePoints,
-        tempo: track.tempo,
-        timeSignature: track.timeSignature,
-        firstMeasureTime: track.firstMeasureTime,
-        showMeasures: showMeasures[track.id] || false,
-        showCueThumbs: (showCueThumbs[track.id] ?? true),
-        zoomLevel: zoomLevels[track.id] || 1,
-        playbackSpeed: playbackSpeeds[track.id] || 1,
-        volume: volume[track.id] || 1,
-        lowpassFreq: lowpassFreqs[track.id] || 20000,
-        highpassFreq: highpassFreqs[track.id] || 20,
-        filterEnabled: filterEnabled[track.id] || false
-      })),
+      tracks: tracks.map(track => {
+        let fileKey = track.fileKey ?? (track.sourceAssetId && assets.find(a => a.id === track.sourceAssetId)?.fileKey);
+        if (!fileKey && (track.sourceAssetId || track.id)) {
+          const lookupId = track.sourceAssetId ?? track.id;
+          const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
+          let fallbackAsset = assets.find(a => a.id === basePrefix || a.id.startsWith(basePrefix + '-'));
+          if (!fallbackAsset && track.file?.name) {
+            const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
+            fallbackAsset = assets.find(a =>
+              a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) || a.id.toLowerCase().includes(fn)
+            ) ?? undefined;
+          }
+          fileKey = fallbackAsset?.fileKey;
+        }
+        return {
+          id: track.id,
+          sourceAssetId: track.sourceAssetId ?? track.id,
+          fileKey: fileKey ?? undefined,
+          fileName: track.file.name,
+          fileSize: track.file.size,
+          fileType: track.file.type,
+          mode: track.mode,
+          loopStart: track.loopStart,
+          loopEnd: track.loopEnd,
+          cuePoints: track.cuePoints,
+          tempo: track.tempo,
+          timeSignature: track.timeSignature,
+          firstMeasureTime: track.firstMeasureTime,
+          showMeasures: showMeasures[track.id] || false,
+          showCueThumbs: (showCueThumbs[track.id] ?? true),
+          playbackSpeed: playbackSpeeds[track.id] || 1,
+          volume: volume[track.id] || 1,
+          lowpassFreq: lowpassFreqs[track.id] || 20000,
+          highpassFreq: highpassFreqs[track.id] || 20,
+          filterEnabled: filterEnabled[track.id] || false,
+          expandedControls: expandedControls[track.id] || false
+        };
+      }),
       selectedCueTrackId,
-      timestamp: Date.now()
+      armedLoopTrackIds: [...armedLoopTrackIds],
+      currentTrackIndex,
+      lastUsedVolume,
+      timestamp: Date.now(),
+      version: 1
     };
-    
+
     await saveCurrentState(studioState);
   };
 
@@ -2931,7 +2955,8 @@ const Studio = () => {
     onUploadTrack: handleUploadTrack,
     onAddFromLibrary: handleAddFromLibrary,
     onAddUserTrack: handleAddUserTrack,
-  }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack]);
+    onRestoreSession: handleRestoreSession,
+  }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack, handleRestoreSession]);
 
   
   // Loading state - only show full-page loader when NO tracks exist (initial load).
