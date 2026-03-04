@@ -35,6 +35,39 @@ export interface Upload {
   original_name?: string;
 }
 
+/** Complete session state for full restore (excludes zoom, playback position) */
+export interface SessionFullState {
+  tracks: Array<{
+    id: string;
+    sourceAssetId?: string;
+    fileKey?: string;
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+    mode: string;
+    loopStart: number;
+    loopEnd: number;
+    cuePoints: number[];
+    tempo: number;
+    timeSignature: TimeSignature;
+    firstMeasureTime: number;
+    showMeasures: boolean;
+    showCueThumbs: boolean;
+    playbackSpeed: number;
+    volume: number;
+    lowpassFreq: number;
+    highpassFreq: number;
+    filterEnabled: boolean;
+    expandedControls?: boolean;
+  }>;
+  selectedCueTrackId: string | null;
+  armedLoopTrackIds: string[];
+  currentTrackIndex: number;
+  lastUsedVolume: number;
+  timestamp?: number;
+  version?: number;
+}
+
 export interface Session {
   id: string;
   user_id: string;
@@ -45,6 +78,7 @@ export interface Session {
   mode: "loop" | "chop";
   created_at: string;
   updated_at: string;
+  full_state?: SessionFullState | null;
 }
 
 export interface Recording {
