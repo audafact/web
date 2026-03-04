@@ -328,6 +328,29 @@ export class DatabaseService {
   }
 
   /**
+   * Update a recording's original_name (e.g. after user customizes filename in export modal)
+   */
+  static async updateRecordingOriginalName(
+    recordingId: string,
+    userId: string,
+    originalName: string
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from("recordings")
+        .update({ original_name: originalName })
+        .eq("id", recordingId)
+        .eq("user_id", userId);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error("Error updating recording original name:", error);
+      return false;
+    }
+  }
+
+  /**
    * Delete a recording
    */
   static async deleteRecording(

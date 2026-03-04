@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/copy-lame.js",
     "dev": "vite",
     "dev:staging": "VITE_APP_ENV=staging vite",
     "dev:preview": "VITE_APP_ENV=preview vite",

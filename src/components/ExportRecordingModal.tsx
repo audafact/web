@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Modal } from './Modal';
 
 interface Performance {
@@ -9,18 +10,23 @@ interface Performance {
   tracks: string[];
   duration: number;
   audioBlob?: Blob;
+  databaseId?: string;
 }
 
 interface ExportRecordingModalProps {
   performance: Performance | null;
   isOpen: boolean;
   onClose: () => void;
+  onSave: (filename: string, format: 'mp3' | 'wav') => void;
   onExport: (filename: string, format: 'mp3' | 'wav') => void;
+  onSaveAndExport: (filename: string, format: 'mp3' | 'wav') => void;
   onCancel?: () => void;
   allowedFormats: ('mp3' | 'wav')[];
   canSave?: boolean;
   /** When WAV is blocked, called when user clicks the upgrade CTA */
   onUpgradeWav?: () => void;
+  /** When save is blocked (recording limit), called when user clicks the upgrade CTA */
+  onUpgradeSave?: () => void;
 }
 
 const defaultFilename = () =>
@@ -30,13 +36,20 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
   performance,
   isOpen,
   onClose,
+  onSave,
   onExport,
+  onSaveAndExport,
   onCancel,
   allowedFormats,
   canSave = true,
   onUpgradeWav,
+  onUpgradeSave,
 }) => {
   const [filename, setFilename] = useState(defaultFilename);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const effectiveFormats = canSave ? allowedFormats : (allowedFormats.includes('mp3') ? ['mp3'] as const : allowedFormats);
   const [format, setFormat] = useState<'mp3' | 'wav'>(effectiveFormats.includes('wav') ? 'wav' : 'mp3');
   const prevOpenRef = useRef(false);
@@ -44,18 +57,44 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
   useEffect(() => {
     if (isOpen && !prevOpenRef.current) {
       setFilename(defaultFilename());
+      setDropdownOpen(false);
       const formats = canSave ? allowedFormats : (allowedFormats.includes('mp3') ? ['mp3'] : allowedFormats);
       setFormat(formats.includes('wav') ? 'wav' : 'mp3');
     }
     prevOpenRef.current = isOpen;
   }, [isOpen, allowedFormats, canSave]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!performance) return;
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+          triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const openDropdown = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setDropdownPosition({ top: rect.bottom + 4, left: rect.right - 192 });
+    }
+    setDropdownOpen(true);
+  };
+
+  const getFinalFilename = () => {
     const ext = format === 'mp3' ? 'mp3' : 'wav';
-    const finalFilename = filename.endsWith(`.${ext}`) ? filename : `${filename}.${ext}`;
-    onExport(finalFilename, format);
+    return filename.endsWith(`.${ext}`) ? filename : `${filename}.${ext}`;
+  };
+
+  const handleAction = (action: 'save' | 'export' | 'saveAndExport') => {
+    if (!performance) return;
+    const finalFilename = getFinalFilename();
+    if (action === 'save') onSave(finalFilename, format);
+    else if (action === 'export') onExport(finalFilename, format);
+    else onSaveAndExport(finalFilename, format);
+    setDropdownOpen(false);
     onClose();
   };
 
@@ -88,7 +127,7 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <div>
             <label htmlFor="export-filename" className="block text-sm font-medium audafact-text-primary mb-1">
               Filename
@@ -147,6 +186,20 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
             </div>
           </div>
 
+          {!canSave && onUpgradeSave && (
+            <button
+              type="button"
+              onClick={onUpgradeSave}
+              className="flex items-center gap-2 text-left p-2 -m-2 rounded-lg border border-audafact-divider bg-audafact-surface-2/50 opacity-75 hover:opacity-100 hover:border-audafact-accent-cyan/50 hover:bg-audafact-surface-2 transition-colors group w-full"
+            >
+              <span className="w-4 h-4 rounded-full border-2 border-audafact-divider flex-shrink-0" />
+              <span className="audafact-text-secondary">Save to app</span>
+              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded bg-audafact-accent-cyan/20 text-audafact-accent-cyan group-hover:bg-audafact-accent-cyan/30">
+                Pro
+              </span>
+            </button>
+          )}
+
           <div className="flex justify-end gap-2 pt-4">
             <button
               type="button"
@@ -155,12 +208,58 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-audafact-accent-cyan text-audafact-bg-primary rounded-lg font-medium hover:opacity-90 transition-opacity"
-            >
-              Export
-            </button>
+            <div ref={triggerRef} className="relative">
+              <div className="flex rounded-lg overflow-hidden border border-audafact-accent-cyan/50">
+                <button
+                  type="button"
+                  onClick={() => handleAction('saveAndExport')}
+                  className="px-4 py-2 bg-audafact-accent-cyan text-audafact-bg-primary font-medium hover:opacity-90 transition-opacity"
+                >
+                  Save & Export
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dropdownOpen ? setDropdownOpen(false) : openDropdown()}
+                  className="px-2 py-2 bg-audafact-accent-cyan text-audafact-bg-primary border-l border-audafact-accent-cyan/70 hover:opacity-90 transition-opacity"
+                  aria-label="More options"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={dropdownOpen ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                  </svg>
+                </button>
+              </div>
+              {dropdownOpen && createPortal(
+                <div
+                  ref={dropdownRef}
+                  className="fixed py-1 w-48 bg-audafact-surface-2 border border-audafact-divider rounded-lg shadow-lg z-[60]"
+                  style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleAction('save')}
+                    disabled={!performance?.databaseId}
+                    className="w-full px-4 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save as…
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAction('export')}
+                    className="w-full px-4 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1"
+                  >
+                    Export only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAction('saveAndExport')}
+                    className="w-full px-4 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1"
+                  >
+                    Save & Export
+                  </button>
+                </div>,
+                document.body
+              )}
+            </div>
           </div>
         </form>
       </div>

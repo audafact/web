@@ -81,10 +81,8 @@ export async function convertToMp3(audioBlob: Blob): Promise<Blob> {
   const right = channels > 1 ? audioBuffer.getChannelData(1) : left;
 
   return new Promise((resolve, reject) => {
-    const worker = new Worker(
-      new URL("../workers/mp3Encoder.worker.ts", import.meta.url),
-      { type: "module" }
-    );
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "") || "";
+    const worker = new Worker(`${base}/mp3Encoder.worker.js`, { type: "classic" });
 
     worker.postMessage({
       left: left,

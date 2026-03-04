@@ -1,16 +1,25 @@
 /**
- * Web Worker for MP3 encoding via lamejs.
- * Receives Float32Array PCM data, returns MP3 ArrayBuffer.
+ * Classic Web Worker for MP3 encoding via lamejs.
+ * Uses importScripts to load the pre-bundled lame.min.js (avoids MPEGMode ESM resolution issues).
  */
-import lamejs from "lamejs";
+importScripts('/lame.min.js');
 
-self.onmessage = (e: MessageEvent<{ left: Float32Array; right: Float32Array; sampleRate: number }>) => {
+function floatTo16BitPCM(float32) {
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return int16;
+}
+
+self.onmessage = function (e) {
   const { left, right, sampleRate } = e.data;
 
   try {
     const mp3encoder = new lamejs.Mp3Encoder(2, sampleRate, 128);
     const sampleBlockSize = 1152;
-    const mp3Data: Int8Array[] = [];
+    const mp3Data = [];
 
     const maxSamples = Math.max(left.length, right.length);
 
@@ -21,7 +30,6 @@ self.onmessage = (e: MessageEvent<{ left: Float32Array; right: Float32Array; sam
       const leftChunk = i < left.length ? left.subarray(i, Math.min(end, left.length)) : new Float32Array(len);
       const rightChunk = i < right.length ? right.subarray(i, Math.min(end, right.length)) : new Float32Array(len);
 
-      // Pad if one channel is shorter
       const leftPadded = leftChunk.length >= len ? leftChunk : new Float32Array(len);
       const rightPadded = rightChunk.length >= len ? rightChunk : new Float32Array(len);
       if (leftChunk.length < len) leftPadded.set(leftChunk);
@@ -41,12 +49,12 @@ self.onmessage = (e: MessageEvent<{ left: Float32Array; right: Float32Array; sam
       mp3Data.push(flush);
     }
 
-    const totalLength = mp3Data.reduce((acc, arr) => acc + arr.length, 0);
+    const totalLength = mp3Data.reduce(function (acc, arr) { return acc + arr.length; }, 0);
     const result = new Uint8Array(totalLength);
     let offset = 0;
-    for (const arr of mp3Data) {
-      result.set(arr, offset);
-      offset += arr.length;
+    for (let i = 0; i < mp3Data.length; i++) {
+      result.set(mp3Data[i], offset);
+      offset += mp3Data[i].length;
     }
 
     self.postMessage({ mp3Buffer: result.buffer });
@@ -54,12 +62,3 @@ self.onmessage = (e: MessageEvent<{ left: Float32Array; right: Float32Array; sam
     self.postMessage({ error: String(err) });
   }
 };
-
-function floatTo16BitPCM(float32: Float32Array): Int16Array {
-  const int16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return int16;
-}

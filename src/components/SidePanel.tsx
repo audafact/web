@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
 import { DatabaseService } from '../services/databaseService';
@@ -13,6 +14,8 @@ import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
 import { deleteByKey } from '@/lib/storage';
 import { useSingleAudio } from '@/hooks/useSingleAudio';
 import { ExportRecordingModal } from './ExportRecordingModal';
+import { RenameRecordingModal } from './RenameRecordingModal';
+import Tooltip from './Tooltip';
 
 interface AudioAsset {
   id: string;
@@ -128,7 +131,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   initialMode
 }) => {
 
-  const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance, pendingExport, clearPendingExport, discardPerformance } = useRecording();
+  const { savedSessions, performances, exportSession, exportPerformance, exportByFileKey, savePerformanceName, updateRecordingName, deleteSession, deletePerformance, pendingExport, clearPendingExport, discardPerformance, savedRecordings, deleteSavedRecording } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
@@ -174,10 +177,74 @@ const SidePanel: React.FC<SidePanelProps> = ({
     message: string;
     feature: string;
   }>({ show: false, message: '', feature: '' });
+  const [renameModalRecording, setRenameModalRecording] = useState<{ recordingId: string; currentName: string } | null>(null);
+  const [downloadDropdownOpen, setDownloadDropdownOpen] = useState<string | null>(null);
+  const [downloadDropdownPosition, setDownloadDropdownPosition] = useState({ top: 0, left: 0 });
+  const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const downloadDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        downloadDropdownRef.current?.contains(target) ||
+        downloadTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setDownloadDropdownOpen(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const { isPlaying, isLoading, toggle, isCurrentKey } = useSingleAudio();
+
+  // Merge performances (in-memory) with savedRecordings (from DB) for display
+  const mergedRecordings = useMemo(() => {
+    const fromPerformance = performances.filter((p) => p.audioBlob || p.fileKey);
+    const dbOnly = savedRecordings.filter(
+      (r) => !performances.some((p) => p.databaseId === r.id)
+    );
+    const defaultLabel = (date: Date) =>
+      `${date.toLocaleDateString()} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    return [
+      ...fromPerformance.map((p) => {
+        const savedRec = p.databaseId ? savedRecordings.find((r) => r.id === p.databaseId) : null;
+        const label = savedRec?.original_name || defaultLabel(new Date(p.startTime));
+        return {
+          type: 'performance' as const,
+          id: p.id,
+          dbId: p.databaseId,
+          fileKey: p.fileKey,
+          audioBlob: p.audioBlob,
+          label,
+          durationMs: p.duration,
+          durationStr: `${Math.floor(p.duration / 60000)}:${((p.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}`,
+          eventsCount: p.events.length,
+          tracksCount: p.tracks.length,
+          performance: p
+        };
+      }),
+      ...dbOnly
+        .filter((r) => r.file_key)
+        .map((r) => ({
+          type: 'saved' as const,
+          id: r.id,
+          dbId: r.id,
+          fileKey: r.file_key!,
+          audioBlob: undefined as Blob | undefined,
+          label: r.original_name || defaultLabel(new Date(r.created_at)),
+          durationMs: (r.length || 0) * 1000,
+          durationStr: `${Math.floor((r.length || 0) / 60)}:${((r.length || 0) % 60).toFixed(0).padStart(2, '0')}`,
+          eventsCount: 0,
+          tracksCount: 0,
+          performance: null
+        }))
+    ];
+  }, [performances, savedRecordings]);
 
   // Open export modal immediately when a recording completes
   useEffect(() => {
@@ -529,6 +596,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
             onClick={onToggle}
             className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
             data-testid="side-panel-toggle"
+            title="Close panel"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -713,7 +781,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   e.dataTransfer.setData('application/json', JSON.stringify({
                                     type: 'user-track',
                                     name: track.name,
-                                    id: track.id
+                                    id: track.id,
+                                    fileKey: track.fileKey,
+                                    fileType: track.type
                                   }));
                                   e.dataTransfer.effectAllowed = 'copy';
                                 }}
@@ -1020,10 +1090,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                         <div className="flex items-center justify-between">
                           <h3 className="text-md font-medium audafact-heading">Recordings</h3>
-                          <span className="text-xs audafact-text-secondary">{performances.length} recordings</span>
+                          <span className="text-xs audafact-text-secondary">{mergedRecordings.length} recordings</span>
                         </div>
                         
-                        {performances.length === 0 ? (
+                        {mergedRecordings.length === 0 ? (
                           <div className="text-center py-8 flex-1 flex flex-col justify-center">
                             <div className="text-audafact-text-secondary mb-4">
                               <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1035,70 +1105,216 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           </div>
                         ) : (
                           <div className="space-y-3">
-                            {performances.map((performance) => (
-                              <div
-                                key={performance.id}
-                                className="p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card"
-                              >
-                                <div className="flex items-start justify-between mb-2">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <h4 className="font-medium audafact-text-primary text-sm">
-                                        {new Date(performance.startTime).toLocaleDateString()} at {new Date(performance.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                      </h4>
-                                      <span className="px-2 py-0.5 text-xs bg-audafact-alert-red text-audafact-text-primary rounded-full">
-                                        Performance
-                                      </span>
+                            {mergedRecordings.map((item) => {
+                              const canPlay = !!(item.audioBlob instanceof Blob ? item.audioBlob : item.fileKey);
+                              const playSrc = item.audioBlob instanceof Blob
+                                ? { kind: 'blob' as const, blob: item.audioBlob }
+                                : item.fileKey
+                                  ? { kind: 'key' as const, key: item.fileKey }
+                                  : null;
+                              const isThisPlaying = canPlay && item.fileKey && isCurrentKey(item.fileKey);
+                              const isThisLoading = canPlay && item.fileKey && isLoading && isCurrentKey(item.fileKey);
+                              return (
+                                <div
+                                  key={`${item.type}-${item.id}`}
+                                  draggable={!!item.fileKey}
+                                  onDragStart={item.fileKey ? (e) => {
+                                    e.dataTransfer.setData('text/plain', item.dbId || item.id);
+                                    e.dataTransfer.setData('application/json', JSON.stringify({
+                                      type: 'recording',
+                                      name: item.label,
+                                      id: item.dbId || item.id,
+                                      fileKey: item.fileKey,
+                                      fileType: 'audio/wav'
+                                    }));
+                                    e.dataTransfer.effectAllowed = 'copy';
+                                  } : undefined}
+                                  className={`p-3 border border-audafact-divider rounded-lg hover:bg-audafact-surface-2 transition-colors duration-200 audafact-card ${item.fileKey ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                                >
+                                  <div className="flex items-center gap-2 gap-y-1.5 flex-wrap">
+                                    <h4 className="font-medium audafact-text-primary text-sm min-w-0 truncate flex-1" title={item.label}>
+                                      {item.label}
+                                    </h4>
+                                    <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
+                                      {canPlay && playSrc && (
+                                        <Tooltip content={isThisPlaying ? "Pause" : "Play"} position="top" delay={150}>
+                                          <button
+                                            onClick={() => toggle(playSrc)}
+                                            className="p-1.5 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                            disabled={isThisLoading}
+                                          >
+                                            {isThisLoading ? (
+                                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                              </svg>
+                                            ) : isThisPlaying ? (
+                                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                                              </svg>
+                                            ) : (
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                                              </svg>
+                                            )}
+                                          </button>
+                                        </Tooltip>
+                                      )}
+                                      {item.fileKey && (
+                                        <Tooltip content="Add to Studio" position="top" delay={150}>
+                                          <button
+                                            onClick={() => {
+                                              const userTrack: UserTrack = {
+                                                id: item.dbId || item.id,
+                                                name: item.label,
+                                                file: null,
+                                                fileKey: item.fileKey,
+                                                type: 'audio/wav',
+                                                size: '-',
+                                                uploadedAt: Date.now()
+                                              };
+                                              onAddUserTrack(userTrack, 'cue');
+                                            }}
+                                            className="p-1.5 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                          >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            </svg>
+                                          </button>
+                                        </Tooltip>
+                                      )}
+                                      {canAccessFeature('download') && item.fileKey && (
+                                        <Tooltip content="Download" position="top" delay={150}>
+                                          <div className="relative">
+                                            <button
+                                              ref={(el) => {
+                                                if (downloadDropdownOpen === item.id) downloadTriggerRef.current = el;
+                                              }}
+                                              onClick={(e) => {
+                                                if (downloadDropdownOpen === item.id) {
+                                                  setDownloadDropdownOpen(null);
+                                                  return;
+                                                }
+                                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                setDownloadDropdownPosition({ top: rect.bottom + 4, left: Math.max(8, rect.right - 140) });
+                                                setDownloadDropdownOpen(item.id);
+                                              }}
+                                              className="p-1.5 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        </Tooltip>
+                                      )}
+                                      {item.dbId && (
+                                        <Tooltip content="Rename" position="top" delay={150}>
+                                          <button
+                                            onClick={() => setRenameModalRecording({ recordingId: item.dbId!, currentName: item.label })}
+                                            className="p-1.5 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                          >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                          </button>
+                                        </Tooltip>
+                                      )}
+                                      <Tooltip content="Delete" position="top" delay={150}>
+                                        <button
+                                          onClick={async () => {
+                                            if (item.type === 'performance') {
+                                              await deletePerformance(item.id, item.fileKey ? { fileKey: item.fileKey } : undefined);
+                                            } else {
+                                              await deleteSavedRecording(item.id, item.fileKey ? { fileKey: item.fileKey } : undefined);
+                                            }
+                                          }}
+                                          className="p-1.5 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                        >
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                          </svg>
+                                        </button>
+                                      </Tooltip>
                                     </div>
-                                    <p className="text-xs audafact-text-secondary">
-                                      Duration: {Math.floor(performance.duration / 60000)}:{((performance.duration % 60000) / 1000).toFixed(0).padStart(2, '0')}
-                                    </p>
-                                    <p className="text-xs audafact-text-secondary">
-                                      {performance.events.length} events • {performance.tracks.length} tracks
-                                      {performance.audioBlob && ' • Audio recorded'}
-                                    </p>
                                   </div>
-                                  <div className="flex items-center gap-1 ml-2">
-                                    {performance.audioBlob && (
-                                      <button
-                                        onClick={() => {
-                                          if (!performance.audioBlob) return;
-                                          toggle({ kind: "blob", blob: performance.audioBlob });
-                                        }}
-                                        className="p-1 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                        title="Play Audio"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
-                                        </svg>
-                                      </button>
-                                    )}
-                                    {canAccessFeature('download') && (
-                                      <button
-                                        onClick={() => {
-                                          setExportModalPerformance(performance);
-                                        }}
-                                        className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                        title="Export Performance"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={async () => await deletePerformance(performance.id)}
-                                      className="p-1 text-audafact-text-secondary hover:text-audafact-alert-red hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                      title="Delete Performance"
+                                  <p className="text-[11px] audafact-text-secondary mt-1">
+                                    {item.durationStr} • {item.eventsCount} events • {item.tracksCount} track{item.tracksCount !== 1 ? 's' : ''}
+                                    {item.audioBlob && ' • Audio'}
+                                  </p>
+                                  {downloadDropdownOpen === item.id && createPortal(
+                                    <div
+                                      ref={downloadDropdownRef}
+                                      className="fixed py-1 min-w-[140px] bg-audafact-surface-2 border border-audafact-divider rounded-lg shadow-lg z-[70]"
+                                      style={{ top: downloadDropdownPosition.top, left: downloadDropdownPosition.left }}
                                     >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                      </svg>
-                                    </button>
-                                  </div>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          const allowed = await canPerformAction('download_mp3');
+                                          if (!allowed) {
+                                            setShowUpgradePrompt({ show: true, message: getUpgradeMessage('download_mp3'), feature: 'Export' });
+                                            setDownloadDropdownOpen(null);
+                                            return;
+                                          }
+                                          const base = item.label.replace(/\.(mp3|wav)$/i, '') || `audafact_recording_${new Date().toISOString().slice(0, 16).replace('T', '_')}`;
+                                          const filename = `${base}.mp3`;
+                                          if (item.performance?.audioBlob instanceof Blob) {
+                                            exportPerformance(item.id, { filename, format: 'mp3' });
+                                          } else {
+                                            await exportByFileKey(item.fileKey!, filename, 'mp3', item.dbId ?? undefined);
+                                          }
+                                          setDownloadDropdownOpen(null);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1"
+                                        title="Download as MP3"
+                                      >
+                                        MP3
+                                      </button>
+                                      {tier.id === 'pro' ? (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            const allowed = await canPerformAction('download_wav');
+                                            if (!allowed) {
+                                              setShowUpgradePrompt({ show: true, message: getUpgradeMessage('download_wav'), feature: 'WAV Export' });
+                                              setDownloadDropdownOpen(null);
+                                              return;
+                                            }
+                                            const base = item.label.replace(/\.(mp3|wav)$/i, '') || `audafact_recording_${new Date().toISOString().slice(0, 16).replace('T', '_')}`;
+                                            const filename = `${base}.wav`;
+                                            if (item.performance?.audioBlob instanceof Blob) {
+                                              exportPerformance(item.id, { filename, format: 'wav' });
+                                            } else {
+                                              await exportByFileKey(item.fileKey!, filename, 'wav', item.dbId ?? undefined);
+                                            }
+                                            setDownloadDropdownOpen(null);
+                                          }}
+                                          className="w-full px-3 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1"
+                                          title="Download as WAV"
+                                        >
+                                          WAV
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShowUpgradePrompt({ show: true, message: getUpgradeMessage('download_wav'), feature: 'WAV Export' });
+                                            setDownloadDropdownOpen(null);
+                                          }}
+                                          className="w-full px-3 py-2 text-left text-sm audafact-text-secondary hover:bg-audafact-surface-1 flex items-center justify-between gap-2"
+                                          title="Download as WAV (Pro)"
+                                        >
+                                          WAV
+                                          <span className="text-xs font-medium px-2 py-0.5 rounded bg-audafact-accent-cyan/20 text-audafact-accent-cyan">Pro</span>
+                                        </button>
+                                      )}
+                                    </div>,
+                                    document.body
+                                  )}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                     </div>
@@ -1133,6 +1349,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
           clearPendingExport();
           setExportModalPerformance(null);
         }}
+        onSave={async (filename) => {
+          if (!exportModalPerformance) return;
+          await savePerformanceName(exportModalPerformance.id, filename);
+          clearPendingExport();
+          setExportModalPerformance(null);
+        }}
         onExport={async (filename, format) => {
           if (!exportModalPerformance) return;
           const action = format === 'wav' ? 'download_wav' : 'download_mp3';
@@ -1153,6 +1375,29 @@ const SidePanel: React.FC<SidePanelProps> = ({
           clearPendingExport();
           setExportModalPerformance(null);
         }}
+        onSaveAndExport={async (filename, format) => {
+          if (!exportModalPerformance) return;
+          const action = format === 'wav' ? 'download_wav' : 'download_mp3';
+          const allowed = await canPerformAction(action);
+          if (!allowed) {
+            setShowUpgradePrompt({
+              show: true,
+              message: getUpgradeMessage(action),
+              feature: format === 'wav' ? 'WAV Export' : 'Export'
+            });
+            setExportModalPerformance(null);
+            return;
+          }
+          if (exportModalPerformance.databaseId) {
+            await savePerformanceName(exportModalPerformance.id, filename);
+          }
+          exportPerformance(exportModalPerformance.id, { filename, format });
+          if (pendingExport && pendingExport.performanceId === exportModalPerformance.id && !pendingExport.canSave) {
+            discardPerformance(exportModalPerformance.id);
+          }
+          clearPendingExport();
+          setExportModalPerformance(null);
+        }}
         allowedFormats={tier.id === 'pro' ? ['mp3', 'wav'] : ['mp3']}
         canSave={!pendingExport || !exportModalPerformance || pendingExport.performanceId !== exportModalPerformance.id
           ? true
@@ -1164,6 +1409,24 @@ const SidePanel: React.FC<SidePanelProps> = ({
             feature: 'WAV Export'
           });
         } : undefined}
+        onUpgradeSave={tier.id !== 'pro' ? () => {
+          setShowUpgradePrompt({
+            show: true,
+            message: getUpgradeMessage('record'),
+            feature: 'Save Recording'
+          });
+        } : undefined}
+      />
+
+      {/* Rename Recording Modal */}
+      <RenameRecordingModal
+        isOpen={!!renameModalRecording}
+        onClose={() => setRenameModalRecording(null)}
+        currentName={renameModalRecording?.currentName ?? ''}
+        onSave={async (newName) => {
+          if (!renameModalRecording) return;
+          await updateRecordingName(renameModalRecording.recordingId, newName);
+        }}
       />
 
       {/* Upgrade Prompt Modal */}

@@ -1,4 +1,4 @@
-import { signFile } from "@/lib/api";
+import { signFile, API_BASE, authHeader } from "@/lib/api";
 
 /** Get a short-lived signed GET URL for playback/download (uses shared cache) */
 export async function getSignedUrl(key: string): Promise<string> {

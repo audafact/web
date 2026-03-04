@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { DatabaseService } from '../services/databaseService';
+import { Recording } from '../types/music';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
 import { supabase } from '../services/supabase';
 import { ensureStereo, convertToWav, convertToMp3, downloadBlob } from '../lib/audioExport';
+import { getSignedUrl } from '../lib/storage';
+import { deleteByKey } from '../lib/storage';
 
 interface RecordingEvent {
   timestamp: number;
@@ -30,6 +33,7 @@ interface Performance {
   duration: number;
   audioBlob?: Blob; // Add audio blob to performances
   databaseId?: string; // Database recording ID if saved to database
+  fileKey?: string; // R2 key for playback when blob unavailable (e.g. after refresh)
 }
 
 interface AudioRecording {
@@ -68,14 +72,20 @@ interface RecordingContextValue {
   // Management
   clearAll: () => void;
   exportPerformance: (performanceId: string, options?: { filename?: string; format: 'mp3' | 'wav' }) => void;
+  exportByFileKey: (fileKey: string, filename: string, format: 'mp3' | 'wav', recordingId?: string) => Promise<void>;
+  savePerformanceName: (performanceId: string, filename: string) => Promise<void>;
+  updateRecordingName: (recordingId: string, filename: string) => Promise<void>;
   exportSession: (sessionId: string) => void;
   exportAudioRecording: (recordingId: string) => void;
-  deletePerformance: (performanceId: string) => Promise<void>;
+  deletePerformance: (performanceId: string, options?: { fileKey?: string }) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   deleteAudioRecording: (recordingId: string) => Promise<void>;
   pendingExport: { performanceId: string; canSave: boolean } | null;
   clearPendingExport: () => void;
   discardPerformance: (performanceId: string) => void;
+  savedRecordings: Recording[];
+  refreshSavedRecordings: () => Promise<void>;
+  deleteSavedRecording: (recordingId: string, options?: { fileKey?: string }) => Promise<void>;
 }
 
 const RecordingContextInstance = createContext<RecordingContextValue | null>(null);
@@ -114,6 +124,33 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const audioCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordingDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const [pendingExport, setPendingExport] = useState<{ performanceId: string; canSave: boolean } | null>(null);
+  const [savedRecordings, setSavedRecordings] = useState<Recording[]>([]);
+
+  const refreshSavedRecordings = useCallback(async () => {
+    if (!user?.id) {
+      setSavedRecordings([]);
+      return;
+    }
+    try {
+      const recordings = await DatabaseService.getUserRecordings(user.id);
+      setSavedRecordings(recordings);
+    } catch (error) {
+      console.error('Failed to load saved recordings:', error);
+      setSavedRecordings([]);
+    }
+  }, [user?.id]);
+
+  // Load saved recordings on mount and when user changes
+  useEffect(() => {
+    refreshSavedRecordings();
+  }, [refreshSavedRecordings]);
+
+  // Refresh saved recordings when a new one is saved
+  useEffect(() => {
+    const handler = () => refreshSavedRecordings();
+    window.addEventListener('recordingSaved', handler);
+    return () => window.removeEventListener('recordingSaved', handler);
+  }, [refreshSavedRecordings]);
 
   // Persist data to localStorage when it changes
   useEffect(() => {
@@ -249,16 +286,53 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               canSave = currentRecordingCount < maxRecordings;
 
               if (canSave) {
-                const recordingRecord = await DatabaseService.createRecording({
-                  user_id: user.id,
-                  session_id: undefined,
-                  recording_url: `local://recording_${Date.now()}.wav`,
-                  length: duration / 1000,
-                  notes: `Performance recording with ${performanceEventsRef.current.length} events`
-                });
+                const notes = `Performance recording with ${performanceEventsRef.current.length} events`;
+                let recordingRecord: Awaited<ReturnType<typeof DatabaseService.createRecording>> = null;
+                let r2Key: string | undefined;
+
+                try {
+                  const r2Result = await StorageService.uploadRecordingBlob(
+                    finalAudioBlob,
+                    user.id,
+                    undefined,
+                    notes
+                  );
+
+                  if (r2Result) {
+                    r2Key = r2Result.key;
+                    recordingRecord = await DatabaseService.createRecording({
+                      user_id: user.id,
+                      session_id: undefined,
+                      recording_url: `https://media.audafact.com/${r2Result.key}`,
+                      length: duration / 1000,
+                      notes,
+                      file_key: r2Result.key,
+                      content_hash: r2Result.content_hash,
+                      size_bytes: r2Result.size_bytes,
+                      content_type: r2Result.content_type,
+                      original_name: r2Result.original_name
+                    });
+                  }
+                } catch (uploadError) {
+                  console.warn('R2 upload failed, falling back to local:', uploadError);
+                }
+
+                if (!recordingRecord) {
+                  recordingRecord = await DatabaseService.createRecording({
+                    user_id: user.id,
+                    session_id: undefined,
+                    recording_url: `local://recording_${Date.now()}.wav`,
+                    length: duration / 1000,
+                    notes
+                  });
+                }
+
                 if (recordingRecord) {
+                  const fileKey = r2Key;
                   setPerformances(prev => prev.map(p =>
-                    p.id === performanceId ? { ...p, databaseId: recordingRecord.id } : p
+                    p.id === performanceId
+                      ? { ...p, databaseId: recordingRecord!.id, ...(fileKey && { fileKey }) }
+                      : p
                   ));
                   window.dispatchEvent(new CustomEvent('recordingSaved', {
                     detail: { userId: user.id, recordingCount: 1 }
@@ -520,10 +594,62 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
       downloadBlob(blobToDownload, filename);
+
+      // Persist custom filename to DB when recording was saved
+      if (performance.databaseId && user?.id) {
+        await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
+        refreshSavedRecordings();
+      }
     } catch (error) {
       console.error('Export failed:', error);
     }
-  }, [performances]);
+  }, [performances, user?.id, refreshSavedRecordings]);
+
+  const exportByFileKey = useCallback(async (fileKey: string, filename: string, format: 'mp3' | 'wav', recordingId?: string) => {
+    try {
+      const url = await getSignedUrl(fileKey);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+      const audioBlob = await res.blob();
+
+      let blobToDownload: Blob;
+      if (format === 'mp3') {
+        blobToDownload = await convertToMp3(audioBlob);
+      } else {
+        if (!audioBlob.type.includes('wav')) {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          const wavBlob = convertToWav(ensureStereo(audioBuffer));
+          blobToDownload = wavBlob ?? audioBlob;
+        } else {
+          blobToDownload = audioBlob;
+        }
+      }
+      downloadBlob(blobToDownload, filename);
+
+      if (recordingId && user?.id) {
+        await DatabaseService.updateRecordingOriginalName(recordingId, user.id, filename);
+        refreshSavedRecordings();
+      }
+    } catch (error) {
+      console.error('Export by fileKey failed:', error);
+      throw error;
+    }
+  }, [user?.id, refreshSavedRecordings]);
+
+  const savePerformanceName = useCallback(async (performanceId: string, filename: string) => {
+    const performance = performances.find(p => p.id === performanceId);
+    if (!performance?.databaseId || !user?.id) return;
+    await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
+    refreshSavedRecordings();
+  }, [performances, user?.id, refreshSavedRecordings]);
+
+  const updateRecordingName = useCallback(async (recordingId: string, filename: string) => {
+    if (!user?.id) return;
+    await DatabaseService.updateRecordingOriginalName(recordingId, user.id, filename);
+    refreshSavedRecordings();
+  }, [user?.id, refreshSavedRecordings]);
 
   const exportSession = useCallback((sessionId: string) => {
     const session = savedSessions.find(s => s.id === sessionId);
@@ -557,27 +683,52 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     URL.revokeObjectURL(url);
   }, [audioRecordings]);
 
-  const deletePerformance = useCallback(async (performanceId: string) => {
+  const deletePerformance = useCallback(async (performanceId: string, options?: { fileKey?: string }) => {
     // Find the performance to get its database ID
     const performance = performances.find(p => p.id === performanceId);
-    
+    const fileKey = options?.fileKey ?? performance?.fileKey;
+
     // Remove from local state immediately for UI responsiveness
     setPerformances(prev => prev.filter(p => p.id !== performanceId));
-    
-    // If performance has a database ID and user is authenticated, delete from database
+
+    // If performance has a database ID and user is authenticated, delete from storage then database
     if (performance?.databaseId && user?.id) {
       try {
-        const success = await DatabaseService.deleteRecording(performance.databaseId, user.id);
-        if (!success) {
-          console.error('Failed to delete recording from database');
-          // Could add error handling here (e.g., show toast, restore to local state)
+        // Delete from R2 storage first (match upload flow)
+        if (fileKey) {
+          try {
+            await deleteByKey(fileKey);
+          } catch (storageError) {
+            console.warn('Failed to delete from storage (continuing anyway):', storageError);
+          }
         }
+        const success = await DatabaseService.deleteRecording(performance.databaseId, user.id);
+        if (success) refreshSavedRecordings();
+        else console.error('Failed to delete recording from database');
       } catch (error) {
         console.error('Error deleting recording from database:', error);
-        // Could add error handling here
       }
     }
-  }, [performances, user]);
+  }, [performances, user, refreshSavedRecordings]);
+
+  const deleteSavedRecording = useCallback(async (recordingId: string, options?: { fileKey?: string }) => {
+    if (!user?.id) return;
+    try {
+      // Delete from R2 storage first (match upload flow)
+      if (options?.fileKey) {
+        try {
+          await deleteByKey(options.fileKey);
+        } catch (storageError) {
+          console.warn('Failed to delete from storage (continuing anyway):', storageError);
+        }
+      }
+      const success = await DatabaseService.deleteRecording(recordingId, user.id);
+      if (success) await refreshSavedRecordings();
+      else console.error('Failed to delete recording from database');
+    } catch (error) {
+      console.error('Error deleting recording from database:', error);
+    }
+  }, [user?.id, refreshSavedRecordings]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     // Remove from local state immediately for UI responsiveness
@@ -653,6 +804,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Management
     clearAll,
     exportPerformance,
+    exportByFileKey,
+    savePerformanceName,
+    updateRecordingName,
     exportSession,
     exportAudioRecording,
     deletePerformance,
@@ -660,7 +814,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     deleteAudioRecording,
     pendingExport,
     clearPendingExport,
-    discardPerformance
+    discardPerformance,
+    savedRecordings,
+    refreshSavedRecordings,
+    deleteSavedRecording
   };
 
   return (
