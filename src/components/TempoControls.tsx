@@ -14,6 +14,7 @@ const TempoControls = ({
   onTempoChange, 
   playbackSpeed = 1,
 }: TempoControlsProps) => {
+  const { setTapTempoActive } = useTapTempo();
   const [tempo, setTempo] = useState(initialTempo);
   const [tempoInput, setTempoInput] = useState(initialTempo.toString());
   const [isTapTempoActive, setIsTapTempoActive] = useState(false);
