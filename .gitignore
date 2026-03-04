@@ -127,3 +127,6 @@ ehthumbs.db/
 
 *storybook.log
 storybook-static
+
+# Build output - CI builds and deploys
+dist/
