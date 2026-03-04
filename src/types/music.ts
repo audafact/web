@@ -96,6 +96,8 @@ export interface FeatureAccess {
   canSaveSession: boolean;
   canRecord: boolean;
   canDownload: boolean;
+  canExportMp3: boolean;
+  canExportWav: boolean;
   canEditCues: boolean;
   canEditLoops: boolean;
   canBrowseLibrary: boolean;

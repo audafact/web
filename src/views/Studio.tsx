@@ -327,6 +327,21 @@ const Studio = () => {
     });
   }, [armedLoopTrackIds, playbackStates, getTogglePlaybackRef]);
 
+  // Stop all track playback (loops and chops) - used when recording completes
+  const stopAllPlayback = useCallback(() => {
+    tracks.forEach(track => {
+      if (playbackStates[track.id]) {
+        getTogglePlaybackRef(track.id).current?.();
+      }
+    });
+  }, [tracks, playbackStates, getTogglePlaybackRef]);
+
+  useEffect(() => {
+    const handleRecordingCompleted = () => stopAllPlayback();
+    window.addEventListener('recordingCompleted', handleRecordingCompleted);
+    return () => window.removeEventListener('recordingCompleted', handleRecordingCompleted);
+  }, [stopAllPlayback]);
+
   // Filter state
   const [lowpassFreqs, setLowpassFreqs] = useState<{ [key: string]: number }>({});
   const [highpassFreqs, setHighpassFreqs] = useState<{ [key: string]: number }>({});
@@ -1018,6 +1033,7 @@ const Studio = () => {
       if (isTypingInput) {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
         if (event.key === ' ') return; // Never trigger playback when typing in text inputs
+        if (event.key === 'z' || event.key === 'Z' || event.key === 'x' || event.key === 'X' || event.key === 'c' || event.key === 'C') return; // Don't trigger zoom when typing
       }
 
       // Space bar: global play/pause for all armed loop tracks (disabled when text inputs are focused)

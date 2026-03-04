@@ -55,6 +55,8 @@ export const useAccessControl = () => {
       | "record"
       | "add_library_track"
       | "download"
+      | "download_mp3"
+      | "download_wav"
   ): Promise<boolean> => {
     if (!user?.id) return false;
 

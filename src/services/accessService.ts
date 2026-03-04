@@ -109,7 +109,7 @@ export class AccessService {
   static async canPerformAction(
     userId: string, 
     accessTier: string, 
-    action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download'
+    action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download' | 'download_mp3' | 'download_wav'
   ): Promise<boolean> {
     const limits = this.getLimitsForTier(accessTier);
 
@@ -121,6 +121,11 @@ export class AccessService {
       
       case 'download':
         return limits.canDownload;
+      
+      case 'download_mp3':
+        return accessTier !== 'guest'; // Free and Pro can export MP3
+      case 'download_wav':
+        return accessTier === 'pro'; // Only Pro can export WAV
       
       case 'upload':
         const uploadsResult = await supabase
@@ -151,7 +156,7 @@ export class AccessService {
   /**
    * Get upgrade prompt message for a specific action
    */
-  static getUpgradeMessage(action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download'): string {
+  static getUpgradeMessage(action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download' | 'download_mp3' | 'download_wav'): string {
     const baseMessage = "Upgrade to Pro Creator to unlock this feature.";
     
     switch (action) {
@@ -165,6 +170,10 @@ export class AccessService {
         return "Sign up to add tracks from the library to your studio. " + baseMessage;
       case 'download':
         return "Download your recordings with Pro Creator. " + baseMessage;
+      case 'download_mp3':
+        return "Sign up to export your recordings as MP3. " + baseMessage;
+      case 'download_wav':
+        return "Upgrade to Pro Creator for high-quality WAV export. " + baseMessage;
       default:
         return baseMessage;
     }
@@ -233,6 +242,8 @@ export class EnhancedAccessService extends AccessService {
       save_session: tier.features.canSaveSession,
       record: tier.features.canRecord,
       download: tier.features.canDownload,
+      download_mp3: tier.features.canExportMp3,
+      download_wav: tier.features.canExportWav,
       edit_cues: tier.features.canEditCues,
       edit_loops: tier.features.canEditLoops,
       browse_library: tier.features.canBrowseLibrary,
@@ -269,6 +280,18 @@ export class EnhancedAccessService extends AccessService {
       download: {
         gateType: 'modal',
         message: "💿 Download your recordings",
+        ctaText: "Upgrade to Pro Creator",
+        upgradeRequired: true
+      },
+      download_mp3: {
+        gateType: 'modal',
+        message: "Sign up to export your recordings as MP3.",
+        ctaText: "Sign up now",
+        upgradeRequired: false
+      },
+      download_wav: {
+        gateType: 'modal',
+        message: "💿 Export high-quality WAV for your DAW",
         ctaText: "Upgrade to Pro Creator",
         upgradeRequired: true
       },

@@ -12,6 +12,7 @@ import { showSignupModal } from '../hooks/useSignupModal';
 import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
 import { deleteByKey } from '@/lib/storage';
 import { useSingleAudio } from '@/hooks/useSingleAudio';
+import { ExportRecordingModal } from './ExportRecordingModal';
 
 interface AudioAsset {
   id: string;
@@ -127,7 +128,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   initialMode
 }) => {
 
-  const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance } = useRecording();
+  const { savedSessions, performances, exportSession, exportPerformance, deleteSession, deletePerformance, pendingExport, clearPendingExport, discardPerformance } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
@@ -160,6 +161,14 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
 
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
+  const [exportModalPerformance, setExportModalPerformance] = useState<{
+    id: string;
+    audioBlob?: Blob;
+    duration: number;
+    tracks: string[];
+    events: unknown[];
+    startTime: number;
+  } | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState<{
     show: boolean;
     message: string;
@@ -169,6 +178,17 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { isPlaying, isLoading, toggle, isCurrentKey } = useSingleAudio();
+
+  // Open export modal immediately when a recording completes
+  useEffect(() => {
+    if (pendingExport && user) {
+      const perf = performances.find(p => p.id === pendingExport.performanceId);
+      if (perf) {
+        setExportModalPerformance(perf);
+        setExpandedMenus(prev => ({ ...prev, recordings: true }));
+      }
+    }
+  }, [pendingExport, performances, user]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -1055,17 +1075,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     )}
                                     {canAccessFeature('download') && (
                                       <button
-                                        onClick={async () => {
-                                          const canDownload = await canPerformAction('download');
-                                          if (!canDownload) {
-                                            setShowUpgradePrompt({
-                                              show: true,
-                                              message: getUpgradeMessage('download'),
-                                              feature: 'Download'
-                                            });
-                                            return;
-                                          }
-                                          exportPerformance(performance.id);
+                                        onClick={() => {
+                                          setExportModalPerformance(performance);
                                         }}
                                         className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                         title="Export Performance"
@@ -1107,6 +1118,54 @@ const SidePanel: React.FC<SidePanelProps> = ({
         className="hidden"
       />
       
+      {/* Export Recording Modal */}
+      <ExportRecordingModal
+        performance={exportModalPerformance}
+        isOpen={!!exportModalPerformance}
+        onClose={() => {
+          clearPendingExport();
+          setExportModalPerformance(null);
+        }}
+        onCancel={() => {
+          if (pendingExport && exportModalPerformance && pendingExport.performanceId === exportModalPerformance.id && !pendingExport.canSave) {
+            discardPerformance(pendingExport.performanceId);
+          }
+          clearPendingExport();
+          setExportModalPerformance(null);
+        }}
+        onExport={async (filename, format) => {
+          if (!exportModalPerformance) return;
+          const action = format === 'wav' ? 'download_wav' : 'download_mp3';
+          const allowed = await canPerformAction(action);
+          if (!allowed) {
+            setShowUpgradePrompt({
+              show: true,
+              message: getUpgradeMessage(action),
+              feature: format === 'wav' ? 'WAV Export' : 'Export'
+            });
+            setExportModalPerformance(null);
+            return;
+          }
+          exportPerformance(exportModalPerformance.id, { filename, format });
+          if (pendingExport && pendingExport.performanceId === exportModalPerformance.id && !pendingExport.canSave) {
+            discardPerformance(exportModalPerformance.id);
+          }
+          clearPendingExport();
+          setExportModalPerformance(null);
+        }}
+        allowedFormats={tier.id === 'pro' ? ['mp3', 'wav'] : ['mp3']}
+        canSave={!pendingExport || !exportModalPerformance || pendingExport.performanceId !== exportModalPerformance.id
+          ? true
+          : pendingExport.canSave}
+        onUpgradeWav={tier.id !== 'pro' ? () => {
+          setShowUpgradePrompt({
+            show: true,
+            message: getUpgradeMessage('download_wav'),
+            feature: 'WAV Export'
+          });
+        } : undefined}
+      />
+
       {/* Upgrade Prompt Modal */}
       {showUpgradePrompt.show && (
         <UpgradePrompt
