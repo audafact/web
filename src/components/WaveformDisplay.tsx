@@ -284,6 +284,21 @@ const WaveformDisplay = ({
     return 40 * zoomLevel;
   }, [wavesurfer, isReady, zoomLevel]);
 
+  // Pixels per second for measure/grid overlays - must match WaveSurfer's actual scale for alignment
+  const [pixelsPerSecond, setPixelsPerSecond] = useState(() => 40 * zoomLevel);
+  useEffect(() => {
+    const update = () => {
+      const px = calculateMinPxPerSec();
+      setPixelsPerSecond(px);
+    };
+    update();
+    const scrollContainer = scrollContainerRef.current ?? containerRef.current?.parentElement;
+    if (!scrollContainer) return;
+    const ro = new ResizeObserver(update);
+    ro.observe(scrollContainer);
+    return () => ro.disconnect();
+  }, [zoomLevel, calculateMinPxPerSec, wavesurfer, isReady]);
+
   // Sync container width to WaveSurfer's wrapper width when zoomed in
   // This prevents scrolling past the end of the waveform
   useEffect(() => {
@@ -1285,16 +1300,12 @@ const WaveformDisplay = ({
     // Calculate beat duration: duration per beat × beat note value
     const beatDuration = secondsPerBeat * beatNoteValue;
     
-    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
-    const basePixelsPerSecond = 40;
-    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
-    
-    // Calculate pixels per beat (this scales with zoom)
-    const pixelsPerBeat = beatDuration * zoomedPixelsPerSecond;
+    // Use actual pixels per second for alignment with waveform and measure overlays
+    const pixelsPerBeat = beatDuration * pixelsPerSecond;
     
     // Round to nearest pixel and ensure minimum size
     return Math.max(10, Math.round(pixelsPerBeat));
-  }, [tempo, timeSignature, zoomLevel]);
+  }, [tempo, timeSignature, pixelsPerSecond]);
 
   // Vertical grid size is fixed (does NOT scale with zoom)
   // This prevents the appearance of vertical zoom
@@ -1378,6 +1389,7 @@ const WaveformDisplay = ({
                 duration={wavesurfer.getDuration()}
                 tempo={tempo}
                 zoomLevel={zoomLevel}
+                pixelsPerSecond={pixelsPerSecond}
                 timeSignature={timeSignature}
                 firstMeasureTime={firstMeasureTime}
                 visible={true}
@@ -1392,6 +1404,7 @@ const WaveformDisplay = ({
                 duration={wavesurfer.getDuration()}
                 tempo={tempo}
                 zoomLevel={zoomLevel}
+                pixelsPerSecond={pixelsPerSecond}
                 onFirstMeasureChange={onFirstMeasureChange || (() => {})}
                 timeSignature={timeSignature}
                 firstMeasureTime={firstMeasureTime}

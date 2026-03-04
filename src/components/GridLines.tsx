@@ -5,6 +5,8 @@ interface GridLinesProps {
   duration: number;
   tempo: number;
   zoomLevel: number;
+  /** When provided, used for time-to-pixels (fixes alignment at 1x zoom). Falls back to 40 * zoomLevel. */
+  pixelsPerSecond?: number;
   timeSignature: TimeSignature;
   firstMeasureTime: number;
   visible?: boolean;
@@ -15,6 +17,7 @@ const GridLines = ({
   duration,
   tempo,
   zoomLevel,
+  pixelsPerSecond,
   timeSignature,
   firstMeasureTime,
   visible = true,
@@ -103,12 +106,9 @@ const GridLines = ({
 
   // Convert time to pixel position
   const timeToPixels = useCallback((time: number) => {
-    // Calculate pixels per second based on zoom level
-    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
-    const basePixelsPerSecond = 40;
-    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
-    return time * zoomedPixelsPerSecond;
-  }, [zoomLevel]);
+    const pxPerSec = pixelsPerSecond ?? 40 * zoomLevel;
+    return time * pxPerSec;
+  }, [zoomLevel, pixelsPerSecond]);
 
   const beats = calculateBeats();
   const measures = calculateMeasures();

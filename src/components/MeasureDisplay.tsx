@@ -5,6 +5,8 @@ interface MeasureDisplayProps {
   duration: number;
   tempo: number;
   zoomLevel: number;
+  /** When provided, used for time-to-pixels (fixes alignment at 1x zoom). Falls back to 40 * zoomLevel. */
+  pixelsPerSecond?: number;
   onFirstMeasureChange: (time: number) => void;
   timeSignature: TimeSignature;
   firstMeasureTime: number;
@@ -16,6 +18,7 @@ const MeasureDisplay = ({
   duration,
   tempo,
   zoomLevel,
+  pixelsPerSecond,
   onFirstMeasureChange,
   timeSignature,
   firstMeasureTime,
@@ -63,22 +66,15 @@ const MeasureDisplay = ({
   }, [duration, firstMeasureTime, measureDuration]);
 
   // Convert time to pixel position
+  const pxPerSec = pixelsPerSecond ?? 40 * zoomLevel;
   const timeToPixels = useCallback((time: number) => {
-    // Calculate pixels per second based on zoom level
-    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
-    const basePixelsPerSecond = 40;
-    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
-    return time * zoomedPixelsPerSecond;
-  }, [zoomLevel]);
+    return time * pxPerSec;
+  }, [pxPerSec]);
 
   // Convert pixel position to time
   const pixelsToTime = useCallback((pixels: number) => {
-    // Calculate pixels per second based on zoom level
-    // Base pixels per second is 40 (WaveSurfer's actual default minPxPerSec)
-    const basePixelsPerSecond = 40;
-    const zoomedPixelsPerSecond = basePixelsPerSecond * zoomLevel;
-    return pixels / zoomedPixelsPerSecond;
-  }, [zoomLevel]);
+    return pixels / pxPerSec;
+  }, [pxPerSec]);
 
   // Handle first measure marker drag start
   const handleFirstMeasureMouseDown = useCallback((e: React.MouseEvent) => {
