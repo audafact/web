@@ -1023,9 +1023,9 @@ const Studio = () => {
       // Space bar: global play/pause for all armed loop tracks (disabled when text inputs are focused)
       if (event.key === ' ') {
         if (isTypingInput) return; // Ensure we never trigger playback while user is typing
+        if (isTapTempoActive) return; // Let event propagate to TempoControls for tap tempo
         event.preventDefault();
         event.stopPropagation();
-        if (isTapTempoActive) return;
         if (!event.repeat) handleGlobalPlay();
         return;
       }
