@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/copy-lame.js",
     "dev": "vite",
     "dev:staging": "VITE_APP_ENV=staging vite",
     "dev:preview": "VITE_APP_ENV=preview vite",
@@ -51,6 +52,7 @@
     "@tailwindcss/typography": "^0.5.0",
     "@wavesurfer/react": "^1.0.11",
     "dotenv": "^17.2.1",
+    "lamejs": "^1.2.1",
     "lucide-react": "^0.517.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

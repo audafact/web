@@ -3,7 +3,7 @@
 // previews share "preview" quota. Caching + coalescing reduce redundant requests.
 import { supabase } from "@/services/supabase";
 
-const API_BASE =
+export const API_BASE =
   import.meta.env.MODE === "staging"
     ? "http://localhost:5173/api/staging" // Use proxy for staging
     : "https://audafact-api.david-g-cortinas.workers.dev";
@@ -67,4 +67,11 @@ export async function signFile(key: string, retryCount = 0): Promise<string> {
   signFileInFlight.set(key, promise);
 
   return promise;
+}
+
+/** Get auth headers for API calls (Bearer token from Supabase session) */
+export async function authHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }

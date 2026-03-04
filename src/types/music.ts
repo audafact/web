@@ -55,6 +55,12 @@ export interface Recording {
   length?: number;
   notes?: string;
   created_at: string;
+  // R2 storage fields (optional; migration added these columns)
+  file_key?: string;
+  content_hash?: string;
+  size_bytes?: number;
+  content_type?: string;
+  original_name?: string;
 }
 
 // Storage Types
@@ -96,6 +102,8 @@ export interface FeatureAccess {
   canSaveSession: boolean;
   canRecord: boolean;
   canDownload: boolean;
+  canExportMp3: boolean;
+  canExportWav: boolean;
   canEditCues: boolean;
   canEditLoops: boolean;
   canBrowseLibrary: boolean;

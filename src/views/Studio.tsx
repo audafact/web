@@ -30,6 +30,7 @@ import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
 import { LibraryService } from '../services/libraryService';
 import { signFile } from '../lib/api';
+import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 
@@ -326,6 +327,21 @@ const Studio = () => {
       }
     });
   }, [armedLoopTrackIds, playbackStates, getTogglePlaybackRef]);
+
+  // Stop all track playback (loops and chops) - used when recording completes
+  const stopAllPlayback = useCallback(() => {
+    tracks.forEach(track => {
+      if (playbackStates[track.id]) {
+        getTogglePlaybackRef(track.id).current?.();
+      }
+    });
+  }, [tracks, playbackStates, getTogglePlaybackRef]);
+
+  useEffect(() => {
+    const handleRecordingCompleted = () => stopAllPlayback();
+    window.addEventListener('recordingCompleted', handleRecordingCompleted);
+    return () => window.removeEventListener('recordingCompleted', handleRecordingCompleted);
+  }, [stopAllPlayback]);
 
   // Filter state
   const [lowpassFreqs, setLowpassFreqs] = useState<{ [key: string]: number }>({});
@@ -1018,6 +1034,7 @@ const Studio = () => {
       if (isTypingInput) {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
         if (event.key === ' ') return; // Never trigger playback when typing in text inputs
+        if (event.key === 'z' || event.key === 'Z' || event.key === 'x' || event.key === 'X' || event.key === 'c' || event.key === 'C') return; // Don't trigger zoom when typing
       }
 
       // Space bar: global play/pause for all armed loop tracks (disabled when text inputs are focused)
@@ -2319,20 +2336,25 @@ const Studio = () => {
       const asset = assets.find(a => a.id === trackId);
       
       if (asset) {
-        // Add from library - use the new fileKey-based approach
-        if (trackData?.file) {
-          // We have fileKey from the drag payload, use it directly
-
-          await handleAddFromLibrary(asset, 'cue');
-        } else {
-          // Fallback to existing method
-          await handleAddFromLibrary(asset, 'cue');
-        }
+        await handleAddFromLibrary(asset, 'cue');
         return;
       }
       
-      // If not found in library, it might be a user track
-      // User tracks are now managed through Supabase and the SidePanel
+      // Handle user track or recording drops (from SidePanel) - have fileKey in payload
+      if (trackData?.fileKey && (trackData.type === 'user-track' || trackData.type === 'recording')) {
+        const userTrack: UserTrack = {
+          id: trackData.id || trackId,
+          name: trackData.name || 'Recording',
+          file: null,
+          fileKey: trackData.fileKey,
+          type: trackData.fileType || 'audio/wav',
+          size: '-',
+          uploadedAt: Date.now()
+        };
+        await handleAddUserTrack(userTrack, 'cue');
+        return;
+      }
+      
       console.warn('Track not found for drop:', trackId);
     } catch (error) {
       console.error('Error handling drop:', error);
@@ -2616,8 +2638,8 @@ const Studio = () => {
   };
 
   const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
-    if (!userTrack.file) {
-      setError('File not available for this track');
+    if (!userTrack.file && !userTrack.fileKey) {
+      setError('File or file key not available for this track');
       return;
     }
 
@@ -2637,14 +2659,26 @@ const Studio = () => {
         await resumeAudioContext();
       }
 
+      // Resolve file: use in-memory file if present, otherwise fetch from R2 via fileKey
+      let file: File;
+      if (userTrack.file) {
+        file = userTrack.file;
+      } else {
+        const url = await getSignedUrl(userTrack.fileKey);
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch recording: ${res.status}`);
+        const blob = await res.blob();
+        file = new File([blob], userTrack.name || 'recording.wav', { type: userTrack.type || 'audio/wav' });
+      }
+
       // Load the audio buffer from the user track's file
-      const buffer = await loadAudioBuffer(userTrack.file, context);
+      const buffer = await loadAudioBuffer(file, context);
       
       // Create a new track
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         fileKey: userTrack.fileKey,
-        file: userTrack.file,
+        file,
         buffer: buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,

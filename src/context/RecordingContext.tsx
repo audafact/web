@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { DatabaseService } from '../services/databaseService';
+import { Recording } from '../types/music';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
 import { supabase } from '../services/supabase';
+import { ensureStereo, convertToWav, convertToMp3, downloadBlob } from '../lib/audioExport';
+import { getSignedUrl } from '../lib/storage';
+import { deleteByKey } from '../lib/storage';
 
 interface RecordingEvent {
   timestamp: number;
@@ -29,6 +33,7 @@ interface Performance {
   duration: number;
   audioBlob?: Blob; // Add audio blob to performances
   databaseId?: string; // Database recording ID if saved to database
+  fileKey?: string; // R2 key for playback when blob unavailable (e.g. after refresh)
 }
 
 interface AudioRecording {
@@ -66,62 +71,22 @@ interface RecordingContextValue {
   
   // Management
   clearAll: () => void;
-  exportPerformance: (performanceId: string) => void;
+  exportPerformance: (performanceId: string, options?: { filename?: string; format: 'mp3' | 'wav' }) => void;
+  exportByFileKey: (fileKey: string, filename: string, format: 'mp3' | 'wav', recordingId?: string) => Promise<void>;
+  savePerformanceName: (performanceId: string, filename: string) => Promise<void>;
+  updateRecordingName: (recordingId: string, filename: string) => Promise<void>;
   exportSession: (sessionId: string) => void;
   exportAudioRecording: (recordingId: string) => void;
-  deletePerformance: (performanceId: string) => Promise<void>;
+  deletePerformance: (performanceId: string, options?: { fileKey?: string }) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   deleteAudioRecording: (recordingId: string) => Promise<void>;
+  pendingExport: { performanceId: string; canSave: boolean } | null;
+  clearPendingExport: () => void;
+  discardPerformance: (performanceId: string) => void;
+  savedRecordings: Recording[];
+  refreshSavedRecordings: () => Promise<void>;
+  deleteSavedRecording: (recordingId: string, options?: { fileKey?: string }) => Promise<void>;
 }
-
-// Helper function to convert AudioBuffer to WAV format
-const convertToWav = async (audioBuffer: AudioBuffer): Promise<Blob | null> => {
-  try {
-    const length = audioBuffer.length;
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    const sampleRate = audioBuffer.sampleRate;
-    
-    // Create WAV header
-    const buffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-    const view = new DataView(buffer);
-    
-    // WAV header
-    const writeString = (offset: number, string: string) => {
-      for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
-      }
-    };
-    
-    writeString(0, 'RIFF');
-    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-    view.setUint16(32, numberOfChannels * 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, 'data');
-    view.setUint32(40, length * numberOfChannels * 2, true);
-    
-    // Write audio data
-    let offset = 44;
-    for (let i = 0; i < length; i++) {
-      for (let channel = 0; channel < numberOfChannels; channel++) {
-        const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(channel)[i]));
-        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-        offset += 2;
-      }
-    }
-    
-    return new Blob([buffer], { type: 'audio/wav' });
-  } catch (error) {
-    console.error('Error converting to WAV:', error);
-    return null;
-  }
-};
 
 const RecordingContextInstance = createContext<RecordingContextValue | null>(null);
 
@@ -158,6 +123,34 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const performanceTracksRef = useRef<string[]>([]);
   const audioCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordingDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const [pendingExport, setPendingExport] = useState<{ performanceId: string; canSave: boolean } | null>(null);
+  const [savedRecordings, setSavedRecordings] = useState<Recording[]>([]);
+
+  const refreshSavedRecordings = useCallback(async () => {
+    if (!user?.id) {
+      setSavedRecordings([]);
+      return;
+    }
+    try {
+      const recordings = await DatabaseService.getUserRecordings(user.id);
+      setSavedRecordings(recordings);
+    } catch (error) {
+      console.error('Failed to load saved recordings:', error);
+      setSavedRecordings([]);
+    }
+  }, [user?.id]);
+
+  // Load saved recordings on mount and when user changes
+  useEffect(() => {
+    refreshSavedRecordings();
+  }, [refreshSavedRecordings]);
+
+  // Refresh saved recordings when a new one is saved
+  useEffect(() => {
+    const handler = () => refreshSavedRecordings();
+    window.addEventListener('recordingSaved', handler);
+    return () => window.removeEventListener('recordingSaved', handler);
+  }, [refreshSavedRecordings]);
 
   // Persist data to localStorage when it changes
   useEffect(() => {
@@ -231,12 +224,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try {
           const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
           const arrayBuffer = await originalBlob.arrayBuffer();
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-          
-
-          
-          // Convert to WAV format for better compatibility
-          const wavBlob = await convertToWav(audioBuffer);
+          let audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          audioBuffer = ensureStereo(audioBuffer);
+          const wavBlob = convertToWav(audioBuffer);
           if (wavBlob) {
             finalAudioBlob = wavBlob;
           }
@@ -260,89 +250,104 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setPerformances(prev => [completedPerformance, ...prev]);
         setCurrentPerformance(null);
         setIsRecordingPerformance(false);
-        
-        // Save recording to database if user is authenticated
+
+        let canSave = true;
         if (user?.id && finalAudioBlob) {
           try {
-            // First, ensure user record exists in the users table
             const { data: existingUser, error: userError } = await supabase
               .from('users')
               .select('id')
               .eq('id', user.id)
               .single();
-            
+
             if (userError && userError.code === 'PGRST116') {
-              // User doesn't exist, create them
               const { error: createUserError } = await supabase
                 .from('users')
-                .insert({
-                  id: user.id,
-                  access_tier: 'free'
-                });
-              
-              if (createUserError) {
-                console.error('Failed to create user record:', createUserError);
-                return;
-              }
+                .insert({ id: user.id, access_tier: 'free' });
+              if (createUserError) console.error('Failed to create user record:', createUserError);
             } else if (userError) {
               console.error('Error checking user record:', userError);
-              return;
             }
-            
-            // Check recording limits first
+
             const { count: recordingCount, error: countError } = await supabase
               .from('recordings')
               .select('id', { count: 'exact' })
               .eq('user_id', user.id);
-            
-            if (countError) {
-              console.error('Error checking recording count:', countError);
-              return;
-            }
-            
-            const currentRecordingCount = recordingCount || 0;
-            
-            // Get user's access tier from database
-            const { data: userData, error: userTierError } = await supabase
-              .from('users')
-              .select('access_tier')
-              .eq('id', user.id)
-              .single();
-            
-            const userTier = userTierError ? 'free' : (userData?.access_tier || 'free');
-            const maxRecordings = userTier === 'pro' ? Infinity : 1;
-            
-            if (currentRecordingCount >= maxRecordings) {
-              console.warn('User has reached recording limit');
-              return;
-            }
-            
-            // Create database record without requiring a session
-            const recordingRecord = await DatabaseService.createRecording({
-              user_id: user.id,
-              session_id: undefined, // Optional - recordings can exist without sessions
-              recording_url: `local://recording_${Date.now()}.wav`, // Placeholder URL
-              length: duration / 1000, // Convert to seconds
-              notes: `Performance recording with ${performanceEventsRef.current.length} events`
-            });
-            
-            if (recordingRecord) {
-              // Update the performance with the database ID
-              setPerformances(prev => prev.map(p => 
-                p.id === performanceId ? { ...p, databaseId: recordingRecord.id } : p
-              ));
-              
-              // Dispatch event to notify that recording was saved
-              window.dispatchEvent(new CustomEvent('recordingSaved', {
-                detail: { userId: user.id, recordingCount: 1 }
-              }));
+
+            if (!countError) {
+              const currentRecordingCount = recordingCount || 0;
+              const { data: userData, error: userTierError } = await supabase
+                .from('users')
+                .select('access_tier')
+                .eq('id', user.id)
+                .single();
+              const userTier = userTierError ? 'free' : (userData?.access_tier || 'free');
+              const maxRecordings = userTier === 'pro' ? Infinity : 1;
+              canSave = currentRecordingCount < maxRecordings;
+
+              if (canSave) {
+                const notes = `Performance recording with ${performanceEventsRef.current.length} events`;
+                let recordingRecord: Awaited<ReturnType<typeof DatabaseService.createRecording>> = null;
+                let r2Key: string | undefined;
+
+                try {
+                  const r2Result = await StorageService.uploadRecordingBlob(
+                    finalAudioBlob,
+                    user.id,
+                    undefined,
+                    notes
+                  );
+
+                  if (r2Result) {
+                    r2Key = r2Result.key;
+                    recordingRecord = await DatabaseService.createRecording({
+                      user_id: user.id,
+                      session_id: undefined,
+                      recording_url: `https://media.audafact.com/${r2Result.key}`,
+                      length: duration / 1000,
+                      notes,
+                      file_key: r2Result.key,
+                      content_hash: r2Result.content_hash,
+                      size_bytes: r2Result.size_bytes,
+                      content_type: r2Result.content_type,
+                      original_name: r2Result.original_name
+                    });
+                  }
+                } catch (uploadError) {
+                  console.warn('R2 upload failed, falling back to local:', uploadError);
+                }
+
+                if (!recordingRecord) {
+                  recordingRecord = await DatabaseService.createRecording({
+                    user_id: user.id,
+                    session_id: undefined,
+                    recording_url: `local://recording_${Date.now()}.wav`,
+                    length: duration / 1000,
+                    notes
+                  });
+                }
+
+                if (recordingRecord) {
+                  const fileKey = r2Key;
+                  setPerformances(prev => prev.map(p =>
+                    p.id === performanceId
+                      ? { ...p, databaseId: recordingRecord!.id, ...(fileKey && { fileKey }) }
+                      : p
+                  ));
+                  window.dispatchEvent(new CustomEvent('recordingSaved', {
+                    detail: { userId: user.id, recordingCount: 1 }
+                  }));
+                }
+              }
             }
           } catch (error) {
             console.error('Failed to save recording to database:', error);
-            // Don't fail the recording if database save fails
+            canSave = false;
           }
         }
-        
+        setPendingExport({ performanceId, canSave });
+        window.dispatchEvent(new CustomEvent('recordingCompleted'));
+
         // Clear refs and stop audio monitoring
         mediaRecorderRef.current = null;
         audioStreamRef.current = null;
@@ -561,51 +566,90 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.removeItem('audafact_savedSessions');
   }, []);
 
-  const exportPerformance = useCallback((performanceId: string) => {
+  const exportPerformance = useCallback(async (performanceId: string, options?: { filename?: string; format?: 'mp3' | 'wav' }) => {
     const performance = performances.find(p => p.id === performanceId);
     if (!performance) return;
     
-    // Export performance data (without audio blob)
-    const { audioBlob, ...performanceData } = performance;
-    const dataStr = JSON.stringify(performanceData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
+    const format = options?.format ?? 'wav';
+    const baseFilename = options?.filename ?? `audafact_recording_${new Date().toISOString().slice(0, 16).replace('T', '_')}`;
+    const extension = format === 'mp3' ? 'mp3' : 'wav';
+    const filename = baseFilename.endsWith(`.${extension}`) ? baseFilename : `${baseFilename}.${extension}`;
     
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `audafact_performance_${performanceId}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const audioBlob = performance.audioBlob;
+    if (!audioBlob) return;
     
-    // Export audio if it exists
-    if (audioBlob) {
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audioLink = document.createElement('a');
-      audioLink.href = audioUrl;
-      
-      // Determine file extension based on MIME type
-      let extension = 'webm';
-      if (audioBlob.type.includes('mp4')) {
-        extension = 'm4a'; // Use .m4a for audio MP4 files
-      } else if (audioBlob.type.includes('wav')) {
-        extension = 'wav';
-      } else if (audioBlob.type.includes('ogg')) {
-        extension = 'ogg';
-      } else if (audioBlob.type.includes('opus')) {
-        extension = 'opus';
+    try {
+      let blobToDownload = audioBlob;
+      if (format === 'mp3') {
+        blobToDownload = await convertToMp3(audioBlob);
+      } else {
+        // Ensure .wav extension - blob is already WAV from recording
+        if (!audioBlob.type.includes('wav')) {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          let audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          audioBuffer = ensureStereo(audioBuffer);
+          const wavBlob = convertToWav(audioBuffer);
+          if (wavBlob) blobToDownload = wavBlob;
+        }
       }
-      
+      downloadBlob(blobToDownload, filename);
 
-      
-      audioLink.download = `audafact_performance_${performanceId}.${extension}`;
-      document.body.appendChild(audioLink);
-      audioLink.click();
-      document.body.removeChild(audioLink);
-      URL.revokeObjectURL(audioUrl);
+      // Persist custom filename to DB when recording was saved
+      if (performance.databaseId && user?.id) {
+        await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
+        refreshSavedRecordings();
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
     }
-  }, [performances]);
+  }, [performances, user?.id, refreshSavedRecordings]);
+
+  const exportByFileKey = useCallback(async (fileKey: string, filename: string, format: 'mp3' | 'wav', recordingId?: string) => {
+    try {
+      const url = await getSignedUrl(fileKey);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+      const audioBlob = await res.blob();
+
+      let blobToDownload: Blob;
+      if (format === 'mp3') {
+        blobToDownload = await convertToMp3(audioBlob);
+      } else {
+        if (!audioBlob.type.includes('wav')) {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          const wavBlob = convertToWav(ensureStereo(audioBuffer));
+          blobToDownload = wavBlob ?? audioBlob;
+        } else {
+          blobToDownload = audioBlob;
+        }
+      }
+      downloadBlob(blobToDownload, filename);
+
+      if (recordingId && user?.id) {
+        await DatabaseService.updateRecordingOriginalName(recordingId, user.id, filename);
+        refreshSavedRecordings();
+      }
+    } catch (error) {
+      console.error('Export by fileKey failed:', error);
+      throw error;
+    }
+  }, [user?.id, refreshSavedRecordings]);
+
+  const savePerformanceName = useCallback(async (performanceId: string, filename: string) => {
+    const performance = performances.find(p => p.id === performanceId);
+    if (!performance?.databaseId || !user?.id) return;
+    await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
+    refreshSavedRecordings();
+  }, [performances, user?.id, refreshSavedRecordings]);
+
+  const updateRecordingName = useCallback(async (recordingId: string, filename: string) => {
+    if (!user?.id) return;
+    await DatabaseService.updateRecordingOriginalName(recordingId, user.id, filename);
+    refreshSavedRecordings();
+  }, [user?.id, refreshSavedRecordings]);
 
   const exportSession = useCallback((sessionId: string) => {
     const session = savedSessions.find(s => s.id === sessionId);
@@ -639,27 +683,52 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     URL.revokeObjectURL(url);
   }, [audioRecordings]);
 
-  const deletePerformance = useCallback(async (performanceId: string) => {
+  const deletePerformance = useCallback(async (performanceId: string, options?: { fileKey?: string }) => {
     // Find the performance to get its database ID
     const performance = performances.find(p => p.id === performanceId);
-    
+    const fileKey = options?.fileKey ?? performance?.fileKey;
+
     // Remove from local state immediately for UI responsiveness
     setPerformances(prev => prev.filter(p => p.id !== performanceId));
-    
-    // If performance has a database ID and user is authenticated, delete from database
+
+    // If performance has a database ID and user is authenticated, delete from storage then database
     if (performance?.databaseId && user?.id) {
       try {
-        const success = await DatabaseService.deleteRecording(performance.databaseId, user.id);
-        if (!success) {
-          console.error('Failed to delete recording from database');
-          // Could add error handling here (e.g., show toast, restore to local state)
+        // Delete from R2 storage first (match upload flow)
+        if (fileKey) {
+          try {
+            await deleteByKey(fileKey);
+          } catch (storageError) {
+            console.warn('Failed to delete from storage (continuing anyway):', storageError);
+          }
         }
+        const success = await DatabaseService.deleteRecording(performance.databaseId, user.id);
+        if (success) refreshSavedRecordings();
+        else console.error('Failed to delete recording from database');
       } catch (error) {
         console.error('Error deleting recording from database:', error);
-        // Could add error handling here
       }
     }
-  }, [performances, user]);
+  }, [performances, user, refreshSavedRecordings]);
+
+  const deleteSavedRecording = useCallback(async (recordingId: string, options?: { fileKey?: string }) => {
+    if (!user?.id) return;
+    try {
+      // Delete from R2 storage first (match upload flow)
+      if (options?.fileKey) {
+        try {
+          await deleteByKey(options.fileKey);
+        } catch (storageError) {
+          console.warn('Failed to delete from storage (continuing anyway):', storageError);
+        }
+      }
+      const success = await DatabaseService.deleteRecording(recordingId, user.id);
+      if (success) await refreshSavedRecordings();
+      else console.error('Failed to delete recording from database');
+    } catch (error) {
+      console.error('Error deleting recording from database:', error);
+    }
+  }, [user?.id, refreshSavedRecordings]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     // Remove from local state immediately for UI responsiveness
@@ -703,6 +772,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return recordingDestinationRef.current;
   }, []);
 
+  const clearPendingExport = useCallback(() => {
+    setPendingExport(null);
+  }, []);
+
+  const discardPerformance = useCallback((performanceId: string) => {
+    setPerformances(prev => prev.filter(p => p.id !== performanceId));
+  }, []);
+
   const value: RecordingContextValue = {
     // Performance recording
     isRecordingPerformance,
@@ -727,11 +804,20 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Management
     clearAll,
     exportPerformance,
+    exportByFileKey,
+    savePerformanceName,
+    updateRecordingName,
     exportSession,
     exportAudioRecording,
     deletePerformance,
     deleteSession,
-    deleteAudioRecording
+    deleteAudioRecording,
+    pendingExport,
+    clearPendingExport,
+    discardPerformance,
+    savedRecordings,
+    refreshSavedRecordings,
+    deleteSavedRecording
   };
 
   return (

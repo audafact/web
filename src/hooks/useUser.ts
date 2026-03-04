@@ -18,6 +18,8 @@ const GUEST_FEATURES: FeatureAccess = {
   canSaveSession: false,
   canRecord: false,
   canDownload: false,
+  canExportMp3: false,
+  canExportWav: false,
   canEditCues: false,
   canEditLoops: false,
   canBrowseLibrary: true, // View only
@@ -28,7 +30,9 @@ const FREE_FEATURES: FeatureAccess = {
   canUpload: true,
   canSaveSession: true,
   canRecord: true,
-  canDownload: false,
+  canDownload: true, // Derived: canExportMp3 || canExportWav (free gets MP3)
+  canExportMp3: true,
+  canExportWav: false,
   canEditCues: true,
   canEditLoops: true,
   canBrowseLibrary: true,
@@ -40,6 +44,8 @@ const PRO_FEATURES: FeatureAccess = {
   canSaveSession: true,
   canRecord: true,
   canDownload: true,
+  canExportMp3: true,
+  canExportWav: true,
   canEditCues: true,
   canEditLoops: true,
   canBrowseLibrary: true,
