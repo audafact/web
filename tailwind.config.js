@@ -45,6 +45,15 @@ export default {
       letterSpacing: {
         "tool-name": "0.025em",
       },
+      keyframes: {
+        "recording-blink": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.35" },
+        },
+      },
+      animation: {
+        "recording-blink": "recording-blink 1.2s ease-in-out infinite",
+      },
     },
   },
   plugins: [require("@tailwindcss/forms"), require("@tailwindcss/typography")],
