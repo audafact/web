@@ -96,7 +96,11 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
         <div className="flex items-center gap-3">
           {isRecordingPerformance && currentPerformance && (
             <div className="flex items-center gap-2 text-sm audafact-text-secondary">
-              <span>Recording Performance & Audio...</span>
+              <span>
+                {currentPerformance.events.length === 0
+                  ? 'Waiting for first trigger...'
+                  : 'Recording Performance & Audio...'}
+              </span>
               <span className="font-mono">
                 {formatDuration(Date.now() - currentPerformance.startTime)}
               </span>
@@ -132,8 +136,16 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
               onClick={stopPerformanceRecording}
               className="flex items-center gap-2 px-4 py-2 bg-audafact-text-secondary text-audafact-bg-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
             >
-              <div className="w-3 h-3 bg-current rounded-full animate-pulse"></div>
-              Stop Recording
+              <div
+                className={`w-3 h-3 rounded-full ${
+                  currentPerformance && currentPerformance.events.length > 0
+                    ? 'bg-audafact-alert-red animate-recording-blink'
+                    : 'bg-audafact-divider'
+                }`}
+              />
+              {currentPerformance && currentPerformance.events.length === 0
+                ? 'Ready to record...'
+                : 'Stop Recording'}
             </button>
           )}
         </div>
