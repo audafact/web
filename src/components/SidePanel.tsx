@@ -36,6 +36,80 @@ interface UploadButtonProps {
   fileInputRef: React.RefObject<HTMLInputElement>;
 }
 
+// Sub-menu item icons (stroke-based, inherit currentColor)
+const IconLibrary = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+  </svg>
+);
+const IconUser = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
+const IconBookmark = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+  </svg>
+);
+const IconShare = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+  </svg>
+);
+
+interface SidePanelSubMenuItemProps {
+  label: string;
+  icon?: React.ReactNode;
+  isActive: boolean;
+  onClick: () => void;
+  ariaLabel?: string;
+  role?: 'tab';
+  ariaSelected?: boolean;
+  ariaControls?: string;
+  id?: string;
+}
+
+const SidePanelSubMenuItem: React.FC<SidePanelSubMenuItemProps> = ({
+  label,
+  icon,
+  isActive,
+  onClick,
+  ariaLabel,
+  role = 'tab',
+  ariaSelected,
+  ariaControls,
+  id,
+}) => {
+  return (
+    <button
+      type="button"
+      role={role}
+      aria-selected={ariaSelected}
+      aria-controls={ariaControls}
+      id={id}
+      aria-label={ariaLabel ?? label}
+      onClick={onClick}
+      className={`
+        w-full flex items-center gap-2 px-4 py-2.5 min-h-[44px] text-sm text-left rounded-md
+        border-l-2 transition-colors duration-200
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-audafact-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-audafact-surface-2
+        ${isActive
+          ? 'text-audafact-accent-cyan bg-audafact-surface-3 border-l-audafact-accent-cyan font-medium'
+          : 'text-audafact-text-secondary border-l-transparent hover:text-audafact-text-primary hover:bg-audafact-surface-3 hover:border-l-audafact-divider'
+        }
+      `}
+    >
+      {icon && (
+        <span className="flex-shrink-0 w-3.5 h-3.5 [&>svg]:w-full [&>svg]:h-full" aria-hidden>
+          {icon}
+        </span>
+      )}
+      <span>{label}</span>
+    </button>
+  );
+};
+
 const UploadButton: React.FC<UploadButtonProps> = ({
   user,
   canPerformAction,
@@ -643,20 +717,32 @@ const SidePanel: React.FC<SidePanelProps> = ({
             
             {expandedMenus['audio-library'] && (
               <div className="bg-audafact-surface-2">
-                <button
-                        onClick={() => handleAudioTabSelect('library')}
-                        className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                          activeAudioTab === 'library'
-                            ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                            : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
-                >
-                  Audafact Library
-                </button>
+                <div role="tablist" aria-label="Tracks" className="flex flex-col gap-1 px-2 py-1.5">
+                  <SidePanelSubMenuItem
+                    label="Audafact Library"
+                    icon={<IconLibrary />}
+                    isActive={activeAudioTab === 'library'}
+                    onClick={() => handleAudioTabSelect('library')}
+                    role="tab"
+                    ariaSelected={activeAudioTab === 'library'}
+                    ariaControls="audafact-library-content"
+                    id="audafact-library-tab"
+                  />
+                  <SidePanelSubMenuItem
+                    label="My Tracks"
+                    icon={<IconUser />}
+                    isActive={activeAudioTab === 'my-tracks'}
+                    onClick={() => handleAudioTabSelect('my-tracks')}
+                    role="tab"
+                    ariaSelected={activeAudioTab === 'my-tracks'}
+                    ariaControls="my-tracks-content"
+                    id="my-tracks-tab"
+                  />
+                </div>
                 
                 {/* Enhanced Library Content */}
                 {activeAudioTab === 'library' && (
-                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                  <div id="audafact-library-content" role="tabpanel" aria-labelledby="audafact-library-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                                           <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <h3 className="text-md font-medium audafact-heading">Track Library</h3>
@@ -713,21 +799,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   </div>
                 )}
                 
-                {/* My Tracks - Show for all users */}
-                <button
-                  onClick={() => handleAudioTabSelect('my-tracks')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeAudioTab === 'my-tracks'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
-                >
-                  My Tracks
-                </button>
-                
                 {/* My Tracks Content - Show for all users */}
                 {activeAudioTab === 'my-tracks' && (
-                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                  <div id="my-tracks-content" role="tabpanel" aria-labelledby="my-tracks-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
                       <div className="flex items-center justify-center">
                         <h3 className="text-md font-medium audafact-heading">
@@ -913,20 +987,32 @@ const SidePanel: React.FC<SidePanelProps> = ({
               
               {expandedMenus['sessions'] && (
               <div className="bg-audafact-surface-2">
-                <button
-                  onClick={() => handleSessionsTabSelect('saved')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeSessionsTab === 'saved'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
-                >
-                  Saved Sessions
-                </button>
+                <div role="tablist" aria-label="Sessions" className="flex flex-col gap-1 px-2 py-1.5">
+                  <SidePanelSubMenuItem
+                    label="Saved Sessions"
+                    icon={<IconBookmark />}
+                    isActive={activeSessionsTab === 'saved'}
+                    onClick={() => handleSessionsTabSelect('saved')}
+                    role="tab"
+                    ariaSelected={activeSessionsTab === 'saved'}
+                    ariaControls="saved-sessions-content"
+                    id="saved-sessions-tab"
+                  />
+                  <SidePanelSubMenuItem
+                    label="Shared Sessions"
+                    icon={<IconShare />}
+                    isActive={activeSessionsTab === 'shared'}
+                    onClick={() => handleSessionsTabSelect('shared')}
+                    role="tab"
+                    ariaSelected={activeSessionsTab === 'shared'}
+                    ariaControls="shared-sessions-content"
+                    id="shared-sessions-tab"
+                  />
+                </div>
             
                 {/* Saved Sessions Content */}
                 {activeSessionsTab === 'saved' && (
-                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                  <div id="saved-sessions-content" role="tabpanel" aria-labelledby="saved-sessions-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-md font-medium audafact-heading">Saved Sessions</h3>
@@ -1043,20 +1129,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   </div>
                 )}
                  
-                <button
-                  onClick={() => handleSessionsTabSelect('shared')}
-                  className={`w-full px-8 py-2 text-xs text-left transition-colors duration-200 ${
-                    activeSessionsTab === 'shared'
-                      ? 'text-audafact-accent-cyan bg-audafact-surface-3'
-                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-3'
-                  }`}
-                >
-                  Shared Sessions
-                </button>
-                 
                 {/* Shared Sessions Content */}
                 {activeSessionsTab === 'shared' && (
-                  <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
+                  <div id="shared-sessions-content" role="tabpanel" aria-labelledby="shared-sessions-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-md font-medium audafact-heading">Shared Sessions</h3>
