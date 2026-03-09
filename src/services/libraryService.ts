@@ -94,6 +94,7 @@ export class LibraryService {
     type: "wav" | "mp3";
     size: string;
     is_demo: boolean;
+    bpm?: number;
   }> {
     return tracks.map((t) => ({
       id: t.id,
@@ -102,6 +103,7 @@ export class LibraryService {
       type: t.type,
       size: t.size,
       is_demo: false,
+      bpm: t.bpm && t.bpm >= 40 && t.bpm <= 300 ? t.bpm : undefined,
     }));
   }
 

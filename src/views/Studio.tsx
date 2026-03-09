@@ -62,6 +62,7 @@ interface AudioAsset {
   size: string;
   duration?: number;
   is_demo?: boolean;
+  bpm?: number;
 }
 
 
@@ -2603,6 +2604,9 @@ const Studio = () => {
       // Create a File object from the blob
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
+      // Use track tempo from library metadata if valid, otherwise default to 120
+      const trackTempo = asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300 ? asset.bpm : 120;
+
       // Create a new track
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -2616,7 +2620,7 @@ const Studio = () => {
         cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ) : [],
-        tempo: 120,
+        tempo: trackTempo,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false
