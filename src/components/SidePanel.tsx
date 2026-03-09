@@ -25,6 +25,7 @@ interface AudioAsset {
   size: string;
   duration?: number;
   fileUrl?: string;
+  bpm?: number;
 }
 
 interface UploadButtonProps {
@@ -786,7 +787,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   name: track.name,
                                   fileKey: track.fileKey,
                                   type: track.type,
-                                  size: track.size
+                                  size: track.size,
+                                  bpm: track.bpm
                                 }, false)}
                                 canAddToStudio={tier.id !== 'guest'}
                                 isProOnly={track.isProOnly || false}
