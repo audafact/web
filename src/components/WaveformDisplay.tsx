@@ -20,6 +20,8 @@ interface WaveformDisplayProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
+  /** Optional: for smooth continuous zoom (e.g. trackpad pinch). When set, pinch uses this instead of discrete onZoomIn/onZoomOut. */
+  onZoomChange?: (level: number) => void;
   trackId?: string;
   // Measure display props
   showMeasures?: boolean;
@@ -63,6 +65,7 @@ const WaveformDisplay = ({
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  onZoomChange,
   trackId,
   // Measure display props
   showMeasures = false,
@@ -103,7 +106,9 @@ const WaveformDisplay = ({
   const initialSetupDoneRef = useRef<boolean>(false);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const oneXRetryTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const zoomChangeRetryTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const zoomLevelRef = useRef<number>(zoomLevel);
+  const zoomRenderedHandlerRef = useRef<(() => void) | null>(null);
   
   // Track previous values to detect changes
   const prevLoopStartRef = useRef<number>(loopStart);
@@ -267,21 +272,17 @@ const WaveformDisplay = ({
   }, [wavesurfer, onPlayheadChange]);
 
   // Calculate the appropriate minPxPerSec for the current zoom level
+  // 1x = waveform fits viewport; 2x = 2× that width; etc. (scale is continuous from 1x baseline)
   const calculateMinPxPerSec = useCallback(() => {
     if (!wavesurfer || !isReady || !containerRef.current) return 40 * zoomLevel;
     
     const duration = wavesurfer.getDuration();
-    if (zoomLevel <= 1) {
-      // At 1x zoom, calculate the minPxPerSec needed to fit the entire waveform
-      // We need to get the actual scroll container width (the immediate parent)
-      const scrollContainer = containerRef.current.parentElement;
-      if (scrollContainer) {
-        const availableWidth = scrollContainer.clientWidth;
-        // Ensure the waveform fits exactly within the available width
-        return availableWidth / duration;
-      }
-    }
-    return 40 * zoomLevel;
+    const scrollContainer = containerRef.current.parentElement;
+    if (!scrollContainer) return 40 * zoomLevel;
+
+    const basePxPerSec = scrollContainer.clientWidth / duration;
+    // Scale from 1x baseline so 2x is exactly 2× the width of 1x (no abrupt jump)
+    return basePxPerSec * zoomLevel;
   }, [wavesurfer, isReady, zoomLevel]);
 
   // Pixels per second for measure/grid overlays - must match WaveSurfer's actual scale for alignment
@@ -454,32 +455,28 @@ const WaveformDisplay = ({
     }
   }, [playbackTime, wavesurfer, isReady, zoomLevel, isPlaying]);
 
-  // Improved playhead centering function
-  const centerPlayheadAfterZoom = useCallback((targetZoomLevel = zoomLevel) => {
-    if (!wavesurfer || !isReady || !containerRef.current) return;
-    
-    // Get current time directly from wavesurfer instance for accuracy
-    const centerTime = wavesurfer.getCurrentTime();
-    const pxPerSec = calculateMinPxPerSec();
-    const playheadPosition = centerTime * pxPerSec;
+  // Scroll to keep playhead centered - used when zoom changes. Instant (no animation) so zoom
+  // appears to target the playhead rather than zoom-then-scroll. Uses actual scrollWidth so
+  // we match the rendered waveform (fixes 7x→8x where calculated width can diverge).
+  const scrollToCenterPlayhead = useCallback((
+    minPxPerSec: number,
+    playheadTime = wavesurfer?.getCurrentTime() ?? 0
+  ) => {
+    if (!containerRef.current?.parentElement) return;
     const parentContainer = containerRef.current.parentElement;
-    
-    if (!parentContainer) return;
-    
-    const containerWidth = parentContainer.clientWidth;
-    const totalWidth = wavesurfer.getDuration() * pxPerSec;
-    const scrollTarget = playheadPosition - containerWidth / 2;
-    
-    // Ensure scroll target is within bounds
-    const maxScrollLeft = Math.max(0, totalWidth - containerWidth);
-    const clampedScrollTarget = Math.max(0, Math.min(scrollTarget, maxScrollLeft));
-    
-    // Use smooth scrolling for better UX
+    const duration = wavesurfer?.getDuration() ?? 0;
+    if (duration <= 0) return;
+    const viewportWidth = parentContainer.clientWidth;
+    const scrollWidth = parentContainer.scrollWidth;
+    const actualPxPerSec = scrollWidth > 0 ? scrollWidth / duration : minPxPerSec;
+    const playheadPx = playheadTime * actualPxPerSec;
+    const maxScrollLeft = Math.max(0, scrollWidth - viewportWidth);
+    const scrollTarget = playheadPx - viewportWidth / 2;
     parentContainer.scrollTo({
-      left: clampedScrollTarget,
-      behavior: 'smooth'
+      left: Math.max(0, Math.min(scrollTarget, maxScrollLeft)),
+      behavior: 'auto'
     });
-  }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
+  }, [wavesurfer]);
 
   // Function to scroll viewport to playhead position (used when cues are triggered)
   const scrollToPlayhead = useCallback((targetTime: number) => {
@@ -1097,53 +1094,127 @@ const WaveformDisplay = ({
 
   // Effect to handle zoom changes
   useEffect(() => {
-    if (wavesurfer && isReady && initialSetupDoneRef.current) {
-      const newMinPxPerSec = calculateMinPxPerSec();
-      
-      // For zoom levels 2x–4x, immediately update container width (makes zoom out feel instant)
-      // Skip for 1x: sync effect clears width first; we defer zoom until after layout below
-      if (zoomLevel > 1 && zoomLevel <= 4 && containerRef.current) {
-        const duration = wavesurfer.getDuration();
-        const expectedWidth = duration * newMinPxPerSec;
-        if (expectedWidth > 0) {
-          containerRef.current.style.width = `${expectedWidth}px`;
-          containerRef.current.style.minWidth = `${expectedWidth}px`;
-          containerRef.current.style.maxWidth = `${expectedWidth}px`;
-        }
-      }
-      
-      const applyZoom = (minPxPerSec: number) => {
-        try {
-          if (typeof wavesurfer.zoom === 'function') {
-            wavesurfer.zoom(minPxPerSec);
-          } else {
-            wavesurfer.setOptions({ minPxPerSec });
-          }
-        } catch (e) {
-          wavesurfer.setOptions({ minPxPerSec });
-        }
-        setTimeout(() => centerPlayheadAfterZoom(zoomLevel), 50);
-      };
-      
-      if (zoomLevel <= 1) {
-        // Defer until layout is complete: the sync effect clears container width first;
-        // WaveSurfer needs to read fresh dimensions. Without this, the first 2x→1x
-        // transition can fail because the renderer uses stale/cached dimensions.
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (!containerRef.current || !wavesurfer) return;
-            const scrollContainer = containerRef.current.parentElement;
-            const minPxPerSec = scrollContainer
-              ? scrollContainer.clientWidth / wavesurfer.getDuration()
-              : newMinPxPerSec;
-            applyZoom(minPxPerSec);
-          });
-        });
-      } else {
-        applyZoom(newMinPxPerSec);
+    // Clear any pending zoom-change retries from a previous run
+    zoomChangeRetryTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    zoomChangeRetryTimeoutsRef.current = [];
+
+    if (!wavesurfer || !isReady || !initialSetupDoneRef.current) {
+      return () => {};
+    }
+
+    const newMinPxPerSec = calculateMinPxPerSec();
+
+    // Set container width before zoom so scroll dimensions are correct when rendered fires.
+    // (At 5x–8x we used to rely on sync effect's 200ms delay, causing playhead to shift.)
+    if (zoomLevel > 1 && containerRef.current) {
+      const duration = wavesurfer.getDuration();
+      const expectedWidth = duration * newMinPxPerSec;
+      if (expectedWidth > 0) {
+        containerRef.current.style.width = `${expectedWidth}px`;
+        containerRef.current.style.minWidth = `${expectedWidth}px`;
+        containerRef.current.style.maxWidth = `${expectedWidth}px`;
       }
     }
-  }, [zoomLevel, wavesurfer, isReady, centerPlayheadAfterZoom, calculateMinPxPerSec]);
+
+    const applyZoom = (minPxPerSec: number, shouldCenterPlayhead: boolean) => {
+      try {
+        if (typeof wavesurfer.zoom === 'function') {
+          wavesurfer.zoom(minPxPerSec);
+        } else {
+          wavesurfer.setOptions({ minPxPerSec });
+        }
+      } catch (e) {
+        wavesurfer.setOptions({ minPxPerSec });
+      }
+      if (!shouldCenterPlayhead) return;
+      // Capture playhead time now - scroll will use this so zoom targets the playhead
+      const playheadTime = wavesurfer.getCurrentTime();
+      const doScroll = () => scrollToCenterPlayhead(minPxPerSec, playheadTime);
+      // Remove previous handler if any (e.g. rapid pinch zoom)
+      if (zoomRenderedHandlerRef.current) {
+        try {
+          const r = (wavesurfer as any).renderer;
+          if (r?.un) r.un('rendered', zoomRenderedHandlerRef.current);
+        } catch (_) {}
+        zoomRenderedHandlerRef.current = null;
+      }
+      try {
+        const renderer = (wavesurfer as any).renderer;
+        if (renderer?.on) {
+          const handler = () => {
+            doScroll();
+            zoomRenderedHandlerRef.current = null;
+            try { renderer?.un?.('rendered', handler); } catch (_) {}
+          };
+          zoomRenderedHandlerRef.current = handler;
+          renderer.on('rendered', handler);
+        } else {
+          requestAnimationFrame(() => requestAnimationFrame(doScroll));
+        }
+      } catch (_) {
+        requestAnimationFrame(() => requestAnimationFrame(doScroll));
+      }
+    };
+
+    const applyOneX = () => {
+      if (zoomLevelRef.current > 1 || !containerRef.current || !wavesurfer) return;
+      const scrollContainer = containerRef.current.parentElement;
+      const widthSource = scrollContainer?.clientWidth && scrollContainer.clientWidth > 0
+        ? scrollContainer
+        : scrollContainer?.parentElement;
+      const width = widthSource?.clientWidth ?? (widthSource as Element)?.getBoundingClientRect?.()?.width;
+      if (!width || width <= 0) return;
+      const duration = wavesurfer.getDuration();
+      if (duration <= 0) return;
+      applyZoom(width / duration, false);
+    };
+
+    const checkAndRetryIfNeeded = () => {
+      if (zoomLevelRef.current > 1) return;
+      const scrollContainer = containerRef.current?.parentElement;
+      if (!scrollContainer || !wavesurfer) return;
+      // If waveform still overflows after WaveSurfer had time to render, zoom didn't apply
+      const overflowThreshold = 4;
+      if (scrollContainer.scrollWidth > scrollContainer.clientWidth + overflowThreshold) {
+        applyOneX();
+        // One more check after WaveSurfer render - only retry if still needed
+        const id = setTimeout(() => {
+          if (zoomLevelRef.current > 1) return;
+          const sc = containerRef.current?.parentElement;
+          if (sc && sc.scrollWidth > sc.clientWidth + overflowThreshold) {
+            applyOneX();
+          }
+          zoomChangeRetryTimeoutsRef.current = zoomChangeRetryTimeoutsRef.current.filter((t) => t !== id);
+        }, 300);
+        zoomChangeRetryTimeoutsRef.current.push(id);
+      }
+    };
+
+    if (zoomLevel <= 1) {
+      // Defer until layout is complete; then check if zoom applied, retry only if waveform still overflows.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          applyOneX();
+          const id = setTimeout(checkAndRetryIfNeeded, 180);
+          zoomChangeRetryTimeoutsRef.current.push(id);
+        });
+      });
+    } else {
+      applyZoom(newMinPxPerSec, true);
+    }
+
+    return () => {
+      zoomChangeRetryTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      zoomChangeRetryTimeoutsRef.current = [];
+      if (zoomRenderedHandlerRef.current) {
+        try {
+          const r = (wavesurfer as any).renderer;
+          if (r?.un) r.un('rendered', zoomRenderedHandlerRef.current);
+        } catch (_) {}
+        zoomRenderedHandlerRef.current = null;
+      }
+    };
+  }, [zoomLevel, wavesurfer, isReady, scrollToCenterPlayhead, calculateMinPxPerSec]);
 
   // Effect to handle window resize at 1x zoom
   useEffect(() => {
@@ -1214,6 +1285,64 @@ const WaveformDisplay = ({
       scrollContainerRef.current.style.width = 'auto';
     }
   }, [zoomLevel, wavesurfer, isReady]);
+
+  // Trackpad pinch-to-zoom: listen for wheel events with ctrlKey (pinch gesture)
+  // Uses smooth continuous zoom when onZoomChange provided; otherwise discrete onZoomIn/onZoomOut
+  // Throttles updates to reduce WaveSurfer redraws (each zoom = full canvas redraw).
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (onZoomChange) {
+      const PINCH_SENSITIVITY = 0.012;
+      let pendingZoom: number | null = null;
+      let throttleId: ReturnType<typeof setTimeout> | null = null;
+      const THROTTLE_MS = 50; // ~20fps during pinch, reduces WaveSurfer redraw load
+
+      const flushZoom = () => {
+        throttleId = null;
+        if (pendingZoom !== null) {
+          const z = pendingZoom;
+          pendingZoom = null;
+          if (z !== zoomLevelRef.current) onZoomChange(z);
+        }
+      };
+
+      const handleWheel = (e: WheelEvent) => {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+        const current = pendingZoom ?? zoomLevelRef.current;
+        const factor = Math.exp(-PINCH_SENSITIVITY * e.deltaY);
+        pendingZoom = Math.max(1, Math.min(8, current * factor));
+        if (throttleId === null) {
+          throttleId = setTimeout(flushZoom, THROTTLE_MS);
+        }
+      };
+
+      el.addEventListener('wheel', handleWheel, { passive: false });
+      return () => {
+        el.removeEventListener('wheel', handleWheel);
+        if (throttleId !== null) clearTimeout(throttleId);
+      };
+    }
+    if (!onZoomIn || !onZoomOut) return;
+    // Discrete zoom fallback
+    let accumulatedDelta = 0;
+    const PINCH_THRESHOLD = 50;
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      accumulatedDelta += e.deltaY;
+      if (Math.abs(accumulatedDelta) >= PINCH_THRESHOLD) {
+        const steps = Math.trunc(accumulatedDelta / PINCH_THRESHOLD);
+        accumulatedDelta = accumulatedDelta % PINCH_THRESHOLD;
+        for (let i = 0; i < Math.abs(steps); i++) {
+          steps > 0 ? onZoomOut() : onZoomIn();
+        }
+      }
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [onZoomIn, onZoomOut, onZoomChange]);
 
   // Effect to handle scroll events and communicate scroll state
   useEffect(() => {
