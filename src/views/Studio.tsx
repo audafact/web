@@ -3280,7 +3280,11 @@ const Studio = () => {
 
           {/* Drag and Drop Indicator */}
           {isDragOver && (
-            <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+            <div className={`fixed z-50 pointer-events-none flex items-center justify-center top-0 bottom-0 ${
+              (user || isGuestMode) && isSidePanelOpen
+                ? 'inset-0 lg:left-[400px]'
+                : 'inset-0'
+            }`}>
               <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -3586,7 +3590,11 @@ const Studio = () => {
 
         {/* Drag and Drop Indicator */}
         {isDragOver && (
-          <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+          <div className={`fixed z-50 pointer-events-none flex items-center justify-center top-0 bottom-0 ${
+            (user || isGuestMode) && isSidePanelOpen
+              ? 'inset-0 lg:left-[400px]'
+              : 'inset-0'
+          }`}>
             <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
