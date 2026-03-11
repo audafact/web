@@ -34,6 +34,7 @@ import { signFile } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
+import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
 
 // Define a Track type
 interface Track {
@@ -52,6 +53,8 @@ interface Track {
   timeSignature: TimeSignature;
   firstMeasureTime: number;
   showMeasures: boolean;
+  /** Detected musical key from audio analysis (library/user uploads) */
+  key?: string;
 }
 
 // Define AudioAsset interface for library
@@ -64,6 +67,7 @@ interface AudioAsset {
   duration?: number;
   is_demo?: boolean;
   bpm?: number;
+  key?: string;
 }
 
 
@@ -976,7 +980,8 @@ const Studio = () => {
           tempo: settings.tempo || 120,
           timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
           firstMeasureTime: settings.firstMeasureTime || 0,
-          showMeasures: settings.showMeasures || false
+          showMeasures: settings.showMeasures || false,
+          key: asset.key
         };
         
         setTracks([newTrack]);
@@ -1526,7 +1531,8 @@ const Studio = () => {
         tempo: settings.tempo || 120,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
-        showMeasures: settings.showMeasures || false
+        showMeasures: settings.showMeasures || false,
+        key: asset.key
       };
       
       if (onlyUpdateFirstTrack && tracks.length > 0) {
@@ -1668,10 +1674,11 @@ const Studio = () => {
         cuePoints: Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ),
-        tempo: 120,
+        tempo: selectedAsset.bpm != null && selectedAsset.bpm >= 40 && selectedAsset.bpm <= 300 ? selectedAsset.bpm : 120,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
-        showMeasures: false
+        showMeasures: false,
+        key: selectedAsset.key
       };
       
       // Update existing tracks: force non-preview modes for tracks that will be pushed down
@@ -2617,7 +2624,8 @@ const Studio = () => {
         tempo: trackTempo,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
-        showMeasures: false
+        showMeasures: false,
+        key: asset.key
       };
 
       // Add the track to the beginning of the tracks array
@@ -2712,7 +2720,8 @@ const Studio = () => {
         tempo: userTrack.bpm != null && userTrack.bpm >= 40 && userTrack.bpm <= 300 ? userTrack.bpm : 120,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
-        showMeasures: false
+        showMeasures: false,
+        key: userTrack.key
       };
 
       // Add the track to the beginning of the tracks array
@@ -2907,7 +2916,8 @@ const Studio = () => {
         tempo: settings.tempo || 120,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
-        showMeasures: settings.showMeasures || false
+        showMeasures: settings.showMeasures || false,
+        key: asset.key
       };
       
       setTracks([newTrack]);
@@ -3280,7 +3290,11 @@ const Studio = () => {
 
           {/* Drag and Drop Indicator */}
           {isDragOver && (
-            <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+            <div className={`fixed z-50 pointer-events-none flex items-center justify-center top-0 bottom-0 ${
+              (user || isGuestMode) && isSidePanelOpen
+                ? 'inset-0 lg:left-[400px]'
+                : 'inset-0'
+            }`}>
               <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -3586,7 +3600,11 @@ const Studio = () => {
 
         {/* Drag and Drop Indicator */}
         {isDragOver && (
-          <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+          <div className={`fixed z-50 pointer-events-none flex items-center justify-center top-0 bottom-0 ${
+            (user || isGuestMode) && isSidePanelOpen
+              ? 'inset-0 lg:left-[400px]'
+              : 'inset-0'
+          }`}>
             <div className="bg-audafact-accent-cyan bg-opacity-90 text-audafact-bg-primary px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -3861,19 +3879,24 @@ const Studio = () => {
                     </button>
                   </div>
                 </div>
-                {/* Row 2: Song name (truncated) + mode */}
+                {/* Row 2: Song name (truncated) + mode + key & BPM */}
                 <div className="min-w-0">
                   <h3 className="font-medium audafact-heading truncate">
                     {track.file.name}
                   </h3>
-                  <p className="text-xs audafact-text-secondary truncate flex items-center gap-2">
+                  <p className="text-xs audafact-text-secondary truncate flex items-center gap-2 flex-wrap">
                     {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
                       <span className="flex items-center gap-1">
                         <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
                         Loading waveform...
                       </span>
                     ) : (
-                      track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'
+                      <>
+                        {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
+                        {track.key && <> • {transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}</>}
+                        {' • '}
+                        {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
+                      </>
                     )}
                   </p>
                 </div>
@@ -4009,14 +4032,19 @@ const Studio = () => {
                     <h3 className="font-medium audafact-heading truncate max-w-[420px]">
                       {track.file.name}
                     </h3>
-                    <p className="text-sm audafact-text-secondary flex items-center gap-2">
+                    <p className="text-sm audafact-text-secondary flex items-center gap-2 flex-wrap">
                       {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
                         <span className="flex items-center gap-1">
                           <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
                           Loading waveform...
                         </span>
                       ) : (
-                        track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'
+                        <>
+                          {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
+                          {track.key && <> • {transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}</>}
+                          {' • '}
+                          {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
+                        </>
                       )}
                     </p>
                   </div>

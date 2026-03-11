@@ -95,6 +95,7 @@ export class LibraryService {
     size: string;
     is_demo: boolean;
     bpm?: number;
+    key?: string;
   }> {
     return tracks.map((t) => ({
       id: t.id,
@@ -104,6 +105,7 @@ export class LibraryService {
       size: t.size,
       is_demo: false,
       bpm: t.bpm && t.bpm >= 40 && t.bpm <= 300 ? t.bpm : undefined,
+      key: t.key ?? undefined,
     }));
   }
 

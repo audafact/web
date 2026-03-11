@@ -12,6 +12,8 @@ import LibraryTrackItem from './LibraryTrackItem';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
 import { deleteByKey } from '@/lib/storage';
+import { buildApiUrl, API_CONFIG } from '@/config/api';
+import { supabase } from '@/services/supabase';
 import { useSingleAudio } from '@/hooks/useSingleAudio';
 import { ExportRecordingModal } from './ExportRecordingModal';
 import { RenameRecordingModal } from './RenameRecordingModal';
@@ -377,6 +379,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
               type: upload.content_type ?? "audio/mpeg",
               size: toPrettySize(upload.size_bytes),
               uploadedAt: new Date(upload.created_at).getTime(),
+              bpm: upload.bpm ?? undefined,         // Use detected tempo from analysis, fallback to 120 in Studio
+              key: upload.key ?? undefined,        // Detected musical key from audio analysis
             } satisfies UserTrack;
           })
         );
@@ -550,6 +554,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
             // Add to studio with fileKey for session restore (onAddUserTrack persists fileKey)
             onAddUserTrack(userTrack, 'preview');
+
+            // Fire-and-forget: trigger audio analysis (tempo detection)
+            (async () => {
+              try {
+                const { data: session } = await supabase.auth.getSession();
+                const token = session?.session?.access_token;
+                if (token) {
+                  await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.TRIGGER_ANALYSIS), {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ uploadId: uploadRecord.id }),
+                  });
+                }
+              } catch (err) {
+                console.warn('Failed to trigger audio analysis:', err);
+              }
+            })();
             
             // Only close the sidebar on mobile and tablets (full-width mode)
             // On desktop (lg and above), keep the sidebar open
