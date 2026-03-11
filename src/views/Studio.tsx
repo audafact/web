@@ -24,6 +24,7 @@ import DemoModeIndicator from '../components/DemoModeIndicator';
 import OnboardingWalkthrough from '../components/OnboardingWalkthrough';
 import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
+import { loadPreferredMode, savePreferredMode } from '../components/GetStartedFlowModal';
 import Tooltip from '../components/Tooltip';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
@@ -82,6 +83,7 @@ const Studio = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
   // Track drag state for real-time timestamp updates
@@ -1564,14 +1566,6 @@ const Studio = () => {
       setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
       
-      // Start onboarding when loading track via "Load Random Track" button for all users
-      if (onboarding.shouldShowOnboarding()) {
-        // Small delay to ensure UI is fully rendered
-        setTimeout(() => {
-          onboarding.startOnboarding();
-        }, 1000);
-      }
-      
       // Track loading is complete (placeholder cleared when waveform is ready)
       setIsTrackLoading(false);
       
@@ -2715,7 +2709,7 @@ const Studio = () => {
         cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ) : [],
-        tempo: 120,
+        tempo: userTrack.bpm != null && userTrack.bpm >= 40 && userTrack.bpm <= 300 ? userTrack.bpm : 120,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false
@@ -2792,7 +2786,7 @@ const Studio = () => {
     }
   }, [needsUserInteraction, handleUserInteraction]);
 
-  const handleInitializeAudio = async () => {
+  const handleInitializeAudio = async (preferredMode?: 'loop' | 'cue') => {
     try {
       setNeedsUserInteraction(false);
       setIsInitializingAudio(true);
@@ -2822,13 +2816,14 @@ const Studio = () => {
         
         const buffer = await loadAudioBuffer(file, context);
         const trackId = currentGuestTrack.id;
+        const mode = preferredMode ?? loadPreferredMode() ?? 'cue';
         
         const newTrack: Track = {
           id: trackId,
           file,
           buffer,
           peaks: extractPeaksFromBuffer(buffer),
-          mode: 'cue',
+          mode,
           loopStart: 0,
           loopEnd: buffer.duration,
           cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -2848,20 +2843,14 @@ const Studio = () => {
         setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
         setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-        setSelectedCueTrackId(trackId);
+        if (mode === 'cue') setSelectedCueTrackId(trackId);
+        else if (mode === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(trackId));
         
         // Track demo event
         trackGuestEvent('session_started', { 
           trackId: currentGuestTrack.id,
           timestamp: Date.now()
         });
-        
-        // Start onboarding for demo mode
-        if (onboarding.shouldShowOnboarding()) {
-          setTimeout(() => {
-            onboarding.startOnboarding();
-          }, 1000);
-        }
         
         setIsInitializingAudio(false);
         return;
@@ -2900,6 +2889,7 @@ const Studio = () => {
       const buffer = await loadAudioBuffer(file, context);
       const trackId = asset.id;
       const settings = loadTrackSettingsFromLocal(trackId) || {};
+      const mode = preferredMode ?? settings.mode ?? loadPreferredMode() ?? 'cue';
       
       const newTrack: Track = {
         id: trackId,
@@ -2908,7 +2898,7 @@ const Studio = () => {
         file,
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
-        mode: settings.mode || 'cue',
+        mode,
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -2931,16 +2921,8 @@ const Studio = () => {
         : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
       setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
       setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-      if (newTrack.mode === 'cue') setSelectedCueTrackId(trackId);
-      
-      // Start onboarding only for anonymous users when first track loads
-      // Logged-in users should only get walkthrough when explicitly clicking "Load a random track"  
-      if (isAnonymousUser && onboarding.shouldShowOnboarding()) {
-        // Small delay to ensure UI is fully rendered
-        setTimeout(() => {
-          onboarding.startOnboarding();
-        }, 1000);
-      }
+      if (mode === 'cue') setSelectedCueTrackId(trackId);
+      else if (mode === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(trackId));
       
       setIsInitializingAudio(false);
     } catch (error) {
@@ -2965,81 +2947,78 @@ const Studio = () => {
   
   // Loading state - only show full-page loader when NO tracks exist (initial load).
   // When adding a track mid-playback, we keep the studio mounted so playback continues.
-  if ((isLoading || isTrackLoading || userLoading) && tracks.length === 0) {
-    return (
-      <>
-        {/* SidePanel for loading state */}
-        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
-        
-        <div className="max-w-6xl mx-auto p-6">
-          <div className="audafact-card p-8 text-center">
-            <h1 className="text-2xl font-medium audafact-heading mb-4">
-              Loading Audafact Studio
-            </h1>
-            <p className="audafact-text-secondary mb-8">
-              Loading audio track...
-            </p>
-            <div className="flex justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-audafact-accent-cyan"></div>
+  const showLoadingState = (isLoading || isTrackLoading || userLoading) && tracks.length === 0;
+
+  // Single SidePanel instance - never unmounts when transitioning between states.
+  // Preserves panel state (active tab, scroll position) when a track loads.
+  const sidePanelEl = (user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />;
+
+  return (
+    <>
+      {sidePanelEl}
+
+      {/* Loading state */}
+      {showLoadingState && (
+        <>
+          <div className="max-w-6xl mx-auto p-6">
+            <div className="audafact-card p-8 text-center">
+              <h1 className="text-2xl font-medium audafact-heading mb-4">
+                Loading Audafact Studio
+              </h1>
+              <p className="audafact-text-secondary mb-8">
+                Loading audio track...
+              </p>
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-audafact-accent-cyan"></div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Help Button - show during loading so users can access help immediately */}
-        <HelpButton
-          onStartTutorial={onboarding.startOnboarding}
-          onShowHelp={() => setShowHelpModal(true)}
-          hideTutorial={false}
-        />
-        <HelpModal
-          isOpen={showHelpModal}
-          onClose={() => setShowHelpModal(false)}
-        />
-      </>
-    );
-  }
+          <HelpButton
+            onStartTutorial={onboarding.startOnboarding}
+            onShowHelp={() => setShowHelpModal(true)}
+            hideTutorial={false}
+          />
+          <HelpModal
+            isOpen={showHelpModal}
+            onClose={() => setShowHelpModal(false)}
+          />
+        </>
+      )}
 
-  // Error state
-  if (error) {
-    return (
-      <>
-        {/* SidePanel for error state */}
-        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
-        
-        <div className="max-w-6xl mx-auto p-6">
-          <div className="bg-audafact-surface-1 border border-audafact-alert-red rounded-lg p-8 text-center">
-            <h1 className="text-2xl font-medium text-audafact-alert-red mb-4">
-              Error Loading Track
-            </h1>
-            <p className="text-audafact-alert-red mb-8">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-audafact-alert-red text-audafact-text-primary px-4 py-2 rounded-md hover:bg-opacity-90 transition-colors"
-            >
-              Try Again
-            </button>
+      {/* Error state */}
+      {error && !showLoadingState && (
+        <>
+          <div className="max-w-6xl mx-auto p-6">
+            <div className="bg-audafact-surface-1 border border-audafact-alert-red rounded-lg p-8 text-center">
+              <h1 className="text-2xl font-medium text-audafact-alert-red mb-4">
+                Error Loading Track
+              </h1>
+              <p className="text-audafact-alert-red mb-8">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-audafact-alert-red text-audafact-text-primary px-4 py-2 rounded-md hover:bg-opacity-90 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
           </div>
-        </div>
 
-        <HelpButton
-          onStartTutorial={onboarding.startOnboarding}
-          onShowHelp={() => setShowHelpModal(true)}
-          hideTutorial={false}
-        />
-        <HelpModal
-          isOpen={showHelpModal}
-          onClose={() => setShowHelpModal(false)}
-        />
-      </>
-    );
-  }
+          <HelpButton
+            onStartTutorial={onboarding.startOnboarding}
+            onShowHelp={() => setShowHelpModal(true)}
+            hideTutorial={false}
+          />
+          <HelpModal
+            isOpen={showHelpModal}
+            onClose={() => setShowHelpModal(false)}
+          />
+        </>
+      )}
 
-  // Audio context needs user interaction state
-  if (needsUserInteraction) {
-    return (
-      <>
-        {/* SidePanel for needsUserInteraction state */}
-        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
+      {/* Audio context needs user interaction state */}
+      {needsUserInteraction && !showLoadingState && (
+        <>
         
         {/* Verification UI - Show even during audio initialization if needed */}
         {showVerificationUI && (
@@ -3164,7 +3143,7 @@ const Studio = () => {
                 </p>
               )}
               <button
-                onClick={handleInitializeAudio}
+                onClick={() => handleInitializeAudio()}
                 className="audafact-button-primary"
                 disabled={isInitializingAudio}
               >
@@ -3175,14 +3154,12 @@ const Studio = () => {
         </div>
 
  
-      </>
-    );
-  }
+        </>
+      )}
 
-  // No tracks state
-  if (tracks.length === 0) {
-    return (
-      <>
+      {/* No tracks state */}
+      {tracks.length === 0 && !showLoadingState && !error && !needsUserInteraction && (
+        <>
         {/* Verification UI - Show even when no tracks are loaded */}
         {showVerificationUI && (
           <div className="fixed inset-0 z-50 bg-audafact-surface-1 bg-opacity-95 backdrop-blur-sm flex items-center justify-center p-4">
@@ -3268,9 +3245,6 @@ const Studio = () => {
           </div>
         )}
         
-        {/* SidePanel for no tracks state (welcome panel) */}
-        {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
-        
         <div 
           className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
             (user || isGuestMode) && isSidePanelOpen 
@@ -3338,72 +3312,136 @@ const Studio = () => {
                 <div className="w-10 h-10" />
               </div>
               <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
-                <h3 className="font-medium audafact-heading truncate">Get started</h3>
+                <h3 className="font-medium audafact-heading">Drop a track. Get instant chops. Start playing.</h3>
+                <p className="text-sm text-audafact-text-secondary mt-1">See what Audafact finds in every song.</p>
               </div>
-              <div className="audafact-waveform-bg relative flex flex-col items-center justify-center gap-3" style={{ height: '120px' }}>
-                <button
-                  onClick={handleInitializeAudio}
-                  className="group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                  disabled={(user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading)}
-                >
-                  <span className="relative z-10 flex items-center gap-2">
-                    {(user ? isInitializingAudio : isInitializingAudio || isGuestLoading) ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                        </svg>
-                        Start digging
-                      </>
-                    )}
-                  </span>
-                  <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                </button>
-                {user && (() => {
-                  const savedState = loadStudioStateFromLocal();
-                  const hasSavedSession = savedState?.tracks?.length > 0;
-                  if (!hasSavedSession) return null;
-                  return (
+              <div className="audafact-waveform-bg relative flex flex-col items-center justify-center gap-4 py-6 px-4" style={{ minHeight: '160px' }}>
+                {getStartedStep === null && (
+                  <>
+                    <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md justify-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-sm text-audafact-text-secondary">I&apos;ve used this before?</span>
+                        <button
+                          onClick={() => handleInitializeAudio()}
+                          className="group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none w-full sm:w-auto"
+                          disabled={(user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading)}
+                        >
+                          <span className="relative z-10 flex items-center gap-2">
+                            {(user ? isInitializingAudio : isInitializingAudio || isGuestLoading) ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
+                                Start digging
+                              </>
+                            )}
+                          </span>
+                          <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-purple to-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                        </button>
+                      </div>
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-sm text-audafact-text-secondary">First time here?</span>
+                        <button
+                          onClick={() => setGetStartedStep('mode-choice')}
+                          disabled={user ? availableAssets.length === 0 : isGuestLoading}
+                          className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none w-full sm:w-auto"
+                        >
+                          <span className="relative z-10 flex items-center gap-2">Get started</span>
+                        </button>
+                      </div>
+                    </div>
+                    {user && (() => {
+                      const savedState = loadStudioStateFromLocal();
+                      const hasSavedSession = savedState?.tracks?.length > 0;
+                      if (!hasSavedSession) return null;
+                      return (
+                        <button
+                          onClick={async () => {
+                            try {
+                              setIsInitializingAudio(true);
+                              const restored = await restoreStudioStateFromLocal();
+                              if (restored) {
+                                hasLoadedTrack.current = true;
+                                setIsInitializingAudio(false);
+                                return;
+                              }
+                            } catch {
+                              // Fall back to random track
+                            }
+                            handleInitializeAudio();
+                          }}
+                          className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                          disabled={isInitializingAudio}
+                        >
+                          <span className="relative z-10 flex items-center gap-2">
+                            {isInitializingAudio ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Restore previous session
+                              </>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })()}
+                  </>
+                )}
+
+                {getStartedStep === 'mode-choice' && (
+                  <div className="w-full max-w-md space-y-4">
+                    <p className="text-sm text-audafact-text-secondary text-center">
+                      Audafact finds the chops. You play them. Choose how you want to start.
+                    </p>
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => {
+                          savePreferredMode('loop');
+                          setGetStartedStep(null);
+                          handleInitializeAudio('loop');
+                        }}
+                        disabled={user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading}
+                        className="w-full text-left p-4 rounded-lg border border-audafact-divider bg-audafact-surface-2 hover:border-audafact-accent-cyan hover:bg-audafact-surface-2/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <h3 className="font-medium text-audafact-heading mb-1">Lock in a loop</h3>
+                        <p className="text-sm text-audafact-text-secondary">
+                          Set start and end on the waveform. Hit space to play.
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => {
+                          savePreferredMode('cue');
+                          setGetStartedStep(null);
+                          handleInitializeAudio('cue');
+                        }}
+                        disabled={user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading}
+                        className="w-full text-left p-4 rounded-lg border border-audafact-divider bg-audafact-surface-2 hover:border-audafact-accent-cyan hover:bg-audafact-surface-2/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <h3 className="font-medium text-audafact-heading mb-1">Play your samples</h3>
+                        <p className="text-sm text-audafact-text-secondary">
+                          Instant cue points. Trigger with keys 1–0, drag nodes to reshape.
+                        </p>
+                      </button>
+                    </div>
                     <button
-                      onClick={async () => {
-                        try {
-                          setIsInitializingAudio(true);
-                          const restored = await restoreStudioStateFromLocal();
-                          if (restored) {
-                            hasLoadedTrack.current = true;
-                            setIsInitializingAudio(false);
-                            return;
-                          }
-                        } catch {
-                          // Fall back to random track
-                        }
-                        handleInitializeAudio();
-                      }}
-                      className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                      disabled={isInitializingAudio}
+                      onClick={() => setGetStartedStep(null)}
+                      className="text-sm text-audafact-text-secondary hover:text-audafact-text-primary transition-colors"
                     >
-                      <span className="relative z-10 flex items-center gap-2">
-                        {isInitializingAudio ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Loading...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Restore previous session
-                          </>
-                        )}
-                      </span>
+                      Back
                     </button>
-                  );
-                })()}
+                  </div>
+                )}
               </div>
               <div className="p-4 bg-audafact-surface-1">
                 <div className="h-10 bg-audafact-surface-2 rounded animate-pulse" />
@@ -3422,12 +3460,12 @@ const Studio = () => {
           isOpen={showHelpModal}
           onClose={() => setShowHelpModal(false)}
         />
-      </>
-    );
-  }
+        </>
+      )}
 
-  return (
-    <>
+      {/* Main content - has tracks */}
+      {tracks.length > 0 && !showLoadingState && !error && !needsUserInteraction && (
+        <>
       {/* Demo Mode Indicator */}
       {shouldShowDemoIndicator && <DemoModeIndicator />}
       
@@ -3495,9 +3533,6 @@ const Studio = () => {
           </div>
         </div>
       )}
-      
-      {/* SidePanel - Render at top level to avoid stacking context issues */}
-      {(user || isGuestMode) && <SidePanel {...memoizedSidePanelProps} />}
       
       <div 
         className={`mx-auto p-4 lg:p-6 space-y-6 relative transition-all duration-300 ease-in-out ${
@@ -4243,6 +4278,8 @@ const Studio = () => {
         isOpen={showHelpModal}
         onClose={() => setShowHelpModal(false)}
       />
+        </>
+      )}
     </>
   );
 };
