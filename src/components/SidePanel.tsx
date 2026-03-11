@@ -380,6 +380,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
               size: toPrettySize(upload.size_bytes),
               uploadedAt: new Date(upload.created_at).getTime(),
               bpm: upload.bpm ?? undefined,         // Use detected tempo from analysis, fallback to 120 in Studio
+              key: upload.key ?? undefined,        // Detected musical key from audio analysis
             } satisfies UserTrack;
           })
         );
