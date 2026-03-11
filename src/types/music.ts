@@ -226,4 +226,5 @@ export interface UserTrack {
   url?: string;
   uploadedAt: number;
   bpm?: number; // Detected tempo from audio analysis; Studio uses 120 if absent
+  key?: string; // Detected musical key from audio analysis
 }
