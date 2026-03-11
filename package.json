@@ -95,7 +95,7 @@
     "jsdom": "^22.1.0",
     "postcss": "^8.0.0",
     "storybook": "^8.6.17",
-    "supabase": "^2.76.12",
+    "supabase": "^2.77.0",
     "terser": "^5.43.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.0.0",
