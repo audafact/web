@@ -27,6 +27,9 @@ export interface Upload {
   duration?: number;
   created_at: string;
   updated_at: string;
+  // Audio analysis results
+  bpm?: number;
+  key?: string;
   // Legacy fields for backward compatibility
   file_url?: string;
   full_hash?: string;
@@ -222,4 +225,5 @@ export interface UserTrack {
   size: string;
   url?: string;
   uploadedAt: number;
+  bpm?: number; // Detected tempo from audio analysis; Studio uses 120 if absent
 }
