@@ -196,6 +196,7 @@ interface SidePanelProps {
   onUploadTrack: (file: File, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddFromLibrary: (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddUserTrack: (track: UserTrack, trackType: 'preview' | 'loop' | 'cue') => void;
+  onUploadAnalysisUpdated?: (uploadId: string, data: { bpm?: number; key?: string }) => void;
   onRestoreSession?: (session: { events?: Array<{ data?: any }>; full_state?: any }) => Promise<void>;
   initialMode?: 'upload' | 'library';
 }
@@ -206,6 +207,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onUploadTrack,
   onAddFromLibrary,
   onAddUserTrack,
+  onUploadAnalysisUpdated,
   onRestoreSession,
   initialMode
 }) => {
@@ -396,7 +398,37 @@ const SidePanel: React.FC<SidePanelProps> = ({
     loadUserTracks();
   }, [user?.id]); // Only depend on user.id, not the entire user object
 
-
+  // Subscribe to uploads Realtime for tempo/key analysis results
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel('uploads-analysis')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'uploads',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as { id: string; bpm?: number | null; key?: string | null };
+          if (row.bpm == null && row.key == null) return;
+          setUserTracks((prev) =>
+            prev.map((t) =>
+              t.id === row.id
+                ? { ...t, bpm: row.bpm ?? t.bpm, key: row.key ?? t.key, isAnalyzing: false }
+                : t
+            )
+          );
+          onUploadAnalysisUpdated?.(row.id, { bpm: row.bpm ?? undefined, key: row.key ?? undefined });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, onUploadAnalysisUpdated]);
 
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {
@@ -545,7 +577,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
               type: uploadResult.data.metadata.contentType,
               size: `${(uploadResult.data.metadata.sizeBytes / (1024 * 1024)).toFixed(1)}MB`,
               url: uploadResult.data.metadata.serverKey, // Use server key for R2 storage
-              uploadedAt: Date.now()
+              uploadedAt: Date.now(),
+              isAnalyzing: true,
             };
 
             // Add to user tracks

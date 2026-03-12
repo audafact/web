@@ -227,4 +227,6 @@ export interface UserTrack {
   uploadedAt: number;
   bpm?: number; // Detected tempo from audio analysis; Studio uses 120 if absent
   key?: string; // Detected musical key from audio analysis
+  /** True when track was just uploaded and tempo/key analysis is pending */
+  isAnalyzing?: boolean;
 }
