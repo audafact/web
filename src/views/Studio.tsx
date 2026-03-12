@@ -55,6 +55,8 @@ interface Track {
   showMeasures: boolean;
   /** Detected musical key from audio analysis (library/user uploads) */
   key?: string;
+  /** True when tempo/key analysis is pending (uploaded track) */
+  isAnalyzing?: boolean;
 }
 
 // Define AudioAsset interface for library
@@ -382,6 +384,7 @@ const Studio = () => {
   const [waveformReadyTrackIds, setWaveformReadyTrackIds] = useState<Set<string>>(() => new Set());
   // When adding a track, defer clearing placeholder until this track's waveform is ready
   const addingTrackIdRef = useRef<string | null>(null);
+  const analysisTimeoutIdsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const trackIdsKey = useMemo(() => tracks.map(t => t.id).join(','), [tracks]);
   // Only prune removed tracks - keep ready status for existing tracks (avoids all tracks loading when adding one)
   useEffect(() => {
@@ -2671,6 +2674,28 @@ const Studio = () => {
     }
   };
 
+  const handleUploadAnalysisUpdated = useCallback((uploadId: string, data: { bpm?: number; key?: string }) => {
+    const { bpm, key } = data;
+    // Clear any pending timeout for this upload
+    const timeoutId = analysisTimeoutIdsRef.current[uploadId];
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      delete analysisTimeoutIdsRef.current[uploadId];
+    }
+    setTracks((prev) =>
+      prev.map((t) =>
+        t.sourceAssetId === uploadId
+          ? {
+              ...t,
+              tempo: bpm != null && bpm >= 40 && bpm <= 300 ? bpm : t.tempo,
+              key: key ?? t.key,
+              isAnalyzing: false,
+            }
+          : t
+      )
+    );
+  }, []);
+
   const handleAddUserTrack = async (userTrack: UserTrack, trackType: 'preview' | 'loop' | 'cue' = 'cue') => {
     if (!userTrack.file && !userTrack.fileKey) {
       setError('File or file key not available for this track');
@@ -2709,8 +2734,10 @@ const Studio = () => {
       const buffer = await loadAudioBuffer(file, context);
       
       // Create a new track
+      const isAnalyzing = userTrack.isAnalyzing ?? false;
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        sourceAssetId: userTrack.id,
         fileKey: userTrack.fileKey,
         file,
         buffer: buffer,
@@ -2725,7 +2752,8 @@ const Studio = () => {
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false,
-        key: userTrack.key
+        key: userTrack.key,
+        isAnalyzing,
       };
 
       // Add the track to the beginning of the tracks array
@@ -2739,6 +2767,20 @@ const Studio = () => {
         
         return updatedTracks;
       });
+
+      // 60s timeout: clear isAnalyzing if analysis never completes
+      if (isAnalyzing) {
+        const uploadId = userTrack.id;
+        const timeoutId = setTimeout(() => {
+          setTracks((prev) =>
+            prev.map((t) =>
+              t.sourceAssetId === uploadId ? { ...t, isAnalyzing: false } : t
+            )
+          );
+          delete analysisTimeoutIdsRef.current[uploadId];
+        }, 60000);
+        analysisTimeoutIdsRef.current[uploadId] = timeoutId;
+      }
       
       // Initialize default values for the new track
       setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
@@ -2955,8 +2997,9 @@ const Studio = () => {
     onUploadTrack: handleUploadTrack,
     onAddFromLibrary: handleAddFromLibrary,
     onAddUserTrack: handleAddUserTrack,
+    onUploadAnalysisUpdated: handleUploadAnalysisUpdated,
     onRestoreSession: handleRestoreSession,
-  }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack, handleRestoreSession]);
+  }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack, handleUploadAnalysisUpdated, handleRestoreSession]);
 
   
   // Loading state - only show full-page loader when NO tracks exist (initial load).
@@ -3897,9 +3940,15 @@ const Studio = () => {
                     ) : (
                       <>
                         {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
-                        {track.key && <> • {transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}</>}
-                        {' • '}
-                        {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
+                        {track.isAnalyzing && !track.key ? (
+                          <> • <span className="text-audafact-accent-cyan">Analyzing...</span></>
+                        ) : (
+                          <>
+                            {track.key && <> • {transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}</>}
+                            {' • '}
+                            {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
+                          </>
+                        )}
                       </>
                     )}
                   </p>
@@ -4042,14 +4091,20 @@ const Studio = () => {
                           <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
                           Loading waveform...
                         </span>
-                      ) : (
-                        <>
-                          {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
-                          {track.key && <> • {transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}</>}
-                          {' • '}
-                          {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
-                        </>
-                      )}
+                    ) : (
+                      <>
+                        {track.mode === 'preview' ? 'Preview Mode' : track.mode === 'loop' ? 'Loop Mode' : 'Cue Mode'}
+                        {track.isAnalyzing && !track.key ? (
+                          <> • <span className="text-audafact-accent-cyan">Analyzing...</span></>
+                        ) : (
+                          <>
+                            {track.key && <> • {transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}</>}
+                            {' • '}
+                            {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
+                          </>
+                        )}
+                      </>
+                    )}
                     </p>
                   </div>
                 </div>
