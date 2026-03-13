@@ -3373,8 +3373,8 @@ const Studio = () => {
                 <div className="w-10 h-10" />
               </div>
               <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
-                <h3 className="font-medium audafact-heading">Drop a track. Get instant chops. Start playing.</h3>
-                <p className="text-sm text-audafact-text-secondary mt-1">See what Audafact finds in every song.</p>
+                <h3 className="font-medium audafact-heading">Drop a track. Find something new. Start creating.</h3>
+                <p className="text-sm text-audafact-text-secondary mt-1">See what Audafact uncovers in every song.</p>
               </div>
               <div className="audafact-waveform-bg relative flex flex-col items-center justify-center gap-4 py-6 px-4" style={{ minHeight: '160px' }}>
                 {getStartedStep === null && (
@@ -3463,7 +3463,7 @@ const Studio = () => {
                 {getStartedStep === 'mode-choice' && (
                   <div className="w-full max-w-md space-y-4">
                     <p className="text-sm text-audafact-text-secondary text-center">
-                      Audafact finds the chops. You play them. Choose how you want to start.
+                      Find it. Dig it. Chop it. Loop it. Build something in seconds.
                     </p>
                     <div className="space-y-3">
                       <button
