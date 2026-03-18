@@ -74,6 +74,7 @@ interface AudioAsset {
   is_demo?: boolean;
   bpm?: number;
   key?: string;
+  beats?: number[];
 }
 
 
@@ -1000,7 +1001,8 @@ const Studio = () => {
           timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
           firstMeasureTime: settings.firstMeasureTime || 0,
           showMeasures: settings.showMeasures || false,
-          key: asset.key
+          key: asset.key,
+          beats: asset.beats
         };
         
         setTracks([newTrack]);
@@ -1555,7 +1557,8 @@ const Studio = () => {
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
         showMeasures: settings.showMeasures || false,
-        key: asset.key
+        key: asset.key,
+        beats: asset.beats
       };
       
       if (onlyUpdateFirstTrack && tracks.length > 0) {
@@ -1702,7 +1705,8 @@ const Studio = () => {
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false,
-        key: selectedAsset.key
+        key: selectedAsset.key,
+        beats: selectedAsset.beats
       };
       
       // Update existing tracks: force non-preview modes for tracks that will be pushed down
@@ -2667,7 +2671,8 @@ const Studio = () => {
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false,
-        key: asset.key
+        key: asset.key,
+        beats: asset.beats
       };
 
       // Add the track to the beginning of the tracks array
@@ -3005,7 +3010,8 @@ const Studio = () => {
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
         showMeasures: settings.showMeasures || false,
-        key: asset.key
+        key: asset.key,
+        beats: asset.beats
       };
       
       setTracks([newTrack]);

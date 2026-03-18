@@ -187,6 +187,8 @@ export interface LibraryTrack {
   genre: string;
   bpm: number;
   key?: string;
+  /** Beat positions in seconds when bulk-analyzed on library_tracks */
+  beats?: number[];
   duration: number;
   fileKey: string; // Transformed from database field file_key
   previewKey?: string; // Transformed from database field preview_key
