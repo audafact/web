@@ -88,9 +88,9 @@ const Studio = () => {
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
 
-  const { modalState, closeSignupModal } = useSignupModal();
+  const { modalState, closeSignupModal, showSignupModal: openSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
-  const { user, libraryTracks, loading: userLoading } = useUser();
+  const { user, tier, libraryTracks, loading: userLoading } = useUser();
   const { isTapTempoActive } = useTapTempo();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -712,9 +712,13 @@ const Studio = () => {
               : Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
           }
 
-          const validChopStyle = savedTrack.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(savedTrack.chopTriggerStyle)
-            ? savedTrack.chopTriggerStyle
-            : 'cue';
+          let validChopStyle: 'cue' | 'hold' | 'one-shot' =
+            savedTrack.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(savedTrack.chopTriggerStyle)
+              ? savedTrack.chopTriggerStyle
+              : 'cue';
+          if (tier.id !== 'pro' && (validChopStyle === 'hold' || validChopStyle === 'one-shot')) {
+            validChopStyle = 'cue';
+          }
           const restoredTrack: Track = {
             id: savedTrack.id,
             sourceAssetId: savedTrack.sourceAssetId ?? savedTrack.id,
@@ -792,7 +796,7 @@ const Studio = () => {
       isRestoringRef.current = false;
     }
     return false;
-  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, signFile]);
+  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, signFile, tier.id]);
 
   const restoreStudioStateFromLocal = useCallback(async (): Promise<boolean> => {
     if (!user || isGuestMode) return false;
@@ -1219,7 +1223,11 @@ const Studio = () => {
     }
     
     // Show add track gesture indicator if valid gesture and can add track - disabled in demo mode
-    if (isVerticalSwipeDown && canAddTrack && !isAddingTrack && !isGuestMode) {
+    if (
+      isVerticalSwipeDown &&
+      !isAddingTrack &&
+      (!isGuestMode ? canAddTrack : tracks.length >= 1)
+    ) {
       setShowAddTrackGesture(true);
       e.preventDefault(); // Prevent browser pulldown gestures
     } else {
@@ -1335,7 +1343,15 @@ const Studio = () => {
         lastProcessedGestureRef.current = '';
       }, 1000);
     } else if (isValidVerticalSwipe && deltaY < 0) {
-      // Swiped down (finger moved down) - add track - disabled in demo mode
+      if (isGuestMode && tracks.length >= 1) {
+        openSignupModal('add_second_source');
+        setTouchStartX(null);
+        setTouchEndX(null);
+        setTouchStartY(null);
+        setTouchEndY(null);
+        setShowAddTrackGesture(false);
+        return;
+      }
       if (canAddTrack && !isAddingTrack && !isGuestMode) {
         const gestureKey = `swipe-down-${now}`;
         
@@ -1430,14 +1446,20 @@ const Studio = () => {
       
       // Reset gesture processing flag after a delay
       setTimeout(() => setIsGestureProcessing(false), 1000);
-    } else if (isVerticalGesture && e.deltaY < 0 && canAddTrack && !isAddingTrack && !isGuestMode) {
-      // Scrolling down - add track (negative deltaY = down) - disabled in demo mode
+    } else if (isVerticalGesture && e.deltaY < 0) {
       e.preventDefault();
-      setLastGestureTime(now);
-      setIsGestureProcessing(true);
-      addNewTrack();
-      // Reset gesture processing flag after a delay
-      setTimeout(() => setIsGestureProcessing(false), 1000);
+      if (isGuestMode && tracks.length >= 1) {
+        openSignupModal('add_second_source');
+        setLastGestureTime(now);
+        setTimeout(() => setIsGestureProcessing(false), 500);
+        return;
+      }
+      if (canAddTrack && !isAddingTrack && !isGuestMode) {
+        setLastGestureTime(now);
+        setIsGestureProcessing(true);
+        addNewTrack();
+        setTimeout(() => setIsGestureProcessing(false), 1000);
+      }
     }
     // For other gestures, allow normal scrolling to pass through
   };
@@ -1623,13 +1645,12 @@ const Studio = () => {
 
   // Add new track function
   const addNewTrack = async () => {
-    if (!canAddTrack || isAddingTrack) return;
-    
-    // Demo mode doesn't support adding tracks
-    if (isGuestMode) {
-
+    if (isGuestMode && tracks.length >= 1) {
+      openSignupModal('add_second_source');
       return;
     }
+    if (!canAddTrack || isAddingTrack) return;
+    if (isGuestMode) return;
     
     // Select a random asset that's different from existing tracks (before async work)
     const assets = availableAssets || [];
@@ -2086,6 +2107,14 @@ const Studio = () => {
   };
 
   const handleChopTriggerStyleChange = (trackId: string, chopTriggerStyle: 'cue' | 'hold' | 'one-shot') => {
+    if (chopTriggerStyle !== 'cue' && tier.id !== 'pro') {
+      setShowUpgradePrompt({
+        show: true,
+        message: 'Unlock expressive performance modes with Pro.',
+        feature: 'Hold & One-Shot',
+      });
+      return;
+    }
     setTracks(prev =>
       prev.map(track =>
         track.id === trackId ? { ...track, chopTriggerStyle } : track
@@ -2328,7 +2357,14 @@ const Studio = () => {
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+    if (isGuestMode && tracks.length >= 1) {
+      setIsDragOver(false);
+      setDragTarget(null);
+      setDragData(null);
+      openSignupModal('add_second_source');
+      return;
+    }
+
     // Check if the drop occurred within the SidePanel area (only when SidePanel is open)
     const target = e.target as Element;
     const isInSidePanel = isSidePanelOpen && target.closest('[data-sidepanel]') !== null;
@@ -3220,7 +3256,7 @@ const Studio = () => {
                 </p>
                 
                 <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
-                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Access your full library</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Your tracks & available sounds</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create seamless loops</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Set custom cue points</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Real-time mixing</span>
@@ -3360,7 +3396,7 @@ const Studio = () => {
                 </p>
                 
                 <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
-                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Access your full library</span>
+                  <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Your tracks & available sounds</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create seamless loops</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Set custom cue points</span>
                   <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Real-time mixing</span>
@@ -3673,7 +3709,7 @@ const Studio = () => {
               </p>
               
               <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-400">
-                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Access your full library</span>
+                <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎵 Your tracks & available sounds</span>
                 <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🔄 Create seamless loops</span>
                 <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎯 Set custom cue points</span>
                 <span className="px-3 py-1 rounded-full bg-slate-800/50 border border-slate-600/50">🎛️ Real-time mixing</span>
@@ -3961,16 +3997,30 @@ const Studio = () => {
                     </button>
                   </Tooltip>
                   <Tooltip
-                    content={isGuestMode ? 'Add track (demo mode)' : (canAddTrack ? 'Add a new track' : 'Add track (change mode first)')}
+                    content={
+                      isGuestMode
+                        ? tracks.length >= 1
+                          ? 'Sign up to add more tracks'
+                          : 'Add track (demo mode)'
+                        : canAddTrack
+                          ? 'Add a new track'
+                          : 'Add track (change mode first)'
+                    }
                     position="top"
                     delay={150}
                   >
                     <span>
                       <button
                         onClick={addNewTrack}
-                        disabled={!canAddTrack || isAddingTrack || isTrackLoading || isGuestMode}
+                        disabled={
+                          isAddingTrack ||
+                          isTrackLoading ||
+                          (isGuestMode ? false : !canAddTrack)
+                        }
                         className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all duration-200 ${
-                          !canAddTrack || isAddingTrack || isTrackLoading || isGuestMode
+                          isAddingTrack ||
+                          isTrackLoading ||
+                          (!isGuestMode && !canAddTrack)
                             ? 'text-audafact-text-secondary cursor-not-allowed'
                             : 'text-audafact-accent-cyan hover:text-audafact-accent-cyan hover:bg-audafact-surface-1 shadow-sm'
                         } ${addTrackAnimation ? 'animate-pulse' : ''}`}
@@ -4447,21 +4497,34 @@ const Studio = () => {
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="text-xs audafact-text-secondary">Trigger style:</span>
                   <div className="flex rounded-md border border-audafact-divider p-0.5 bg-audafact-surface-2">
-                    {(['cue', 'hold', 'one-shot'] as const).map((style) => (
+                    {(['cue', 'hold', 'one-shot'] as const).map((style) => {
+                      const locked = style !== 'cue' && tier.id !== 'pro';
+                      return (
                       <button
                         key={style}
                         type="button"
                         onClick={() => handleChopTriggerStyleChange(track.id, style)}
-                        title={style === 'cue' ? 'Jump to cue and continue' : style === 'hold' ? 'Play while held' : 'Play slice once'}
+                        title={
+                          locked
+                            ? 'Pro — Unlock expressive performance modes'
+                            : style === 'cue'
+                              ? 'Jump to cue and continue'
+                              : style === 'hold'
+                                ? 'Play while held'
+                                : 'Play slice once'
+                        }
                         className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
                           (track.chopTriggerStyle ?? 'cue') === style
                             ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                            : locked
+                              ? 'text-audafact-text-secondary opacity-50 hover:opacity-80'
+                              : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                         }`}
                       >
                         {style === 'one-shot' ? 'One-Shot' : style.charAt(0).toUpperCase() + style.slice(1)}
+                        {locked ? ' 🔒' : ''}
                       </button>
-                    ))}
+                    )})}
                   </div>
                 </div>
               )}
