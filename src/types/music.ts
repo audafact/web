@@ -32,6 +32,14 @@ export interface Upload {
   key?: string;
   /** Beat positions in seconds (adaptive grid) */
   beat_times?: number[] | null;
+  /** ML-extracted genre labels */
+  genres?: string[] | null;
+  /** ML-extracted mood/theme labels */
+  mood_themes?: string[] | null;
+  /** ML-extracted tags */
+  tags?: string[] | null;
+  /** When ML fields were last updated */
+  ml_analyzed_at?: string | null;
   // Legacy fields for backward compatibility
   file_url?: string;
   full_hash?: string;
@@ -236,4 +244,10 @@ export interface UserTrack {
   beats?: number[];
   /** True when track was just uploaded and tempo/key analysis is pending */
   isAnalyzing?: boolean;
+  /** ML-extracted genre labels */
+  genres?: string[];
+  /** ML-extracted mood/theme labels */
+  mood_themes?: string[];
+  /** ML-extracted tags */
+  tags?: string[];
 }
