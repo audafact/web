@@ -37,7 +37,11 @@ export const GlobalModalManager: React.FC = () => {
           break;
           
         case 'add_library_track':
-          showSuccessMessage('🎵 Browse our full library and add tracks to your studio!');
+          showSuccessMessage('🎵 Browse available sounds and add tracks to your studio!');
+          break;
+
+        case 'add_second_source':
+          showSuccessMessage('🎵 You can add multiple tracks — keep creating!');
           break;
           
         case 'edit_cues':
