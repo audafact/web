@@ -62,6 +62,7 @@ export interface SessionFullState {
     highpassFreq: number;
     filterEnabled: boolean;
     expandedControls?: boolean;
+    chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
   }>;
   selectedCueTrackId: string | null;
   armedLoopTrackIds: string[];

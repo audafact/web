@@ -126,7 +126,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
               <div className="p-3 bg-audafact-surface-2 rounded">
                 <h4 className="font-medium text-audafact-alert-red mb-1">Chop Mode</h4>
                 <p className="text-sm text-audafact-text-secondary">
-                  Trigger specific points in the track using keyboard shortcuts. Ideal for live performances and remixing.
+                  Trigger specific points in the track using keyboard shortcuts. Ideal for live performances and remixing. Choose trigger style: Cue (jump and continue), Hold (play while held), or One-Shot (play slice once).
                 </p>
               </div>
             </div>

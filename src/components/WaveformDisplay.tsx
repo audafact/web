@@ -39,6 +39,8 @@ interface WaveformDisplayProps {
   onScrollStateChange?: (isScrolling: boolean) => void;
   // Demo mode
   isGuestMode?: boolean;
+  /** When 'one-shot', invalid trigger nodes (past next node) are shown greyed on the waveform */
+  chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange?: (index: number, time: number | null) => void;
   // Called when waveform has finished loading and is ready for display
@@ -83,6 +85,7 @@ const WaveformDisplay = ({
   onScrollStateChange,
   // Demo mode
   isGuestMode = false,
+  chopTriggerStyle,
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange,
   onReady,
@@ -115,6 +118,7 @@ const WaveformDisplay = ({
   const prevLoopEndRef = useRef<number>(loopEnd);
   const prevCuePointsRef = useRef<number[]>(cuePoints);
   const prevModeRef = useRef<string>(mode);
+  const prevChopTriggerStyleRef = useRef<string | undefined>(chopTriggerStyle);
   const prevPlaybackTimeRef = useRef<number>(playbackTime);
   
   // Ref to track current cuePoints value for use in createRegions callback
@@ -648,6 +652,10 @@ const WaveformDisplay = ({
         const clampedStart = Math.max(0, Math.min(point, duration - epsilon));
         // Ensure region end does not exceed duration
         const regionEnd = Math.min(clampedStart + 0.01, duration);
+        // One-Shot: grey out thumb node if it is at or past the next node (invalid trigger)
+        const currNum = Number(point);
+        const nextNum = index < currentCuePoints.length - 1 ? Number(currentCuePoints[index + 1]) : NaN;
+        const isInvalidOneShotTrigger = chopTriggerStyle === 'one-shot' && !Number.isNaN(nextNum) && currNum >= nextNum;
         const region = regionsPluginRef.current.addRegion({
           start: clampedStart,
           end: regionEnd,
@@ -655,7 +663,6 @@ const WaveformDisplay = ({
           drag: !isGuestMode, // Disable dragging in demo mode
           resize: false,
           id: `cue-${trackId || 'default'}-${index}`,
-          // Add visual styling for better interaction
           handleStyle: {
             left: {
               backgroundColor: 'rgba(255, 77, 79, 0.8)',
@@ -720,11 +727,10 @@ const WaveformDisplay = ({
           });
         });
 
-        // Add thumb after region is created
+        // Add thumb after region is created (pass invalid-one-shot so thumb is grey when invalid)
         if (showCueThumbs) {
-          // Use a more reliable method to add thumb
           setTimeout(() => {
-            addThumbToRegion(region, index);
+            addThumbToRegion(region, index, isInvalidOneShotTrigger);
           }, 100);
         }
 
@@ -754,11 +760,11 @@ const WaveformDisplay = ({
 
       currentRegionsRef.current = newRegions;
     }
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isGuestMode]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isGuestMode, chopTriggerStyle]);
 
   // Improved function to add thumb element to a region
-  // Alternative approach: Use WaveSurfer's internal region management
-  const addThumbToRegion = useCallback((region: any, index: number) => {
+  // When isInvalidOneShotTrigger is true (One-Shot mode, node at or past next), style thumb grey
+  const addThumbToRegion = useCallback((region: any, index: number, isInvalidOneShotTrigger = false) => {
     // Use region.element directly
     const regionElement = region.element;
 
@@ -801,14 +807,17 @@ const WaveformDisplay = ({
       justify-content: center;
     `;
 
-    // Create the visible node
+    // Create the visible node (grey when invalid One-Shot trigger)
     const thumb = document.createElement('div');
     thumb.className = `cue-thumb cue-thumb-${trackId || 'default'}`;
+    const thumbBg = isInvalidOneShotTrigger ? 'rgba(80, 80, 80, 0.95)' : '#FF4D4F';
+    const thumbBorder = isInvalidOneShotTrigger ? 'rgba(60, 60, 60, 1)' : '#FF4D4F';
+    const thumbOpacity = isInvalidOneShotTrigger ? '0.9' : '1';
     thumb.style.cssText = `
       width: 24px;
       height: 24px;
-      background-color: #FF4D4F;
-      border: 2px solid #FF4D4F;
+      background-color: ${thumbBg};
+      border: 2px solid ${thumbBorder};
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -818,6 +827,7 @@ const WaveformDisplay = ({
       font-weight: bold;
       pointer-events: none;
       position: relative;
+      opacity: ${thumbOpacity};
     `;
 
     thumb.textContent = index === 9 ? '0' : (index + 1).toString();
@@ -902,23 +912,23 @@ const WaveformDisplay = ({
 
     if (mode === 'cue') {
       if (showCueThumbs) {
-        // Remove any existing thumbs first
         removeThumbsFromRegions();
-        
-        // Add thumbs with a delay to ensure regions are fully rendered
+        const pts = currentCuePointsRef.current;
         setTimeout(() => {
           currentRegionsRef.current.forEach((region, index) => {
-            addThumbToRegion(region, index);
+            const currNum = Number(pts[index]);
+            const nextNum = index < pts.length - 1 ? Number(pts[index + 1]) : NaN;
+            const isInvalidOneShotTrigger = chopTriggerStyle === 'one-shot' && !Number.isNaN(nextNum) && currNum >= nextNum;
+            addThumbToRegion(region, index, isInvalidOneShotTrigger);
           });
         }, 200);
       } else {
         removeThumbsFromRegions();
       }
     } else {
-      // When not in cue mode, make sure to clean up any thumbs
       removeThumbsFromRegions();
     }
-  }, [showCueThumbs, mode, wavesurfer, isReady, addThumbToRegion, removeThumbsFromRegions]);
+  }, [showCueThumbs, mode, wavesurfer, isReady, chopTriggerStyle, addThumbToRegion, removeThumbsFromRegions]);
 
   // Handle mode changes explicitly to ensure proper region cleanup
   useEffect(() => {
@@ -960,14 +970,15 @@ const WaveformDisplay = ({
         prevCuePointsRef.current.length !== cuePoints.length ||
         prevCuePointsRef.current.some((point, index) => point !== cuePoints[index])
       );
+      const triggerStyleChanged = mode === 'cue' && prevChopTriggerStyleRef.current !== chopTriggerStyle;
       
       // If this is an internal update from a drag operation, skip the effect
       // The region position is already correct, and we've already updated the refs
       if (mode === 'cue' && cuePointsChanged && isInternalCueUpdateRef.current) {
-        // Just sync the refs to match the prop (which should already match, but be safe)
-        prevCuePointsRef.current = [...cuePoints];
-        currentCuePointsRef.current = [...cuePoints];
-        return; // Skip any region updates
+        // Skip any region updates. (Important: don't overwrite refs here—during drag the refs
+        // may already contain the new value before the parent state updates, and syncing
+        // back to props can cause duplicate region creation / visual glitches.)
+        return;
       }
       
       // If cue points changed, try to update just the changed region(s) instead of recreating all
@@ -983,42 +994,39 @@ const WaveformDisplay = ({
         }
         
         // If exactly one cue point changed and we have a matching region, update just that region
-        if (changeCount === 1 && changedIndex >= 0 && currentRegionsRef.current[changedIndex]) {
+        // In One-Shot mode skip this path so we do a full recreate and all nodes get correct grey/red
+        if (changeCount === 1 && changedIndex >= 0 && currentRegionsRef.current[changedIndex] && chopTriggerStyle !== 'one-shot') {
           const region = currentRegionsRef.current[changedIndex];
           const duration = wavesurfer.getDuration();
           const epsilon = 0.05;
           const clampedStart = Math.max(0, Math.min(cuePoints[changedIndex], duration - epsilon));
           const regionEnd = Math.min(clampedStart + 0.01, duration);
-          
-          // Update the region position
           region.setOptions({
             start: clampedStart,
             end: regionEnd
           });
-          
-          // Update the refs to reflect the change
           prevCuePointsRef.current = [...cuePoints];
           currentCuePointsRef.current = [...cuePoints];
-          return; // Early return - no need to recreate all regions
+          return;
         }
       }
       
-      const needsUpdate = loopChanged || cuePointsChanged;
+      const needsUpdate = loopChanged || cuePointsChanged || triggerStyleChanged;
       
       if (needsUpdate) {
-        // Clear regions first, then create new ones to prevent duplicates
-        await clearRegions();
-        await createRegions();
-        // Update all refs to prevent unnecessary recreations
+        // Sync refs with latest props so createRegions uses current cue points for invalid-one-shot logic
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
         currentCuePointsRef.current = [...cuePoints];
+        prevChopTriggerStyleRef.current = chopTriggerStyle;
+        await clearRegions();
+        await createRegions();
       }
     };
     
     handleParameterChange();
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, createRegions, clearRegions]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, chopTriggerStyle, createRegions, clearRegions]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
@@ -1045,6 +1053,7 @@ const WaveformDisplay = ({
           prevCuePointsRef.current = [...cuePoints];
           currentCuePointsRef.current = [...cuePoints];
           prevModeRef.current = mode;
+          prevChopTriggerStyleRef.current = chopTriggerStyle;
 
           // Delayed retries for 1x: first track loads before Studio layout settles.
           // ResizeObserver only fires on size *change*; retries catch wrong initial size.

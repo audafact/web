@@ -78,7 +78,7 @@ export const createOnboardingSteps = (
   {
     id: 'cue-triggering',
     title: 'Triggering Cues',
-    description: 'In Chop mode, press keys 1-0 to trigger different cue points. Each number corresponds to a specific position in the track.',
+    description: 'In Chop mode, press keys 1-0 to trigger different cue points. Each number corresponds to a specific position in the track. You can switch trigger style to Cue, Hold, or One-Shot for different playback behavior.',
     targetSelector: '.audafact-waveform-bg',
     position: 'top',
     action: handlers.onTriggerCue

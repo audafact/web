@@ -622,6 +622,7 @@ const StudioDemo = () => {
                 seekFunctionRef={{ current: null }}
                 recordingDestination={null}
                 cueDragState={null}
+                chopTriggerStyle="cue"
               />
 
               {track.mode === 'cue' && (

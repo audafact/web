@@ -46,6 +46,8 @@ interface Track {
   /** Pre-decoded peaks for WaveSurfer - skips duplicate decode, faster waveform load */
   peaks?: number[][];
   mode: 'preview' | 'loop' | 'cue';
+  /** How chop pads trigger playback when mode is 'cue'. Default 'cue' for backwards compatibility. */
+  chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
   loopStart: number;
   loopEnd: number;
   cuePoints: number[];
@@ -697,6 +699,9 @@ const Studio = () => {
               : Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
           }
 
+          const validChopStyle = savedTrack.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(savedTrack.chopTriggerStyle)
+            ? savedTrack.chopTriggerStyle
+            : 'cue';
           const restoredTrack: Track = {
             id: savedTrack.id,
             sourceAssetId: savedTrack.sourceAssetId ?? savedTrack.id,
@@ -704,6 +709,7 @@ const Studio = () => {
             file,
             buffer,
             mode: (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue',
+            chopTriggerStyle: validChopStyle,
             loopStart: typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0,
             loopEnd: typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration,
             cuePoints: validCuePoints,
@@ -718,6 +724,7 @@ const Studio = () => {
           const restoredLoopEnd = typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration;
           const trackSettings = {
             mode: restoredMode,
+            chopTriggerStyle: validChopStyle,
             loopStart: restoredLoopStart,
             loopEnd: restoredLoopEnd,
             cuePoints: validCuePoints,
@@ -892,6 +899,7 @@ const Studio = () => {
              buffer,
              peaks: extractPeaksFromBuffer(buffer),
              mode: 'cue',
+             chopTriggerStyle: 'cue',
              loopStart: 0,
              loopEnd: buffer.duration,
              cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -970,11 +978,16 @@ const Studio = () => {
         const trackId = asset.id;
         const settings = loadTrackSettingsFromLocal(trackId) || {};
         
+        const newMode = settings.mode || 'cue';
+        const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
+          ? settings.chopTriggerStyle
+          : 'cue';
         const newTrack: Track = {
           id: trackId,
           file,
           buffer,
-          mode: settings.mode || 'cue',
+          mode: newMode,
+          chopTriggerStyle: newMode === 'cue' ? newChopStyle : undefined,
           loopStart: settings.loopStart || 0,
           loopEnd: settings.loopEnd || buffer.duration,
           cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -1517,7 +1530,10 @@ const Studio = () => {
       
       // Try to load settings from localStorage
       const settings = loadTrackSettingsFromLocal(trackId) || {};
-      
+      const newMode = settings.mode || 'cue';
+      const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
+        ? settings.chopTriggerStyle
+        : 'cue';
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
@@ -1525,7 +1541,8 @@ const Studio = () => {
         file,
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
-        mode: settings.mode || 'cue', // Default to cue mode
+        mode: newMode, // Default to cue mode
+        chopTriggerStyle: newMode === 'cue' ? newChopStyle : undefined,
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -1672,6 +1689,7 @@ const Studio = () => {
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: 'cue', // New tracks always start as cue
+        chopTriggerStyle: 'cue',
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -2048,6 +2066,16 @@ const Studio = () => {
       }
       setShowCueThumbs(prev => ({ ...prev, [trackId]: false }));
     }
+  };
+
+  const handleChopTriggerStyleChange = (trackId: string, chopTriggerStyle: 'cue' | 'hold' | 'one-shot') => {
+    setTracks(prev =>
+      prev.map(track =>
+        track.id === trackId ? { ...track, chopTriggerStyle } : track
+      )
+    );
+    const settings = loadTrackSettingsFromLocal(trackId) || {};
+    saveTrackSettingsToLocal(trackId, { ...settings, chopTriggerStyle });
   };
 
   // Add a function to handle play requests and ensure audio context is running
@@ -2474,7 +2502,8 @@ const Studio = () => {
           lowpassFreq: lowpassFreqs[track.id] || 20000,
           highpassFreq: highpassFreqs[track.id] || 20,
           filterEnabled: filterEnabled[track.id] || false,
-          expandedControls: expandedControls[track.id] || false
+          expandedControls: expandedControls[track.id] || false,
+          chopTriggerStyle: track.chopTriggerStyle ?? 'cue'
         };
       }),
       selectedCueTrackId,
@@ -2524,6 +2553,7 @@ const Studio = () => {
         buffer: buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,
+        chopTriggerStyle: trackType === 'cue' ? 'cue' : undefined,
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: [],
@@ -2623,6 +2653,7 @@ const Studio = () => {
         file: file,
         buffer: buffer,
         mode: trackType,
+        chopTriggerStyle: trackType === 'cue' ? 'cue' : undefined,
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
@@ -2743,6 +2774,7 @@ const Studio = () => {
         buffer: buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,
+        chopTriggerStyle: trackType === 'cue' ? 'cue' : undefined,
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
@@ -2879,6 +2911,7 @@ const Studio = () => {
           buffer,
           peaks: extractPeaksFromBuffer(buffer),
           mode,
+          chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
           loopStart: 0,
           loopEnd: buffer.duration,
           cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -2945,7 +2978,9 @@ const Studio = () => {
       const trackId = asset.id;
       const settings = loadTrackSettingsFromLocal(trackId) || {};
       const mode = preferredMode ?? settings.mode ?? loadPreferredMode() ?? 'cue';
-      
+      const chopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
+        ? settings.chopTriggerStyle
+        : 'cue';
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
@@ -2954,6 +2989,7 @@ const Studio = () => {
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode,
+        chopTriggerStyle: mode === 'cue' ? chopStyle : undefined,
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
@@ -4270,6 +4306,7 @@ const Studio = () => {
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
                 isGuestMode={isGuestMode}
+                chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
                 onReady={() => handleWaveformReady(track.id)}
                 suppressLoadingOverlay={!!(loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id))}
@@ -4311,8 +4348,31 @@ const Studio = () => {
                 togglePlaybackFunctionRef={getTogglePlaybackRef(track.id)}
                 recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
                 cueDragState={cueDragStates[track.id] || null}
+                chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
               />
 
+              {track.mode === 'cue' && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-xs audafact-text-secondary">Trigger style:</span>
+                  <div className="flex rounded-md border border-audafact-divider p-0.5 bg-audafact-surface-2">
+                    {(['cue', 'hold', 'one-shot'] as const).map((style) => (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={() => handleChopTriggerStyleChange(track.id, style)}
+                        title={style === 'cue' ? 'Jump to cue and continue' : style === 'hold' ? 'Play while held' : 'Play slice once'}
+                        className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                          (track.chopTriggerStyle ?? 'cue') === style
+                            ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                        }`}
+                      >
+                        {style === 'one-shot' ? 'One-Shot' : style.charAt(0).toUpperCase() + style.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {track.mode === 'cue' && track.id === selectedCueTrackId && (
                 <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
                   Press keyboard keys 1-0 to trigger cue points
