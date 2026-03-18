@@ -490,10 +490,10 @@ const Home = () => {
               
               {/* Subhead */}
               <p className="text-lg sm:text-xl text-slate-300 leading-relaxed">
-                A fast sampling workflow + sounds to explore—made for looping, slicing, and flipping into your next release. <span className="text-audafact-accent-cyan font-medium">The first step toward a future where creators work directly with each other.</span>
+                A fast sampling workflow + sounds to explore, made for looping, slicing, and flipping into your next release. <span className="text-audafact-accent-cyan font-medium">The first step toward a future where creators work directly with each other.</span>
               </p>
               <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
-                Flip samples directly in your browser—no DAW required.
+                Flip samples directly in your browser. No DAW required.
               </p>
               
               {/* Micro reassurance */}
@@ -579,7 +579,7 @@ const Home = () => {
                 <div>
                   <h3 className="font-semibold text-white mb-2">loop xtractor</h3>
                   <p className="text-sm text-slate-300 leading-relaxed">
-                    Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy — no clearance needed.
+                    Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy. No clearance needed.
                   </p>
                 </div>
               </div>
@@ -609,7 +609,7 @@ const Home = () => {
                 <div>
                   <h3 className="font-semibold text-white mb-2">waveform visualization</h3>
                   <p className="text-sm text-slate-300 leading-relaxed">
-                    See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis — learn as you create.
+                    See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis. Learn as you create.
                   </p>
                 </div>
               </div>
@@ -698,7 +698,7 @@ const Home = () => {
                 </div>
                 <h3 className="text-xl font-semibold text-white mb-4">Direct Collaboration</h3>
                 <p className="text-slate-300 leading-relaxed">
-                  We're working toward tools that let creators connect and collaborate directly. No middlemen, no gatekeepers—just artists working together on their own terms.
+                  We're working toward tools that let creators connect and collaborate directly. No middlemen, no gatekeepers: just artists working together on their own terms.
                 </p>
               </div>
             </div>
@@ -774,7 +774,7 @@ const Home = () => {
             
             <div className="text-center mb-8">
               <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-                What you get now—and what's coming next
+                What you get now and what's coming next
               </h2>
             </div>
             
@@ -867,7 +867,7 @@ const Home = () => {
                 <div>
                   <h4 className="font-semibold text-white mb-2">Hey, I'm David</h4>
                   <p className="text-slate-300 leading-relaxed">
-                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler, creator uploads, and sounds you can start exploring right away. But I'm also thinking about the bigger picture—a future where creators work directly with each other, without gatekeepers managing their relationships. This is just the first phase. Tell me what gets you to the next idea—I'll build toward that.
+                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler, creator uploads, and sounds you can start exploring right away. But I'm also thinking about the bigger picture: a future where creators work directly with each other, without gatekeepers managing their relationships. This is just the first phase. Tell me what gets you to the next idea. I'll build toward that.
                   </p>
                 </div>
               </div>
@@ -938,7 +938,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">Are provided tracks royalty-free?</h3>
               <p className="text-slate-300 leading-relaxed">
-                Yes—tracks we provide for sampling practice are royalty-free and specifically designed for flipping workflows. Use them for practice, flips, and creative projects without worrying about copyright issues.
+                Yes. Tracks we provide for sampling practice are royalty-free and specifically designed for flipping workflows. Use them for practice, flips, and creative projects without worrying about copyright issues.
               </p>
             </div>
             
@@ -954,7 +954,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">Will this replace my DAW?</h3>
               <p className="text-slate-300 leading-relaxed">
-                No—Audafact is designed for fast sample exploration & idea capture. Think of it as a creative spark tool that works alongside your existing DAW workflow.
+                No. Audafact is designed for fast sample exploration & idea capture. Think of it as a creative spark tool that works alongside your existing DAW workflow.
               </p>
             </div>
             
@@ -962,7 +962,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">What about pricing?</h3>
               <p className="text-slate-300 leading-relaxed">
-                We're offering founders' trial pricing for beta users—exact details TBD. Join the waitlist for early access pricing and be among the first to experience Audafact.
+                We're offering founders' trial pricing for beta users (exact details TBD). Join the waitlist for early access pricing and be among the first to experience Audafact.
               </p>
             </div>
             
