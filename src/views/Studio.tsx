@@ -30,6 +30,7 @@ import Tooltip from '../components/Tooltip';
 import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
 import { LibraryService } from '../services/libraryService';
+import type { SuggestionReference } from '../services/sampleSuggestionService';
 import { signFile } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
@@ -286,6 +287,8 @@ const Studio = () => {
   const [samplePlayhead, setSamplePlayhead] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedCueTrackId, setSelectedCueTrackId] = useState<string | null>(null);
+  /** Dedicated reference track for Smart Sample Suggestions (independent of cue selection; e.g. match to a loop). */
+  const [suggestionReferenceTrackId, setSuggestionReferenceTrackId] = useState<string | null>(null);
   const [armedLoopTrackIds, setArmedLoopTrackIds] = useState<Set<string>>(() => new Set());
   const [playbackTimes, setPlaybackTimes] = useState<{ [key: string]: number }>({});
   const [zoomLevels, setZoomLevels] = useState<{ [key: string]: number }>({});
@@ -356,6 +359,13 @@ const Studio = () => {
     window.addEventListener('recordingCompleted', handleRecordingCompleted);
     return () => window.removeEventListener('recordingCompleted', handleRecordingCompleted);
   }, [stopAllPlayback]);
+
+  // Clear suggestion reference if that track was removed
+  useEffect(() => {
+    if (suggestionReferenceTrackId && !tracks.some((t) => t.id === suggestionReferenceTrackId)) {
+      setSuggestionReferenceTrackId(null);
+    }
+  }, [tracks, suggestionReferenceTrackId]);
 
   // Filter state
   const [lowpassFreqs, setLowpassFreqs] = useState<{ [key: string]: number }>({});
@@ -3038,16 +3048,77 @@ const Studio = () => {
     }
   };
 
+  const effectiveSuggestionReferenceTrackId =
+    tracks.length > 0
+      ? suggestionReferenceTrackId ?? selectedCueTrackId ?? tracks[0].id
+      : null;
+
+  const suggestionReferenceTrackOptions = useMemo(
+    () =>
+      tracks.map((t, i) => ({
+        id: t.id,
+        label: t.file?.name?.replace(/\.[^/.]+$/, '') || `Track ${i + 1}`,
+      })),
+    [tracks]
+  );
+
+  const referenceForSuggestions = useMemo((): SuggestionReference | null => {
+    if (tracks.length === 0 || !effectiveSuggestionReferenceTrackId) return null;
+    const t = tracks.find((tr) => tr.id === effectiveSuggestionReferenceTrackId) ?? tracks[0];
+    if (t.isAnalyzing && !t.key?.trim()) return null;
+    const speed = playbackSpeeds[t.id] ?? 1;
+    const effectiveBpmRaw = t.tempo * speed;
+    const bpm =
+      effectiveBpmRaw >= 40 && effectiveBpmRaw <= 300
+        ? Math.round(effectiveBpmRaw)
+        : undefined;
+    const key = t.key?.trim()
+      ? (transposeKey(t.key, semitonesFromPlaybackSpeed(speed)) ?? undefined)
+      : undefined;
+    if (!key && bpm === undefined) return null;
+    const ref: SuggestionReference = {
+      excludeTrackId: t.sourceAssetId,
+      excludeFileKey: t.fileKey,
+      referencePlaybackSpeed: speed,
+    };
+    if (key) ref.key = key;
+    if (bpm !== undefined) ref.bpm = bpm;
+    return ref;
+  }, [tracks, effectiveSuggestionReferenceTrackId, playbackSpeeds]);
+
+  const handleSuggestionReferenceTrackChange = useCallback((trackId: string) => {
+    setSuggestionReferenceTrackId(trackId);
+  }, []);
+
   // Memoize the callback functions to prevent SidePanel re-mounting
-  const memoizedSidePanelProps = useMemo(() => ({
-    isOpen: isSidePanelOpen,
-    onToggle: toggleSidePanel,
-    onUploadTrack: handleUploadTrack,
-    onAddFromLibrary: handleAddFromLibrary,
-    onAddUserTrack: handleAddUserTrack,
-    onUploadAnalysisUpdated: handleUploadAnalysisUpdated,
-    onRestoreSession: handleRestoreSession,
-  }), [isSidePanelOpen, toggleSidePanel, handleUploadTrack, handleAddFromLibrary, handleAddUserTrack, handleUploadAnalysisUpdated, handleRestoreSession]);
+  const memoizedSidePanelProps = useMemo(
+    () => ({
+      isOpen: isSidePanelOpen,
+      onToggle: toggleSidePanel,
+      onUploadTrack: handleUploadTrack,
+      onAddFromLibrary: handleAddFromLibrary,
+      onAddUserTrack: handleAddUserTrack,
+      onUploadAnalysisUpdated: handleUploadAnalysisUpdated,
+      onRestoreSession: handleRestoreSession,
+      referenceForSuggestions,
+      suggestionReferenceTrackOptions,
+      effectiveSuggestionReferenceTrackId: effectiveSuggestionReferenceTrackId ?? undefined,
+      onSuggestionReferenceTrackChange: handleSuggestionReferenceTrackChange,
+    }),
+    [
+      isSidePanelOpen,
+      toggleSidePanel,
+      handleUploadTrack,
+      handleAddFromLibrary,
+      handleAddUserTrack,
+      handleUploadAnalysisUpdated,
+      handleRestoreSession,
+      referenceForSuggestions,
+      suggestionReferenceTrackOptions,
+      effectiveSuggestionReferenceTrackId,
+      handleSuggestionReferenceTrackChange,
+    ]
+  );
 
   
   // Loading state - only show full-page loader when NO tracks exist (initial load).
@@ -3833,18 +3904,25 @@ const Studio = () => {
           className={showTrackSkeletons ? 'fixed -left-[9999px] top-0 w-full opacity-0 pointer-events-none' : undefined}
           aria-hidden={showTrackSkeletons}
         >
-        {tracks.map((track, index) => (
-          <div 
-            key={track.id} 
+        {tracks.map((track, index) => {
+          const isSuggestionRef = track.id === effectiveSuggestionReferenceTrackId;
+          return (
+          <div
+            key={track.id}
+            onClick={tracks.length > 1 ? (e) => {
+              if ((e.target as HTMLElement).closest?.('button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg')) return;
+              setSuggestionReferenceTrackId(track.id);
+            } : undefined}
             className={`audafact-card overflow-hidden transition-all duration-300 relative ${
-              index === 0
-                ? 'border-audafact-accent-cyan shadow-card' // Top track styling
-                : 'border-audafact-divider shadow-sm' // Lower tracks styling
-            } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''}`}
+              isSuggestionRef
+                ? 'border-audafact-accent-cyan shadow-card' // Suggestion reference track
+                : 'border-audafact-divider shadow-sm'
+            } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''} ${tracks.length > 1 ? 'cursor-pointer' : ''}`}
             style={{
               transform: (loadingTrackPlaceholder || (isAddingTrack && index > 0)) ? 'translateY(10px)' : 'translateY(0)'
             }}
             data-testid={index === 0 ? 'main-track-card' : `track-card-${index}`}
+            title={tracks.length > 1 ? (isSuggestionRef ? 'Suggestions match this track — click another to match to it' : 'Click to match suggestions to this track') : undefined}
           >
             {/* Add Track and Navigation Controls - Only show on first track */}
             {index === 0 && (
@@ -4399,7 +4477,8 @@ const Studio = () => {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
         </div>
       </div>
 
