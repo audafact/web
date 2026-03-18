@@ -51,6 +51,10 @@ interface WaveformDisplayProps {
   peaks?: number[][];
   /** Duration in seconds - required when peaks provided */
   duration?: number;
+  /** Beat positions in seconds for adaptive grid (from audio analysis) */
+  beats?: number[];
+  /** Current cue drag time for nearest-beat highlight (null when not dragging) */
+  cueDragTime?: number | null;
 }
 
 const WaveformDisplay = ({
@@ -92,6 +96,8 @@ const WaveformDisplay = ({
   suppressLoadingOverlay = false,
   peaks: peaksProp,
   duration: durationProp,
+  beats,
+  cueDragTime,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1532,6 +1538,8 @@ const WaveformDisplay = ({
                 firstMeasureTime={firstMeasureTime}
                 visible={true}
                 showMeasures={internalShowMeasures}
+                beats={beats}
+                highlightTime={cueDragTime}
               />
             )}
             

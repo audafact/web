@@ -1,5 +1,11 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { TimeSignature } from '../types/music';
+
+/** Zoom below this: show only bar lines */
+const ZOOM_BARS_ONLY = 1.5;
+/** Zoom above this: show all beats; between this and ZOOM_BARS_ONLY: bars + beats */
+const ZOOM_BARS_AND_BEATS = 4;
+const MAX_LINES = 500;
 
 interface GridLinesProps {
   duration: number;
@@ -10,7 +16,17 @@ interface GridLinesProps {
   timeSignature: TimeSignature;
   firstMeasureTime: number;
   visible?: boolean;
-  showMeasures?: boolean; // Add prop to know when measures are being displayed
+  showMeasures?: boolean;
+  /** When provided (non-empty), use these beat times for adaptive grid; otherwise use tempo-based grid */
+  beats?: number[];
+  /** When set, highlight the nearest beat line (e.g. during cue drag) */
+  highlightTime?: number | null;
+}
+
+interface BeatLine {
+  time: number;
+  isBar: boolean;
+  index: number;
 }
 
 const GridLines = ({
@@ -21,110 +37,100 @@ const GridLines = ({
   timeSignature,
   firstMeasureTime,
   visible = true,
-  showMeasures = false
+  showMeasures = false,
+  beats: beatsProp,
+  highlightTime
 }: GridLinesProps) => {
-  const internalContainerRef = useRef<HTMLDivElement>(null);
-
-  // Calculate beat duration in seconds (same as MeasureDisplay)
   const beatDuration = useCallback(() => {
-    // Convert tempo (BPM) to seconds per beat
     const secondsPerBeat = 60 / tempo;
-    
-    // The denominator tells us what note gets one beat
-    // 4 = quarter note, 8 = eighth note, 2 = half note, etc.
     const beatNoteValue = 4 / timeSignature.denominator;
-    
-    // Calculate beat duration: duration per beat × beat note value
     return secondsPerBeat * beatNoteValue;
   }, [tempo, timeSignature]);
 
-  // Calculate measure duration in seconds (exact same as MeasureDisplay)
   const measureDuration = useCallback(() => {
-    // Convert tempo (BPM) to seconds per beat
     const secondsPerBeat = 60 / tempo;
-    
-    // The denominator tells us what note gets one beat
-    // 4 = quarter note, 8 = eighth note, 2 = half note, etc.
     const beatNoteValue = 4 / timeSignature.denominator;
-    
-    // Calculate measure duration: beats per measure × duration per beat
     return timeSignature.numerator * secondsPerBeat * beatNoteValue;
   }, [tempo, timeSignature]);
 
-  // Calculate all beat positions
-  const calculateBeats = useCallback(() => {
-    const beatDur = beatDuration();
-    const measureDur = measureDuration();
-    const beats = [];
-    
-    // Start from the first measure time
-    let currentTime = firstMeasureTime;
-    let beatNumber = 1;
-    let measureNumber = 1;
-    
-    while (currentTime <= duration) {
-      // Add all beats in this measure
-      for (let beatInMeasure = 0; beatInMeasure < timeSignature.numerator; beatInMeasure++) {
-        const beatTime = currentTime + (beatInMeasure * beatDur);
-        if (beatTime <= duration) {
-          beats.push({
-            time: beatTime,
-            beatNumber: beatNumber,
-            measureNumber: measureNumber,
-            isMeasureStart: beatInMeasure === 0
-          });
-          beatNumber++;
-        }
-      }
-      currentTime += measureDur;
-      measureNumber++;
-    }
-    
-    return beats;
-  }, [duration, firstMeasureTime, beatDuration, measureDuration, timeSignature]);
-
-  // Calculate measure positions (for when measures are visible)
-  const calculateMeasures = useCallback(() => {
-    const measureDur = measureDuration();
-    const measures = [];
-    
-    // Start from the first measure time
-    let currentTime = firstMeasureTime;
-    let measureNumber = 1;
-    
-    while (currentTime <= duration) {
-      measures.push({
-        time: currentTime,
-        number: measureNumber
-      });
-      currentTime += measureDur;
-      measureNumber++;
-    }
-    
-    return measures;
-  }, [duration, firstMeasureTime, measureDuration]);
-
-  // Convert time to pixel position
   const timeToPixels = useCallback((time: number) => {
     const pxPerSec = pixelsPerSecond ?? 40 * zoomLevel;
     return time * pxPerSec;
   }, [zoomLevel, pixelsPerSecond]);
 
-  const beats = calculateBeats();
-  const measures = calculateMeasures();
+  // Adaptive mode: use detected beat times when available
+  const useAdaptiveGrid = Array.isArray(beatsProp) && beatsProp.length > 0;
 
+  const adaptiveBeatLines = useMemo((): BeatLine[] => {
+    if (!useAdaptiveGrid || !beatsProp) return [];
+    const numer = timeSignature.numerator;
+    return beatsProp
+      .filter((t) => t >= 0 && t <= duration)
+      .map((time, index) => ({
+        time,
+        isBar: index % numer === 0,
+        index
+      }));
+  }, [useAdaptiveGrid, beatsProp, duration, timeSignature.numerator]);
 
+  const tempoBeatLines = useMemo((): BeatLine[] => {
+    const beatDur = beatDuration();
+    const measureDur = measureDuration();
+    const lines: BeatLine[] = [];
+    let currentTime = firstMeasureTime;
+    let beatNumber = 0;
+    while (currentTime <= duration) {
+      for (let beatInMeasure = 0; beatInMeasure < timeSignature.numerator; beatInMeasure++) {
+        const t = currentTime + beatInMeasure * beatDur;
+        if (t <= duration) {
+          lines.push({ time: t, isBar: beatInMeasure === 0, index: beatNumber });
+          beatNumber++;
+        }
+      }
+      currentTime += measureDur;
+    }
+    return lines;
+  }, [duration, firstMeasureTime, beatDuration, measureDuration, timeSignature.numerator]);
 
-  // Don't render anything if not visible
-  if (!visible) {
-    return null;
-  }
+  const beatLines = useAdaptiveGrid ? adaptiveBeatLines : tempoBeatLines;
+
+  const zoomDensity = useMemo(() => {
+    if (zoomLevel <= ZOOM_BARS_ONLY) return 'bars_only';
+    if (zoomLevel < ZOOM_BARS_AND_BEATS) return 'bars_and_beats';
+    return 'all';
+  }, [zoomLevel]);
+
+  const visibleLines = useMemo(() => {
+    let list = beatLines;
+    if (zoomDensity === 'bars_only') {
+      list = list.filter((l) => l.isBar);
+    }
+    if (list.length > MAX_LINES) {
+      list = list.slice(0, MAX_LINES);
+    }
+    return list;
+  }, [beatLines, zoomDensity]);
+
+  const nearestHighlightTime = useMemo(() => {
+    if (highlightTime == null || visibleLines.length === 0) return null;
+    let best = visibleLines[0];
+    let bestDist = Math.abs(best.time - highlightTime);
+    for (let i = 1; i < visibleLines.length; i++) {
+      const d = Math.abs(visibleLines[i].time - highlightTime);
+      if (d < bestDist) {
+        bestDist = d;
+        best = visibleLines[i];
+      }
+    }
+    return best.time;
+  }, [highlightTime, visibleLines]);
+
+  if (!visible) return null;
 
   return (
-    <div 
-      ref={internalContainerRef}
+    <div
       className="absolute pointer-events-none"
-      style={{ 
+      style={{
         height: '120px',
         top: 0,
         left: 0,
@@ -132,39 +138,37 @@ const GridLines = ({
       }}
     >
       {showMeasures ? (
-        // When measures are visible, only show grid lines at measure boundaries
-        measures.map((measure, index) => (
-          <div key={`measure-${index}`}>
+        visibleLines
+          .filter((l) => l.isBar)
+          .map((line) => (
             <div
+              key={`bar-${line.time}`}
               className="absolute top-0 bottom-0 w-px bg-white opacity-40"
               style={{
-                left: `${timeToPixels(measure.time)}px`,
+                left: `${timeToPixels(line.time)}px`,
                 transform: 'translateX(-50%)'
               }}
             />
-          </div>
-        ))
+          ))
       ) : (
-        // When measures are not visible, show grid lines for every beat
-        beats.map((beat, index) => (
-          <div key={`beat-${index}`}>
-            {/* Beat line - lighter for regular beats, darker for measure starts */}
+        visibleLines.map((line) => {
+          const isHighlight = nearestHighlightTime != null && line.time === nearestHighlightTime;
+          const opacity = isHighlight ? 0.7 : line.isBar ? 0.4 : 0.25;
+          return (
             <div
-              className={`absolute top-0 bottom-0 w-px ${
-                beat.isMeasureStart 
-                  ? 'bg-white opacity-60' // More visible for measure starts
-                  : 'bg-white opacity-30' // Less visible for regular beats
-              }`}
+              key={`${line.time}-${line.index}`}
+              className={`absolute top-0 bottom-0 w-px bg-white ${isHighlight ? 'opacity-70' : ''}`}
               style={{
-                left: `${timeToPixels(beat.time)}px`,
-                transform: 'translateX(-50%)'
+                left: `${timeToPixels(line.time)}px`,
+                transform: 'translateX(-50%)',
+                opacity: isHighlight ? undefined : opacity
               }}
             />
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
 };
 
-export default GridLines; 
+export default GridLines;
