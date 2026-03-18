@@ -196,7 +196,7 @@ interface SidePanelProps {
   onUploadTrack: (file: File, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddFromLibrary: (asset: AudioAsset, trackType: 'preview' | 'loop' | 'cue') => void;
   onAddUserTrack: (track: UserTrack, trackType: 'preview' | 'loop' | 'cue') => void;
-  onUploadAnalysisUpdated?: (uploadId: string, data: { bpm?: number; key?: string }) => void;
+  onUploadAnalysisUpdated?: (uploadId: string, data: { bpm?: number; key?: string; beats?: number[] }) => void;
   onRestoreSession?: (session: { events?: Array<{ data?: any }>; full_state?: any }) => Promise<void>;
   initialMode?: 'upload' | 'library';
 }
@@ -383,6 +383,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
               uploadedAt: new Date(upload.created_at).getTime(),
               bpm: upload.bpm ?? undefined,         // Use detected tempo from analysis, fallback to 120 in Studio
               key: upload.key ?? undefined,        // Detected musical key from audio analysis
+              beats: Array.isArray(upload.beat_times) && upload.beat_times.length > 0 ? upload.beat_times : undefined,
             } satisfies UserTrack;
           })
         );
@@ -412,16 +413,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          const row = payload.new as { id: string; bpm?: number | null; key?: string | null };
-          if (row.bpm == null && row.key == null) return;
+          const row = payload.new as { id: string; bpm?: number | null; key?: string | null; beat_times?: number[] | null };
+          if (row.bpm == null && row.key == null && (row.beat_times == null || (Array.isArray(row.beat_times) && row.beat_times.length === 0))) return;
           setUserTracks((prev) =>
             prev.map((t) =>
               t.id === row.id
-                ? { ...t, bpm: row.bpm ?? t.bpm, key: row.key ?? t.key, isAnalyzing: false }
+                ? {
+                    ...t,
+                    bpm: row.bpm ?? t.bpm,
+                    key: row.key ?? t.key,
+                    beats: Array.isArray(row.beat_times) && row.beat_times.length > 0 ? row.beat_times : t.beats,
+                    isAnalyzing: false,
+                  }
                 : t
             )
           );
-          onUploadAnalysisUpdated?.(row.id, { bpm: row.bpm ?? undefined, key: row.key ?? undefined });
+          onUploadAnalysisUpdated?.(row.id, {
+            bpm: row.bpm ?? undefined,
+            key: row.key ?? undefined,
+            beats: Array.isArray(row.beat_times) && row.beat_times.length > 0 ? row.beat_times : undefined
+          });
         }
       )
       .subscribe();

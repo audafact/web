@@ -57,6 +57,8 @@ interface Track {
   showMeasures: boolean;
   /** Detected musical key from audio analysis (library/user uploads) */
   key?: string;
+  /** Beat positions in seconds (adaptive grid); from audio analysis when available */
+  beats?: number[];
   /** True when tempo/key analysis is pending (uploaded track) */
   isAnalyzing?: boolean;
 }
@@ -716,7 +718,8 @@ const Studio = () => {
             tempo: savedTrack.tempo ?? 120,
             timeSignature: savedTrack.timeSignature ?? { numerator: 4, denominator: 4 },
             firstMeasureTime: savedTrack.firstMeasureTime ?? 0,
-            showMeasures: savedTrack.showMeasures ?? false
+            showMeasures: savedTrack.showMeasures ?? false,
+            beats: Array.isArray(savedTrack.beats) && savedTrack.beats.length > 0 ? savedTrack.beats : undefined
           };
 
           const restoredMode = (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue';
@@ -2497,6 +2500,7 @@ const Studio = () => {
           firstMeasureTime: track.firstMeasureTime,
           showMeasures: showMeasures[track.id] || false,
           showCueThumbs: (showCueThumbs[track.id] ?? true),
+          beats: track.beats,
           playbackSpeed: playbackSpeeds[track.id] || 1,
           volume: volume[track.id] || 1,
           lowpassFreq: lowpassFreqs[track.id] || 20000,
@@ -2705,8 +2709,8 @@ const Studio = () => {
     }
   };
 
-  const handleUploadAnalysisUpdated = useCallback((uploadId: string, data: { bpm?: number; key?: string }) => {
-    const { bpm, key } = data;
+  const handleUploadAnalysisUpdated = useCallback((uploadId: string, data: { bpm?: number; key?: string; beats?: number[] }) => {
+    const { bpm, key, beats } = data;
     // Clear any pending timeout for this upload
     const timeoutId = analysisTimeoutIdsRef.current[uploadId];
     if (timeoutId) {
@@ -2720,6 +2724,7 @@ const Studio = () => {
               ...t,
               tempo: bpm != null && bpm >= 40 && bpm <= 300 ? bpm : t.tempo,
               key: key ?? t.key,
+              beats: Array.isArray(beats) && beats.length > 0 ? beats : t.beats,
               isAnalyzing: false,
             }
           : t
@@ -2785,6 +2790,7 @@ const Studio = () => {
         firstMeasureTime: 0,
         showMeasures: false,
         key: userTrack.key,
+        beats: userTrack.beats,
         isAnalyzing,
       };
 
@@ -4310,6 +4316,8 @@ const Studio = () => {
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
                 onReady={() => handleWaveformReady(track.id)}
                 suppressLoadingOverlay={!!(loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id))}
+                beats={track.beats}
+                cueDragTime={cueDragStates[track.id] ? (Object.values(cueDragStates[track.id])[0] ?? null) : null}
               />
             </div>
 

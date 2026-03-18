@@ -30,6 +30,8 @@ export interface Upload {
   // Audio analysis results
   bpm?: number;
   key?: string;
+  /** Beat positions in seconds (adaptive grid) */
+  beat_times?: number[] | null;
   // Legacy fields for backward compatibility
   file_url?: string;
   full_hash?: string;
@@ -228,6 +230,8 @@ export interface UserTrack {
   uploadedAt: number;
   bpm?: number; // Detected tempo from audio analysis; Studio uses 120 if absent
   key?: string; // Detected musical key from audio analysis
+  /** Beat positions in seconds from audio analysis (adaptive grid) */
+  beats?: number[];
   /** True when track was just uploaded and tempo/key analysis is pending */
   isAnalyzing?: boolean;
 }
