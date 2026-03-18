@@ -8,6 +8,10 @@ import { useAccessControl } from '../hooks/useAccessControl';
 import { useUser } from '../hooks/useUser';
 import { UpgradePrompt } from './UpgradePrompt';
 import { UserTrack } from '../types/music';
+import {
+  getSampleSuggestions,
+  type SuggestionReference,
+} from '@/services/sampleSuggestionService';
 import LibraryTrackItem from './LibraryTrackItem';
 import { showSignupModal } from '../hooks/useSignupModal';
 import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
@@ -199,6 +203,10 @@ interface SidePanelProps {
   onUploadAnalysisUpdated?: (uploadId: string, data: { bpm?: number; key?: string; beats?: number[] }) => void;
   onRestoreSession?: (session: { events?: Array<{ data?: any }>; full_state?: any }) => Promise<void>;
   initialMode?: 'upload' | 'library';
+  referenceForSuggestions?: SuggestionReference | null;
+  suggestionReferenceTrackOptions?: { id: string; label: string }[];
+  effectiveSuggestionReferenceTrackId?: string;
+  onSuggestionReferenceTrackChange?: (trackId: string) => void;
 }
 
 const SidePanel: React.FC<SidePanelProps> = ({
@@ -209,7 +217,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onAddUserTrack,
   onUploadAnalysisUpdated,
   onRestoreSession,
-  initialMode
+  initialMode,
+  referenceForSuggestions = null,
+  suggestionReferenceTrackOptions = [],
+  effectiveSuggestionReferenceTrackId,
+  onSuggestionReferenceTrackChange,
 }) => {
 
   const { savedSessions, performances, exportSession, exportPerformance, exportByFileKey, savePerformanceName, updateRecordingName, deleteSession, renameSession, deletePerformance, pendingExport, clearPendingExport, pendingSession, clearPendingSession, discardPerformance, savedRecordings, deleteSavedRecording } = useRecording();
@@ -241,8 +253,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
   // When true, allow user to collapse the submenu without auto-selecting another
   const [allowEmptyAudioTab, setAllowEmptyAudioTab] = useState(true); // Start with Audafact Library tab closed
   const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
-  
 
+  // Suggested Matches section collapsed state (persisted)
+  const [suggestedMatchesExpanded, setSuggestedMatchesExpanded] = useState(() => {
+    const saved = localStorage.getItem('sidePanelSuggestedMatchesExpanded');
+    if (saved === 'false') return false;
+    return true;
+  });
+  useEffect(() => {
+    localStorage.setItem('sidePanelSuggestedMatchesExpanded', String(suggestedMatchesExpanded));
+  }, [suggestedMatchesExpanded]);
 
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
   const [exportModalPerformance, setExportModalPerformance] = useState<{
@@ -266,6 +286,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const downloadDropdownRef = useRef<HTMLDivElement | null>(null);
 
+  const [matchToDropdownOpen, setMatchToDropdownOpen] = useState(false);
+  const matchToDropdownRef = useRef<HTMLDivElement | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -278,6 +301,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
         return;
       }
       setDownloadDropdownOpen(null);
+      if (matchToDropdownRef.current && !matchToDropdownRef.current.contains(target)) {
+        setMatchToDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -353,6 +379,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
       }
     }
   }, [pendingSession, savedSessions, user]);
+
+  const suggestedMatches = useMemo(() => {
+    if (!referenceForSuggestions || userLibraryTracks.length === 0) return null;
+    const ref = referenceForSuggestions;
+    const hasKey = !!ref.key?.trim();
+    const hasBpm =
+      ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
+    if (!hasKey && !hasBpm) return null;
+    return getSampleSuggestions(userLibraryTracks, ref);
+  }, [referenceForSuggestions, userLibraryTracks]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -813,6 +849,214 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 {activeAudioTab === 'library' && (
                   <div id="audafact-library-content" role="tabpanel" aria-labelledby="audafact-library-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                                           <div className="space-y-4">
+                        {referenceForSuggestions != null && suggestedMatches != null && (
+                          <div
+                            className="rounded-lg border border-audafact-divider bg-audafact-surface-2/60 overflow-hidden"
+                            aria-label="Suggested matches for current session"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setSuggestedMatchesExpanded((v) => !v)}
+                              className="w-full flex items-center justify-between gap-2 p-3 text-left audafact-heading text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2/80 transition-colors focus:outline-none focus:ring-1 focus:ring-audafact-accent-cyan focus:ring-inset"
+                              aria-expanded={suggestedMatchesExpanded}
+                              aria-controls="suggested-matches-content"
+                              id="suggested-matches-heading"
+                            >
+                              <span>
+                                Suggested Matches
+                                {referenceForSuggestions?.referencePlaybackSpeed != null &&
+                                  Math.abs(referenceForSuggestions.referencePlaybackSpeed - 1) >= 0.02 && (
+                                    <span className="ml-1.5 font-normal text-audafact-text-secondary">
+                                      (at {referenceForSuggestions.referencePlaybackSpeed.toFixed(2)}×)
+                                    </span>
+                                  )}
+                              </span>
+                              <svg
+                                className={`w-4 h-4 flex-shrink-0 text-audafact-text-secondary transition-transform duration-200 ${suggestedMatchesExpanded ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                aria-hidden
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            {suggestedMatchesExpanded && (
+                            <div id="suggested-matches-content" className="px-3 pb-3 pt-0" role="region" aria-labelledby="suggested-matches-heading">
+                            {suggestionReferenceTrackOptions.length > 1 &&
+                             effectiveSuggestionReferenceTrackId &&
+                             onSuggestionReferenceTrackChange && (
+                              <div className="mb-3 flex items-center gap-2" ref={matchToDropdownRef}>
+                                <span className="text-xs audafact-text-secondary whitespace-nowrap">
+                                  Match to:
+                                </span>
+                                <div className="flex-1 min-w-0 relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMatchToDropdownOpen((v) => !v)}
+                                    className="w-full flex items-center justify-between gap-2 text-xs bg-audafact-surface-2 border border-audafact-divider rounded-lg pl-3 pr-8 py-2 text-audafact-text-primary hover:border-audafact-divider hover:bg-audafact-surface-3 focus:outline-none focus:border-audafact-accent-cyan focus:ring-1 focus:ring-audafact-accent-cyan/30 transition-colors cursor-pointer text-left"
+                                    aria-label="Choose which track to match suggestions to"
+                                    aria-expanded={matchToDropdownOpen}
+                                    aria-haspopup="listbox"
+                                    id="suggestion-ref-track"
+                                  >
+                                    <span className="truncate">
+                                      {(() => {
+                                        const opt = suggestionReferenceTrackOptions.find((o) => o.id === effectiveSuggestionReferenceTrackId);
+                                        return opt ? (opt.label.length > 28 ? `${opt.label.slice(0, 25)}…` : opt.label) : 'Select track';
+                                      })()}
+                                    </span>
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-audafact-text-secondary pointer-events-none">
+                                      <svg className={`w-4 h-4 transition-transform duration-200 ${matchToDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </span>
+                                  </button>
+                                  {matchToDropdownOpen && (
+                                    <ul
+                                      role="listbox"
+                                      aria-labelledby="suggestion-ref-track"
+                                      className="absolute z-50 left-0 right-0 mt-1 py-1 rounded-lg border border-audafact-divider bg-audafact-surface-2 shadow-lg max-h-48 overflow-y-auto"
+                                    >
+                                      {suggestionReferenceTrackOptions.map((opt) => (
+                                        <li key={opt.id} role="option" aria-selected={opt.id === effectiveSuggestionReferenceTrackId}>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              onSuggestionReferenceTrackChange(opt.id);
+                                              setMatchToDropdownOpen(false);
+                                            }}
+                                            className={`w-full text-left text-xs px-3 py-2 truncate block transition-colors ${
+                                              opt.id === effectiveSuggestionReferenceTrackId
+                                                ? 'bg-audafact-accent-cyan/20 text-audafact-accent-cyan'
+                                                : 'text-audafact-text-primary hover:bg-audafact-surface-3'
+                                            }`}
+                                          >
+                                            {opt.label.length > 28 ? `${opt.label.slice(0, 25)}…` : opt.label}
+                                          </button>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {suggestedMatches.length === 0 ? (
+                              <p className="text-xs audafact-text-secondary leading-relaxed">
+                                No close matches — try exploring the library.
+                              </p>
+                            ) : (
+                              <ul className="space-y-2">
+                                {suggestedMatches.map(({ track, adjustmentLine, suggestedSpeedReason }) => {
+                                  const bpmOk =
+                                    typeof track.bpm === 'number' &&
+                                    track.bpm >= 40 &&
+                                    track.bpm <= 300;
+                                  const secondary = [
+                                    bpmOk ? `${track.bpm} BPM` : null,
+                                    track.key || null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' • ');
+                                  return (
+                                    <li
+                                      key={`suggest-${track.id}`}
+                                      className="flex gap-2 items-start rounded-md border border-audafact-divider/60 bg-audafact-surface-1/80 p-2"
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium text-audafact-text-primary truncate">
+                                          {track.name}
+                                        </div>
+                                        {secondary ? (
+                                          <div className="text-xs audafact-text-secondary mt-0.5">
+                                            {secondary}
+                                          </div>
+                                        ) : null}
+                                        <div className="text-xs text-audafact-accent-cyan/90 mt-0.5 leading-snug">
+                                          {adjustmentLine}
+                                        </div>
+                                        {suggestedSpeedReason ? (
+                                          <div className="text-xs audafact-text-secondary mt-1 italic">
+                                            {suggestedSpeedReason}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                      <div className="flex flex-shrink-0 gap-1 items-center">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handlePreviewPlay(
+                                              {
+                                                id: track.id,
+                                                name: track.name,
+                                                fileKey: track.fileKey,
+                                                type: track.type,
+                                                size: track.size,
+                                                bpm: track.bpm,
+                                              },
+                                              false
+                                            )
+                                          }
+                                          className={`p-2 rounded-md border border-audafact-divider text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 ${
+                                            isPlaying && isCurrentKey(track.fileKey)
+                                              ? 'text-audafact-accent-cyan'
+                                              : ''
+                                          }`}
+                                          title={
+                                            isPlaying && isCurrentKey(track.fileKey)
+                                              ? 'Stop preview'
+                                              : 'Preview'
+                                          }
+                                          aria-label={`Preview ${track.name}`}
+                                        >
+                                          {isPlaying && isCurrentKey(track.fileKey) ? (
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                              <rect x="6" y="4" width="4" height="16" />
+                                              <rect x="14" y="4" width="4" height="16" />
+                                            </svg>
+                                          ) : (
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                              <path d="M8 5v14l11-7z" />
+                                            </svg>
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleAddTrack(
+                                              {
+                                                id: track.id,
+                                                name: track.name,
+                                                fileKey: track.fileKey,
+                                                type: track.type,
+                                                size: track.size,
+                                                bpm: track.bpm,
+                                                key: track.key,
+                                              },
+                                              false
+                                            )
+                                          }
+                                          className="p-2 rounded-md border border-audafact-divider text-audafact-text-primary hover:bg-audafact-accent-cyan/15 font-bold text-lg leading-none min-w-[2.25rem]"
+                                          title={
+                                            tier.id === 'guest'
+                                              ? 'Sign up to add'
+                                              : 'Add to studio'
+                                          }
+                                          aria-label={`Add ${track.name} to studio`}
+                                        >
+                                          {tier.id === 'guest' ? '🔒' : '+'}
+                                        </button>
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                            </div>
+                            )}
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between">
                           <h3 className="text-md font-medium audafact-heading">Track Library</h3>
                         </div>
