@@ -66,12 +66,26 @@ class AddLibraryTrackActionExecutor implements ActionExecutor {
   }
   
   getSuccessMessage(action: PostSignupAction): string {
-    return "🎵 Browse our full library and add tracks to your studio!";
+    return "🎵 Browse available sounds and add tracks to your studio!";
   }
   
   private setSidePanelMode(mode: string): void {
     // TODO: Integrate with actual side panel system
     console.log('Setting side panel mode:', mode);
+  }
+}
+
+class AddSecondSourceExecutor implements ActionExecutor {
+  async execute(_action: PostSignupAction): Promise<void> {
+    console.log('Post-signup: user can add multiple tracks');
+  }
+
+  canExecute(_action: PostSignupAction, userTier: string): boolean {
+    return userTier !== 'guest';
+  }
+
+  getSuccessMessage(): string {
+    return '🎵 You can add multiple tracks — use Add or drag from the library.';
   }
 }
 
@@ -178,6 +192,7 @@ export class PostSignupActionService {
     this.executors.set('upload', new UploadActionExecutor());
     this.executors.set('save_session', new SaveSessionActionExecutor());
     this.executors.set('add_library_track', new AddLibraryTrackActionExecutor());
+    this.executors.set('add_second_source', new AddSecondSourceExecutor());
     this.executors.set('edit_cues', new EditCuesActionExecutor());
     this.executors.set('record', new RecordActionExecutor());
     this.executors.set('download', new DownloadActionExecutor());

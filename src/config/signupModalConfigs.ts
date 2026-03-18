@@ -14,7 +14,7 @@ export const SIGNUP_MODAL_CONFIGS: Record<string, SignupModalConfig> = {
     benefits: [
       "Upload unlimited tracks",
       "Save your sessions",
-      "Access full library",
+      "Explore available sounds",
       "Sync across devices"
     ],
     ctaText: "Sign up to upload tracks",
@@ -22,28 +22,41 @@ export const SIGNUP_MODAL_CONFIGS: Record<string, SignupModalConfig> = {
   },
   
   save_session: {
-    title: "💾 Don't lose your work",
-    message: "Save your session and pick up where you left off",
+    title: "Create a free account to keep your work",
+    message: "Save your session and pick up where you left off on any device.",
     benefits: [
-      "Save unlimited sessions",
-      "Sync across devices",
-      "Share with others",
-      "Version history"
+      "Save sessions",
+      "Multiple tracks & uploads",
+      "MP3 export",
+      "Access available sounds"
     ],
-    ctaText: "Sign up to save session",
+    ctaText: "Create free account",
     redirectAction: 'save_session'
+  },
+
+  add_second_source: {
+    title: "Create a free account to keep your work",
+    message: "Add more tracks, save sessions, and export your flips.",
+    benefits: [
+      "Multiple sources in the studio",
+      "Save sessions",
+      "MP3 export",
+      "Available sounds"
+    ],
+    ctaText: "Create free account",
+    redirectAction: 'add_second_source'
   },
   
   add_library_track: {
     title: "🎵 Expand your library",
-    message: "Add tracks from our curated collection to your studio",
+    message: "Add tracks from the catalog to your studio",
     benefits: [
-      "Access 100+ curated tracks",
+      "Access available tracks",
       "Multiple genres and BPMs",
       "High-quality audio files",
-      "Regular new additions"
+      "More sounds added during beta"
     ],
-    ctaText: "Sign up to browse library",
+    ctaText: "Sign up to add tracks",
     redirectAction: 'add_library_track'
   },
   
@@ -74,17 +87,17 @@ export const SIGNUP_MODAL_CONFIGS: Record<string, SignupModalConfig> = {
   },
   
   record: {
-    title: "🎙 Record your performances",
-    message: "Capture and export your live mixing sessions",
+    title: "Record your performance",
+    message: "Create a free account to record and export your live mixes.",
     benefits: [
-      "Record unlimited sessions",
-      "Export to multiple formats",
-      "Share performances",
-      "Professional quality"
+      "Record performances",
+      "MP3 export",
+      "Save sessions",
+      "More uploads"
     ],
-    ctaText: "Upgrade to Pro Creator",
+    ctaText: "Create free account",
     redirectAction: 'record',
-    upgradeRequired: true
+    upgradeRequired: false
   },
   
   download: {
