@@ -82,6 +82,13 @@ const getCurrentCueTimestamp = (cuePoints: number[], cueDragState: { [index: num
   return cuePoints[index] || 0;
 };
 
+// Slice end for One-Shot: next cue or track end; clamped to (sliceStart, duration]
+const getSliceEnd = (cuePoints: number[], index: number, duration: number, sliceStart: number): number => {
+  const rawEnd = index < cuePoints.length - 1 ? cuePoints[index + 1] : duration;
+  const end = Math.min(duration, Math.max(sliceStart + 0.001, rawEnd));
+  return end;
+};
+
 interface TrackControlsProps {
   mode: 'preview' | 'loop' | 'cue';
   audioContext: AudioContext | null;
@@ -126,6 +133,8 @@ interface TrackControlsProps {
   recordingDestination?: MediaStreamAudioDestinationNode | null;
   // Add drag state props for real-time timestamp updates
   cueDragState?: { [index: number]: number } | null;
+  /** When mode is 'cue', how pads trigger playback. Default 'cue'. */
+  chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
 }
 
 const TrackControls = ({ 
@@ -157,7 +166,8 @@ const TrackControls = ({
   seekFunctionRef,
   togglePlaybackFunctionRef,
   recordingDestination,
-  cueDragState = null
+  cueDragState = null,
+  chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
   const [speed, setSpeed] = useState(playbackSpeed);
@@ -219,6 +229,9 @@ const TrackControls = ({
   const currentLowpassFreqRef = useRef<number>(lowpassFreq || 20000);
   const currentHighpassFreqRef = useRef<number>(highpassFreq || 20);
   
+  // Hold style: which pad triggered playback (for keyup/pointerup stop)
+  const holdTriggeredByRef = useRef<number | null>(null);
+  const stopChopPlaybackRef = useRef<() => void>(() => {});
   // Track when we're processing a seek to prevent interference from update loop
   const isSeekingRef = useRef<boolean>(false);
   // Track if current source is looping - avoids stale currentTime in updatePlaybackTime closure
@@ -789,6 +802,36 @@ const TrackControls = ({
     };
   }, [isPlaying, updatePlaybackTime]);
 
+  // Stop chop playback (Hold style release). Cleans up source, nodes, rAF, and clears hold ref. Defined early so effects below can depend on it.
+  const stopChopPlayback = useCallback(() => {
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.stop();
+      } catch (_) {}
+      audioSourceRef.current = null;
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+    if (lowpassFilterRef.current) {
+      lowpassFilterRef.current.disconnect();
+      lowpassFilterRef.current = null;
+    }
+    if (highpassFilterRef.current) {
+      highpassFilterRef.current.disconnect();
+      highpassFilterRef.current = null;
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    holdTriggeredByRef.current = null;
+    setIsPlaying(false);
+    if (onPlaybackStateChange) {
+      onPlaybackStateChange(false);
+    }
+  }, [onPlaybackStateChange]);
 
   // Handle keyboard events for cue points
   useEffect(() => {
@@ -812,6 +855,9 @@ const TrackControls = ({
       // Only handle key presses if this is a cue track AND it's selected
       if (mode !== 'cue' || !isSelected) return;
 
+      // Hold style: ignore key repeat so holding the key acts as a gate (play on first keydown, stop on keyup). Cue/One-Shot keep repeat = roll/retrigger.
+      if (chopTriggerStyle === 'hold' && event.repeat) return;
+
       // Map number keys 1-0 to cue points
       const keyMap: { [key: string]: number } = {
         '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
@@ -821,6 +867,12 @@ const TrackControls = ({
       const cueIndex = keyMap[event.key];
 
       if (cueIndex !== undefined && cueIndex < cuePoints.length) {
+        // One-Shot: don't trigger if this node is at or past the next (invalid slice)
+        if (chopTriggerStyle === 'one-shot' && cueIndex < cuePoints.length - 1) {
+          const curr = Number(cuePoints[cueIndex]);
+          const next = Number(cuePoints[cueIndex + 1]);
+          if (!Number.isNaN(curr) && !Number.isNaN(next) && curr >= next) return;
+        }
         playCuePointRef.current(cueIndex);
       }
     };
@@ -829,7 +881,28 @@ const TrackControls = ({
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [mode, isSelected, cuePoints]);
+  }, [mode, isSelected, cuePoints, chopTriggerStyle, cueDragState]);
+
+  // Keyup: stop Hold-style playback when the triggering key is released
+  useEffect(() => {
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (mode !== 'cue' || chopTriggerStyle !== 'hold' || !isSelected) return;
+      const keyMap: { [key: string]: number } = {
+        '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+        '6': 5, '7': 6, '8': 7, '9': 8, '0': 9
+      };
+      const cueIndex = keyMap[event.key];
+      if (cueIndex !== undefined && holdTriggeredByRef.current === cueIndex) {
+        stopChopPlaybackRef.current();
+      }
+    };
+    window.addEventListener('keyup', handleKeyUp);
+    return () => window.removeEventListener('keyup', handleKeyUp);
+  }, [mode, chopTriggerStyle, isSelected]);
+
+  useEffect(() => {
+    stopChopPlaybackRef.current = stopChopPlayback;
+  }, [stopChopPlayback]);
 
   // Handle play/pause functionality
   const togglePlayback = async () => {
@@ -967,18 +1040,28 @@ const TrackControls = ({
       }
     };
   }, [togglePlaybackFunctionRef, togglePlayback]);
-  
-  // Play from a specific cue point
+
+  // Play from a specific cue point (behavior depends on chopTriggerStyle)
   const playCuePoint = async (index: number) => {
     
     if (!audioContext || !audioBuffer || index >= cuePoints.length) {
       return;
     }
 
+    const style = chopTriggerStyle;
+    const cueTime = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+
+    // One-Shot: invalid trigger if this node is at or past the next node (no valid slice)
+    if (style === 'one-shot' && index < cuePoints.length - 1) {
+      const currNum = Number(cuePoints[index]);
+      const nextNum = Number(cuePoints[index + 1]);
+      if (!Number.isNaN(currNum) && !Number.isNaN(nextNum) && currNum >= nextNum) return;
+    }
+
     try {
       await ensureAudio(() => {});
       
-      // Stop current playback if any
+      // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {
         audioSourceRef.current.stop();
         audioSourceRef.current = null;
@@ -996,45 +1079,51 @@ const TrackControls = ({
         highpassFilterRef.current = null;
       }
       
-      // Set the active cue index and update refs immediately
       setActiveCueIndex(index);
       activeCueIndexRef.current = index;
-      // Use current node position (incl. drag) when triggering; playback won't follow drag
-      const cueTime = getCurrentCueTimestamp(cuePoints, cueDragState, index);
       cueStartTimeRef.current = cueTime;
       setCurrentTime(cueTime);
       if (onPlaybackTimeChange) {
         onPlaybackTimeChange(cueTime);
       }
       
-      // Create audio chain manually to ensure current volume and speed are applied
       const audioChain = createAudioChainWithCurrentSettings();
       if (!audioChain) return;
       
       const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+      const playbackRate = currentSpeedRef.current;
       
-      // Store references
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
       lowpassFilterRef.current = lowpassFilter;
       highpassFilterRef.current = highpassFilter;
       isSourceLoopingRef.current = false;
-
-      // Store start time
       startTimeRef.current = audioContext.currentTime;
 
-      sourceNode.start(0, cueTime);
-      playbackStartTimeRef.current = cueTime;
+      if (style === 'one-shot') {
+        const sliceStart = cueTime;
+        const sliceEnd = getSliceEnd(cuePoints, index, audioBuffer.duration, sliceStart);
+        const durationSec = (sliceEnd - sliceStart) / playbackRate;
+        sourceNode.start(0, sliceStart);
+        sourceNode.stop(audioContext.currentTime + durationSec);
+        playbackStartTimeRef.current = sliceStart;
+      } else {
+        // Cue or Hold: play from cue to end of buffer
+        sourceNode.start(0, cueTime);
+        playbackStartTimeRef.current = cueTime;
+        if (style === 'hold') {
+          holdTriggeredByRef.current = index;
+        }
+      }
+
       setIsPlaying(true);
       if (onPlaybackStateChange) {
         onPlaybackStateChange(true);
       }
       
-      // Start the animation frame loop for smooth updates
       lastUpdateTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
       
-      // Record cue trigger event
       if (trackId) {
         addRecordingEvent({
           type: 'cue_trigger',
@@ -1042,14 +1131,15 @@ const TrackControls = ({
           data: {
             cueIndex: index,
             cueTime,
-            mode
+            mode,
+            chopTriggerStyle: style
           }
         });
       }
       
-      // Handle playback end
       sourceNode.onended = () => {
         if (audioSourceRef.current === sourceNode) {
+          holdTriggeredByRef.current = null;
           setIsPlaying(false);
           audioSourceRef.current = null;
           gainNodeRef.current = null;
@@ -1073,6 +1163,7 @@ const TrackControls = ({
     } catch (error) {
       console.error('Error in playCuePoint:', error);
       setIsPlaying(false);
+      holdTriggeredByRef.current = null;
     }
   };
 
@@ -1451,17 +1542,28 @@ const TrackControls = ({
           <div className="grid grid-cols-5 gap-0.5 md:gap-1 mb-1">
             {cuePoints.slice(0, 5).map((_, index) => {
               const currentTimestamp = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+              const isHold = chopTriggerStyle === 'hold';
+              // One-Shot: invalid as trigger if this node is at or past the next node (coerce to number for JSON/string values)
+              const currNum = Number(cuePoints[index]);
+              const nextNum = index < cuePoints.length - 1 ? Number(cuePoints[index + 1]) : NaN;
+              const isOneShotInvalidTrigger = chopTriggerStyle === 'one-shot' && !Number.isNaN(nextNum) && currNum >= nextNum;
               return (
                 <button
                   key={`cue-top-${index}`}
-                  onClick={() => !disabled && playCuePoint(index)}
+                  type="button"
+                  onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
+                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   disabled={disabled}
+                  title={isOneShotInvalidTrigger ? 'Invalid One-Shot start (past next node)' : undefined}
                   className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
                     disabled
                       ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
-                      : activeCueIndex === index
-                        ? 'bg-audafact-alert-red text-audafact-text-primary'
-                        : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
+                      : isOneShotInvalidTrigger
+                        ? 'bg-audafact-surface-2 text-audafact-text-secondary opacity-50 cursor-default'
+                        : activeCueIndex === index
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
                   }`}
                 >
                   <span className="font-medium">{index + 1}</span>
@@ -1478,17 +1580,28 @@ const TrackControls = ({
               const index = idx + 5;
               const label = index === 9 ? '0' : String(index + 1);
               const currentTimestamp = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+              const isHold = chopTriggerStyle === 'hold';
+              // One-Shot: invalid as trigger if this node is at or past the next node (coerce to number for JSON/string values)
+              const currNum = Number(cuePoints[index]);
+              const nextNum = index < cuePoints.length - 1 ? Number(cuePoints[index + 1]) : NaN;
+              const isOneShotInvalidTrigger = chopTriggerStyle === 'one-shot' && !Number.isNaN(nextNum) && currNum >= nextNum;
               return (
                 <button
                   key={`cue-bottom-${index}`}
-                  onClick={() => !disabled && playCuePoint(index)}
+                  type="button"
+                  onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
+                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   disabled={disabled}
+                  title={isOneShotInvalidTrigger ? 'Invalid One-Shot start (past next node)' : undefined}
                   className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
                     disabled
                       ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
-                      : activeCueIndex === index
-                        ? 'bg-audafact-alert-red text-audafact-text-primary'
-                        : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
+                      : isOneShotInvalidTrigger
+                        ? 'bg-audafact-surface-2 text-audafact-text-secondary opacity-50 cursor-default'
+                        : activeCueIndex === index
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
                   }`}
                 >
                   <span className="font-medium">{label}</span>
