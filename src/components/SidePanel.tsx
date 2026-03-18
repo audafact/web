@@ -33,6 +33,8 @@ interface AudioAsset {
   duration?: number;
   fileUrl?: string;
   bpm?: number;
+  key?: string;
+  beats?: number[];
 }
 
 interface UploadButtonProps {
@@ -1053,7 +1055,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type,
+                                                type: track.type === 'wav' ? 'wav' : 'mp3',
                                                 size: track.size,
                                                 bpm: track.bpm,
                                               },
@@ -1091,10 +1093,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type,
+                                                type: track.type === 'wav' ? 'wav' : 'mp3',
                                                 size: track.size,
                                                 bpm: track.bpm,
-                                                key: track.key,
+                                                key: track.key ?? undefined,
                                               },
                                               false
                                             )
@@ -1392,6 +1394,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                       type: track.type,
                                                       size: track.size,
                                                       bpm: track.bpm,
+                                                      file: null,
+                                                      uploadedAt: Date.now(),
                                                     },
                                                     true
                                                   )
@@ -1426,7 +1430,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                       type: track.type,
                                                       size: track.size,
                                                       bpm: track.bpm,
-                                                      key: track.key,
+                                                      key: track.key ?? undefined,
+                                                      file: null,
+                                                      uploadedAt: Date.now(),
                                                     },
                                                     true
                                                   )
@@ -1798,8 +1804,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 : item.fileKey
                                   ? { kind: 'key' as const, key: item.fileKey }
                                   : null;
-                              const isThisPlaying = canPlay && item.fileKey && isCurrentKey(item.fileKey);
-                              const isThisLoading = canPlay && item.fileKey && isLoading && isCurrentKey(item.fileKey);
+                              const isThisPlaying = !!(canPlay && item.fileKey && isCurrentKey(item.fileKey));
+                              const isThisLoading = !!(canPlay && item.fileKey && isLoading && isCurrentKey(item.fileKey));
                               return (
                                 <div
                                   key={`${item.type}-${item.id}`}
@@ -1850,11 +1856,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         <Tooltip content="Add to Studio" position="top" delay={150}>
                                           <button
                                             onClick={() => {
+                                              const fileKey = item.fileKey;
+                                              if (!fileKey) return;
                                               const userTrack: UserTrack = {
                                                 id: item.dbId || item.id,
                                                 name: item.label,
                                                 file: null,
-                                                fileKey: item.fileKey,
+                                                fileKey,
                                                 type: 'audio/wav',
                                                 size: '-',
                                                 uploadedAt: Date.now()
@@ -2074,9 +2082,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
             setExportModalPerformance(null);
             return;
           }
-          if (exportModalPerformance.databaseId) {
-            await savePerformanceName(exportModalPerformance.id, filename);
-          }
+          await savePerformanceName(exportModalPerformance.id, filename);
           exportPerformance(exportModalPerformance.id, { filename, format });
           if (pendingExport && pendingExport.performanceId === exportModalPerformance.id && !pendingExport.canSave) {
             discardPerformance(exportModalPerformance.id);
