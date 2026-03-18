@@ -319,7 +319,7 @@ const Home = () => {
     {
       icon: '🎯',
       title: 'xcuevator',
-      description: 'Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation with AI-generated sounds.'
+      description: 'Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation with your samples.'
     },
     {
       icon: '📊',
@@ -328,8 +328,8 @@ const Home = () => {
     },
     {
       icon: '🎼',
-      title: 'curated library',
-      description: 'Access our handpicked collection of AI-generated, royalty-free tracks. Practice sampling safely while building your skills and creative confidence.'
+      title: 'Library & discovery',
+      description: 'Use provided royalty-free sounds when you want a starting point. Bring your own audio for everything else.'
     }
   ], []);
 
@@ -381,14 +381,14 @@ const Home = () => {
               
               
               <h2 className="text-base sm:text-lg font-medium text-slate-400 mb-4 sm:mb-6 tracking-wide">
-                Discover sonic treasures, hone your craft, and share your creations freely with AI-generated, royalty-free tracks — no clearance, no stress.
+                Discover sonic treasures, hone your craft, and share your creations freely with provided royalty-free sounds — no clearance, no stress.
               </h2>
               
               <div className="max-w-2xl mx-auto">
                 <p className="text-base sm:text-lg text-slate-300 mb-6 leading-relaxed">
                   {isMobile
-                    ? 'Master sampling workflows quickly with intuitive tools designed for beginners. Practice with AI-generated tracks, share freely without copyright issues, and join a community focused on putting control in the hands of the creators.'
-                    : 'Master sampling workflows quickly with intuitive tools designed for beginners. Practice with AI-generated tracks, share your creations freely without copyright issues, and join a growing community of creators who value the freedom to create and share on their own terms.'}
+                    ? 'Master sampling workflows quickly with intuitive tools designed for beginners. Practice with available sounds, share freely without copyright issues, and join a community focused on putting control in the hands of the creators.'
+                    : 'Master sampling workflows quickly with intuitive tools designed for beginners. Practice with available sounds, share your creations freely without copyright issues, and join a growing community of creators who value the freedom to create and share on their own terms.'}
                 </p>
                 
                 <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-6 sm:mb-8 text-xs sm:text-sm text-slate-400">
@@ -402,25 +402,25 @@ const Home = () => {
 
                 <p className="text-slate-300 mb-8 font-medium">
                   {user
-                    ? (isMobile ? 'Start creating.' : 'Jump into the studio and start creating with your library and saved tracks.')
+                    ? (isMobile ? 'Start creating.' : 'Jump into the studio and start creating with your tracks and available sounds.')
                     : (isMobile ? 'Try the demo.' : 'Click below to try the demo and experience the freedom of sampling without the uncertainty.')}
                 </p>
                 
                 {user ? (
                   <p className="text-slate-400 mb-8">
                     {isMobile
-                      ? 'Access your library and saved tracks in the studio.'
-                      : 'You can also access your full library and saved tracks in the studio.'}
+                      ? 'Access your tracks and available sounds in the studio.'
+                      : 'You can also explore available sounds and your saved tracks in the studio.'}
                   </p>
                 ) : (
                   <p className="text-slate-400 mb-8">
                     {isMobile ? (
                       <>
-                        Want early access? <a href="/auth" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200 font-medium">Join the waitlist</a> to be among the first to access the AI library and share your creations without legal uncertainty.
+                        Want early access? <a href="/auth" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200 font-medium">Join the waitlist</a> to be among the first to access the sampler workflow and share your creations without legal uncertainty.
                       </>
                     ) : (
                       <>
-                        Want early access? <a href="/auth" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200 font-medium">Join the waitlist</a> to be among the first to access our curated library of AI-generated, royalty-free tracks and share your sampled creations without worrying about copyright issues.
+                        Want early access? <a href="/auth" className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200 font-medium">Join the waitlist</a> to be among the first to access available sounds to explore and share your creations without worrying about copyright issues.
                       </>
                     )}
                   </p>
@@ -486,8 +486,8 @@ const Home = () => {
               </h2>
               <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
                 {isMobile
-                  ? 'Be among the first to access Audafact when we launch. Get early access to the AI library and share your creations without legal uncertainty.'
-                  : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
+                  ? 'Be among the first to access Audafact when we launch. Get early access to the sampler workflow and share your creations without legal uncertainty.'
+                  : 'Be among the first to access Audafact when we launch. Get early access to the sampler workflow and available sounds to explore, and share your creations freely without worrying about copyright issues. Perfect for creators who want full control over their work.'}
               </p>
               <button
                 className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
