@@ -116,7 +116,8 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
         {!canSave && (
           <div className="mb-4 p-3 bg-amber-500/20 border border-amber-500/40 rounded-lg">
             <p className="text-sm text-amber-200">
-              You&apos;ve reached your recording limit (1). Name and download as MP3 — this recording won&apos;t be saved to the app.
+              You&apos;ve hit your plan&apos;s recording limit. Export your flip to finish the idea (MP3) — upgrade for more saves
+              and WAV.
             </p>
           </div>
         )}

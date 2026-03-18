@@ -72,8 +72,21 @@ export const useAccessControl = () => {
   };
 
   const getUpgradeMessage = (action: string): string => {
-    const config = EnhancedAccessService.getFeatureGateConfig(action);
-    return config.message;
+    const limitActions: Array<"upload" | "save_session" | "record"> = [
+      "upload",
+      "save_session",
+      "record",
+    ];
+    if (
+      tier.id !== "guest" &&
+      tier.id !== "pro" &&
+      limitActions.includes(action as (typeof limitActions)[number])
+    ) {
+      return AccessService.getUpgradeMessage(
+        action as "upload" | "save_session" | "record"
+      );
+    }
+    return EnhancedAccessService.getFeatureGateConfig(action, tier).message;
   };
 
   return {

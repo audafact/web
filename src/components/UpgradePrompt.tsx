@@ -30,7 +30,7 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
             <Crown className="h-5 w-5 text-audafact-text-primary" />
             <div>
               <p className="text-sm font-medium text-audafact-text-primary">
-                {feature} requires Pro Creator
+                {feature}
               </p>
               <p className="text-xs text-audafact-text-primary opacity-90">
                 {message}
@@ -58,7 +58,7 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
           </div>
         </div>
         <h3 className="text-lg font-semibold audafact-heading mb-2">
-          {feature} - Pro Feature
+          {feature}
         </h3>
         <p className="audafact-text-secondary mb-4">
           {message}
@@ -67,7 +67,7 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
           onClick={handleUpgrade}
           className="audafact-button-primary"
         >
-          Upgrade to Pro Creator
+            View plans
         </button>
       </div>
     );
@@ -84,12 +84,8 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
         </div>
         
         <h2 className="text-xl font-bold audafact-heading text-center mb-2">
-          Upgrade Required
-        </h2>
-        
-        <h3 className="text-lg font-semibold audafact-text-secondary text-center mb-4">
           {feature}
-        </h3>
+        </h2>
         
         <p className="audafact-text-secondary text-center mb-6">
           {message}

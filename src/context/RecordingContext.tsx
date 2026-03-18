@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { DatabaseService } from '../services/databaseService';
+import { getNumericLimitsForDbTier } from '../config/tierConfig';
 import { Recording, Session } from '../types/music';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
@@ -314,8 +315,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 .select('access_tier')
                 .eq('id', user.id)
                 .single();
-              const userTier = userTierError ? 'free' : (userData?.access_tier || 'free');
-              const maxRecordings = userTier === 'pro' ? Infinity : 1;
+              const rawTier = userTierError ? 'free' : (userData?.access_tier || 'free');
+              const normalized =
+                rawTier === 'pro' || rawTier === 'enterprise'
+                  ? 'pro'
+                  : rawTier === 'starter'
+                    ? 'starter'
+                    : 'free';
+              const maxRecordings = getNumericLimitsForDbTier(normalized).maxRecordings;
               canSave = currentRecordingCount < maxRecordings;
 
               if (canSave) {
@@ -532,8 +539,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           .eq('id', user.id)
           .single();
         
-        const userTier = userError ? 'free' : (userData?.access_tier || 'free');
-        const maxSessions = userTier === 'pro' ? Infinity : 2;
+        const rawTier = userError ? 'free' : (userData?.access_tier || 'free');
+        const normalized =
+          rawTier === 'pro' || rawTier === 'enterprise'
+            ? 'pro'
+            : rawTier === 'starter'
+              ? 'starter'
+              : 'free';
+        const maxSessions = getNumericLimitsForDbTier(normalized).maxSessions;
         
         if (currentSessionCount >= maxSessions) {
           console.warn('User has reached session limit');
