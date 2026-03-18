@@ -1,6 +1,9 @@
 /**
  * Rank tracks (library + uploads) by key + tempo compatibility with a session reference track.
  * MVP: client-side only, weighted scores and human-readable adjustment hints.
+ *
+ * PRD (sample suggestions): Guests may view suggestions; "add suggested sample" → SignupModal
+ * ("Add this sample by creating a free account"). Free+ can add.
  */
 
 export interface SuggestionCandidate {

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../services/supabase';
 
 interface UserAccess {
-  accessTier: 'free' | 'pro' | null;
+  accessTier: 'free' | 'starter' | 'pro' | null;
   subscriptionId: string | null;
   planInterval: 'monthly' | 'yearly' | null;
   loading: boolean;
@@ -12,7 +12,7 @@ interface UserAccess {
 
 export const useUserAccess = (): UserAccess => {
   const { user } = useAuth();
-  const [accessTier, setAccessTier] = useState<'free' | 'pro' | null>(null);
+  const [accessTier, setAccessTier] = useState<'free' | 'starter' | 'pro' | null>(null);
   const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
   const [planInterval, setPlanInterval] = useState<'monthly' | 'yearly' | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +42,10 @@ export const useUserAccess = (): UserAccess => {
           setError(fetchError.message);
           setAccessTier('free');
         } else {
-          setAccessTier(data?.access_tier || 'free');
+          const t = (data?.access_tier || 'free').toLowerCase();
+          if (t === 'enterprise' || t === 'pro') setAccessTier('pro');
+          else if (t === 'starter') setAccessTier('starter');
+          else setAccessTier('free');
           setSubscriptionId(data?.subscription_id || null);
           setPlanInterval(data?.plan_interval || null);
         }

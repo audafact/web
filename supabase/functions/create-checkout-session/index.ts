@@ -18,7 +18,14 @@ serve(async (req) => {
   }
 
   try {
-    const { priceId, userId, email, successUrl, cancelUrl } = await req.json()
+    const { priceId, userId, email, successUrl, cancelUrl, planTier } = await req.json() as {
+      priceId: string
+      userId: string
+      email: string
+      successUrl: string
+      cancelUrl: string
+      planTier?: 'starter' | 'pro'
+    }
 
     if (!priceId || !userId || !email) {
       throw new Error('Missing required parameters')
@@ -90,10 +97,12 @@ serve(async (req) => {
       cancel_url: cancelUrl,
       metadata: {
         supabase_user_id: userId,
+        plan_tier: planTier === 'starter' ? 'starter' : 'pro',
       },
       subscription_data: {
         metadata: {
           supabase_user_id: userId,
+          plan_tier: planTier === 'starter' ? 'starter' : 'pro',
         },
       },
       // Customization options

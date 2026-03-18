@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
-import { DatabaseService } from './databaseService';
 import { UserTier, FeatureGateConfig } from '../types/music';
+import { getNumericLimitsForDbTier } from '../config/tierConfig';
 
 export interface AccessLimits {
   maxUploads: number;
@@ -23,27 +23,13 @@ export interface AccessStatus {
 }
 
 export class AccessService {
-  private static readonly FREE_LIMITS: AccessLimits = {
-    maxUploads: 3,
-    maxSessions: 2,
-    maxRecordings: 1,
-    maxLibraryTracks: 10,
-    canDownload: false
-  };
-
-  private static readonly PRO_LIMITS: AccessLimits = {
-    maxUploads: Infinity,
-    maxSessions: Infinity,
-    maxRecordings: Infinity,
-    maxLibraryTracks: Infinity,
-    canDownload: true
-  };
-
   /**
-   * Get access limits based on user's tier
+   * Get access limits based on DB access_tier (free | starter | pro | enterprise)
    */
   static getLimitsForTier(accessTier: string): AccessLimits {
-    return accessTier === 'pro' ? this.PRO_LIMITS : this.FREE_LIMITS;
+    const t = (accessTier || 'free').toLowerCase();
+    if (t === 'enterprise') return getNumericLimitsForDbTier('pro');
+    return getNumericLimitsForDbTier(t === 'starter' ? 'starter' : t === 'pro' ? 'pro' : 'free');
   }
 
   /**
@@ -86,7 +72,7 @@ export class AccessService {
         currentSessions: 0,
         currentRecordings: 0,
         currentLibraryTracks: 0,
-        limits: this.FREE_LIMITS,
+        limits: getNumericLimitsForDbTier('free'),
         canUpload: false,
         canSaveSession: false,
         canRecord: false,
@@ -125,7 +111,7 @@ export class AccessService {
       case 'download_mp3':
         return accessTier !== 'guest'; // Free and Pro can export MP3
       case 'download_wav':
-        return accessTier === 'pro'; // Only Pro can export WAV
+        return accessTier === 'pro' || accessTier === 'enterprise'; // WAV: Pro only
       
       case 'upload':
         const uploadsResult = await supabase
@@ -157,25 +143,23 @@ export class AccessService {
    * Get upgrade prompt message for a specific action
    */
   static getUpgradeMessage(action: 'upload' | 'save_session' | 'record' | 'add_library_track' | 'download' | 'download_mp3' | 'download_wav'): string {
-    const baseMessage = "Upgrade to Pro Creator to unlock this feature.";
-    
     switch (action) {
       case 'upload':
-        return "You've reached your upload limit (3 tracks). " + baseMessage;
+        return "You've reached your upload limit. Upgrade to keep creating with more tracks.";
       case 'save_session':
-        return "You've reached your session limit (2 sessions). " + baseMessage;
+        return "Upgrade to unlock unlimited sessions and advanced performance modes.";
       case 'record':
-        return "You've reached your recording limit (1 recording). " + baseMessage;
+        return "Upgrade to unlock unlimited sessions and more recordings.";
       case 'add_library_track':
-        return "Sign up to add tracks from the library to your studio. " + baseMessage;
+        return "Add this sample by creating a free account.";
       case 'download':
-        return "Download your recordings with Pro Creator. " + baseMessage;
+        return "Export your flip to finish your idea — upgrade for full export options.";
       case 'download_mp3':
-        return "Sign up to export your recordings as MP3. " + baseMessage;
+        return "Create a free account to export your recordings as MP3.";
       case 'download_wav':
-        return "Upgrade to Pro Creator for high-quality WAV export. " + baseMessage;
+        return "Export your track in high-quality WAV for your DAW — unlock with Pro.";
       default:
-        return baseMessage;
+        return "Upgrade to unlock this feature.";
     }
   }
 
@@ -254,45 +238,55 @@ export class EnhancedAccessService extends AccessService {
   }
   
   static getFeatureGateConfig(feature: string, tier?: UserTier): FeatureGateConfig {
+    const atLimit =
+      tier?.id === 'free' || tier?.id === 'starter';
     const configs: Record<string, FeatureGateConfig> = {
       upload: {
         gateType: 'modal',
-        message: "🎧 Ready to remix your own sounds?",
-        ctaText: "Sign up to upload tracks",
+        message: "Create a free account to upload your own tracks and keep creating.",
+        ctaText: "Create free account",
         upgradeRequired: false
       },
       save_session: {
         gateType: 'modal',
-        message: "💾 Don't lose your work",
-        ctaText: "Sign up to save session",
+        message: "Create a free account to keep your work.",
+        ctaText: "Create free account",
+        upgradeRequired: false
+      },
+      add_second_source: {
+        gateType: 'modal',
+        message: "Create a free account to add more tracks and keep your work.",
+        ctaText: "Create free account",
         upgradeRequired: false
       },
       record: {
         gateType: 'modal',
-        message: tier?.id === 'free' 
-          ? "🎙 You've used your free recording. Upgrade for unlimited recordings!"
-          : "🎙 Record and export your performances",
-        ctaText: tier?.id === 'free' 
-          ? "Upgrade to Pro Creator" 
-          : "Upgrade to Pro Creator",
-        upgradeRequired: true
+        message:
+          tier?.id === 'guest'
+            ? "Record your performance by creating a free account."
+            : atLimit
+              ? "Upgrade to unlock unlimited sessions and more recordings."
+              : "Record and export your performances.",
+        ctaText:
+          tier?.id === 'guest' ? "Create free account" : "View plans",
+        upgradeRequired: tier?.id !== 'guest'
       },
       download: {
         gateType: 'modal',
-        message: "💿 Download your recordings",
-        ctaText: "Upgrade to Pro Creator",
+        message: "Export your flip to finish your idea.",
+        ctaText: "View plans",
         upgradeRequired: true
       },
       download_mp3: {
         gateType: 'modal',
-        message: "Sign up to export your recordings as MP3.",
-        ctaText: "Sign up now",
+        message: "Create a free account to export your recordings as MP3.",
+        ctaText: "Create free account",
         upgradeRequired: false
       },
       download_wav: {
         gateType: 'modal',
-        message: "💿 Export high-quality WAV for your DAW",
-        ctaText: "Upgrade to Pro Creator",
+        message: "Unlock expressive performance and production control — export WAV with Pro.",
+        ctaText: "Upgrade to Pro",
         upgradeRequired: true
       },
       edit_cues: {

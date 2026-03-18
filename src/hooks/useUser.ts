@@ -1,81 +1,27 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../services/supabase";
+import type { UserTier, LibraryTrack } from "../types/music";
 import {
-  UserTier,
-  FeatureAccess,
-  UsageLimits,
-  LibraryTrack,
-} from "../types/music";
+  GUEST_FEATURES,
+  GUEST_LIMITS,
+  FREE_FEATURES,
+  FREE_LIMITS,
+  STARTER_FEATURES,
+  STARTER_LIMITS,
+  PRO_FEATURES,
+  PRO_LIMITS,
+} from "../config/tierConfig";
 import {
   LibraryService,
   DatabaseLibraryTrack,
 } from "../services/libraryService";
 
-// Tier configurations as specified in PRD 2
-const GUEST_FEATURES: FeatureAccess = {
-  canUpload: false,
-  canSaveSession: false,
-  canRecord: false,
-  canDownload: false,
-  canExportMp3: false,
-  canExportWav: false,
-  canEditCues: false,
-  canEditLoops: false,
-  canBrowseLibrary: true, // View only
-  canAccessProTracks: false,
-};
-
-const FREE_FEATURES: FeatureAccess = {
-  canUpload: true,
-  canSaveSession: true,
-  canRecord: true,
-  canDownload: true, // Derived: canExportMp3 || canExportWav (free gets MP3)
-  canExportMp3: true,
-  canExportWav: false,
-  canEditCues: true,
-  canEditLoops: true,
-  canBrowseLibrary: true,
-  canAccessProTracks: false,
-};
-
-const PRO_FEATURES: FeatureAccess = {
-  canUpload: true,
-  canSaveSession: true,
-  canRecord: true,
-  canDownload: true,
-  canExportMp3: true,
-  canExportWav: true,
-  canEditCues: true,
-  canEditLoops: true,
-  canBrowseLibrary: true,
-  canAccessProTracks: true,
-};
-
-const GUEST_LIMITS: UsageLimits = {
-  maxUploads: 0,
-  maxSessions: 0,
-  maxRecordings: 0,
-  maxLibraryTracks: 10,
-};
-
-const FREE_LIMITS: UsageLimits = {
-  maxUploads: 3,
-  maxSessions: 2,
-  maxRecordings: 1,
-  maxLibraryTracks: 10,
-};
-
-const PRO_LIMITS: UsageLimits = {
-  maxUploads: Infinity,
-  maxSessions: Infinity,
-  maxRecordings: Infinity,
-  maxLibraryTracks: Infinity,
-};
+type ResolvedTier = "free" | "starter" | "pro";
 
 export const useUser = () => {
   const { user } = useAuth();
-  const [accessTier, setAccessTier] = useState<"free" | "pro" | null>(null);
+  const [accessTier, setAccessTier] = useState<ResolvedTier | null>(null);
   const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +39,6 @@ export const useUser = () => {
         setLoading(true);
         setError(null);
 
-        // Fetch user tier
         const { data: userData, error: userError } = await supabase
           .from("users")
           .select("access_tier")
@@ -105,22 +50,24 @@ export const useUser = () => {
           setError(userError.message);
           setAccessTier("free");
         } else {
-          const tier = userData?.access_tier || "free";
+          const raw = (userData?.access_tier || "free").toLowerCase();
+          const tier: ResolvedTier =
+            raw === "starter"
+              ? "starter"
+              : raw === "pro" || raw === "enterprise"
+                ? "pro"
+                : "free";
           setAccessTier(tier);
 
-          // Fetch library tracks if user has access
-          if (tier === "free" || tier === "pro") {
+          if (tier === "free" || tier === "starter" || tier === "pro") {
             const { data: tracksData, error: tracksError } = await supabase.rpc(
               "get_user_tracks",
-              {
-                user_id: user.id,
-              }
+              { user_id: user.id }
             );
 
             if (tracksError) {
               console.error("❌ Error fetching library tracks:", tracksError);
             } else {
-              // Transform tracks using LibraryService
               const transformedTracks = LibraryService.transformDatabaseTracks(
                 (tracksData ?? []) as DatabaseLibraryTrack[]
               );
@@ -138,7 +85,7 @@ export const useUser = () => {
     };
 
     fetchUserData();
-  }, [user?.id]); // Only depend on user.id, not the entire user object
+  }, [user?.id]);
 
   const tier = useMemo((): UserTier => {
     if (!user) {
@@ -153,15 +100,24 @@ export const useUser = () => {
     if (accessTier === "pro") {
       return {
         id: "pro",
-        name: "Pro Creator",
+        name: "Pro",
         features: PRO_FEATURES,
         limits: PRO_LIMITS,
       };
     }
 
+    if (accessTier === "starter") {
+      return {
+        id: "starter",
+        name: "Starter",
+        features: STARTER_FEATURES,
+        limits: STARTER_LIMITS,
+      };
+    }
+
     return {
       id: "free",
-      name: "Free User",
+      name: "Free",
       features: FREE_FEATURES,
       limits: FREE_LIMITS,
     };
@@ -173,6 +129,7 @@ export const useUser = () => {
     libraryTracks,
     isGuest: tier.id === "guest",
     isFree: tier.id === "free",
+    isStarter: tier.id === "starter",
     isPro: tier.id === "pro",
     features: tier.features,
     limits: tier.limits,

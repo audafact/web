@@ -11,7 +11,7 @@ export interface Measure {
 // Database Types
 export interface User {
   id: string;
-  access_tier: "free" | "pro" | "enterprise";
+  access_tier: "free" | "starter" | "pro" | "enterprise";
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
@@ -166,7 +166,7 @@ export interface UsageLimits {
 }
 
 export interface UserTier {
-  id: "guest" | "free" | "pro";
+  id: "guest" | "free" | "starter" | "pro";
   name: string;
   features: FeatureAccess;
   limits: UsageLimits;

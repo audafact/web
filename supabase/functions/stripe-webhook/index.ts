@@ -28,15 +28,18 @@ serve(async (req) => {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
-        
-        // Update user access tier
+        const priceId = subscription.items.data[0].price.id
+        const starterPriceId = Deno.env.get('STRIPE_STARTER_PRICE_ID') ?? ''
+        const access_tier =
+          starterPriceId && priceId === starterPriceId ? 'starter' : 'pro'
+
         const { error } = await supabase
           .from('users')
           .update({
-            access_tier: 'pro',
+            access_tier,
             subscription_id: subscription.id,
             plan_interval: subscription.items.data[0].price.recurring?.interval || 'monthly',
-            price_id: subscription.items.data[0].price.id,
+            price_id: priceId,
           })
           .eq('id', session.metadata?.supabase_user_id)
 
@@ -79,13 +82,17 @@ serve(async (req) => {
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription
-        
-        // Update subscription details if needed
+        const priceId = subscription.items.data[0].price.id
+        const starterPriceId = Deno.env.get('STRIPE_STARTER_PRICE_ID') ?? ''
+        const access_tier =
+          starterPriceId && priceId === starterPriceId ? 'starter' : 'pro'
+
         const { error } = await supabase
           .from('users')
           .update({
             plan_interval: subscription.items.data[0].price.recurring?.interval || 'monthly',
-            price_id: subscription.items.data[0].price.id,
+            price_id: priceId,
+            access_tier,
           })
           .eq('subscription_id', subscription.id)
 
