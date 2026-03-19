@@ -11,7 +11,7 @@ export interface Measure {
 // Database Types
 export interface User {
   id: string;
-  access_tier: "free" | "pro" | "enterprise";
+  access_tier: "free" | "starter" | "pro" | "enterprise";
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
@@ -32,6 +32,14 @@ export interface Upload {
   key?: string;
   /** Beat positions in seconds (adaptive grid) */
   beat_times?: number[] | null;
+  /** ML-extracted genre labels */
+  genres?: string[] | null;
+  /** ML-extracted mood/theme labels */
+  mood_themes?: string[] | null;
+  /** ML-extracted tags */
+  tags?: string[] | null;
+  /** When ML fields were last updated */
+  ml_analyzed_at?: string | null;
   // Legacy fields for backward compatibility
   file_url?: string;
   full_hash?: string;
@@ -158,7 +166,7 @@ export interface UsageLimits {
 }
 
 export interface UserTier {
-  id: "guest" | "free" | "pro";
+  id: "guest" | "free" | "starter" | "pro";
   name: string;
   features: FeatureAccess;
   limits: UsageLimits;
@@ -236,4 +244,10 @@ export interface UserTrack {
   beats?: number[];
   /** True when track was just uploaded and tempo/key analysis is pending */
   isAnalyzing?: boolean;
+  /** ML-extracted genre labels */
+  genres?: string[];
+  /** ML-extracted mood/theme labels */
+  mood_themes?: string[];
+  /** ML-extracted tags */
+  tags?: string[];
 }

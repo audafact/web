@@ -5,7 +5,10 @@ interface CheckoutSessionResponse {
   error?: string;
 }
 
-export const createCheckoutSession = async (priceId: string): Promise<CheckoutSessionResponse> => {
+export const createCheckoutSession = async (
+  priceId: string,
+  planTier: 'starter' | 'pro' = 'pro'
+): Promise<CheckoutSessionResponse> => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -19,7 +22,8 @@ export const createCheckoutSession = async (priceId: string): Promise<CheckoutSe
         userId: user.id,
         email: user.email,
         successUrl: `${window.location.origin}/checkout-result?success=true`,
-        cancelUrl: `${window.location.origin}/checkout-result?canceled=true`
+        cancelUrl: `${window.location.origin}/checkout-result?canceled=true`,
+        planTier,
       }
     });
 

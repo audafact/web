@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_STRIPE_TEST_PRODUCT_MONTHLY: string;
   readonly VITE_STRIPE_TEST_PRODUCT_YEARLY: string;
   readonly VITE_STRIPE_TEST_PRODUCT_EARLY_ADOPTER: string;
+  readonly VITE_STRIPE_TEST_PRICE_STARTER_MONTHLY?: string;
+  readonly VITE_STRIPE_LIVE_PRICE_STARTER_MONTHLY?: string;
   readonly VITE_STRIPE_TEST_PRICE_MONTHLY: string;
   readonly VITE_STRIPE_TEST_PRICE_YEARLY: string;
   readonly VITE_STRIPE_TEST_PRICE_EARLY_ADOPTER: string;

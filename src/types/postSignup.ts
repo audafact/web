@@ -2,7 +2,7 @@
 
 export interface PostSignupAction {
   id: string;
-  type: 'upload' | 'save_session' | 'add_library_track' | 'edit_cues' | 'record' | 'download';
+  type: 'upload' | 'save_session' | 'add_library_track' | 'add_second_source' | 'edit_cues' | 'record' | 'download';
   timestamp: number;
   context: Record<string, any>;
   priority: 'high' | 'medium' | 'low';

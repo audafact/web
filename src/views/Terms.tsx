@@ -56,7 +56,7 @@ const Terms = () => {
                 Audafact is a sampling workflow platform that provides:
               </p>
               <ul className="list-disc list-inside ml-4 space-y-2">
-                <li>AI-generated, royalty-free music library</li>
+                <li>Platform-provided, royalty-free music/sounds for sampling</li>
                 <li>Sampling and cue mapping tools</li>
                 <li>Audio preview and manipulation features</li>
                 <li>Export and sharing capabilities</li>
@@ -91,7 +91,7 @@ const Terms = () => {
             <section>
               <h2 className="text-xl font-semibold text-white mb-4">6. Intellectual Property</h2>
               <p>
-                The Audafact service and its original content, features, and functionality are owned by Audafact and are protected by international copyright, trademark, and other intellectual property laws. Our AI-generated music library is provided royalty-free for sampling and creative use.
+                The Audafact service and its original content, features, and functionality are owned by Audafact and are protected by international copyright, trademark, and other intellectual property laws. Any platform-provided royalty-free music/sounds are provided for sampling and creative use. Your user-uploaded audio remains subject to the rights and permissions you have to upload and use it.
               </p>
             </section>
 

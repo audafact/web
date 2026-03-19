@@ -418,7 +418,7 @@ const Home = () => {
     {
       icon: '🎵',
       title: 'Always-usable source',
-      description: 'Tracks curated for sampling workflows. Royalty-free library tracks for practice & flips.'
+      description: 'A fast way to get started: royalty-free practice sounds when available, plus your own audio.'
     },
     {
       icon: '🔄',
@@ -490,7 +490,10 @@ const Home = () => {
               
               {/* Subhead */}
               <p className="text-lg sm:text-xl text-slate-300 leading-relaxed">
-                A fast sampling workflow + a curated AI track library—made for looping, slicing, and flipping into your next release. <span className="text-audafact-accent-cyan font-medium">The first step toward a future where creators work directly with each other.</span>
+                A fast sampling workflow + sounds to explore, made for looping, slicing, and flipping into your next release. <span className="text-audafact-accent-cyan font-medium">The first step toward a future where creators work directly with each other.</span>
+              </p>
+              <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
+                Flip samples directly in your browser. No DAW required.
               </p>
               
               {/* Micro reassurance */}
@@ -499,7 +502,7 @@ const Home = () => {
                   <svg className="w-5 h-5 text-green-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  <span>Royalty-free library tracks for practice & flips</span>
+                  <span>Royalty-free practice sounds for flips</span>
                 </div>
                 <div className="flex items-center text-slate-300">
                   <svg className="w-5 h-5 text-green-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -576,7 +579,7 @@ const Home = () => {
                 <div>
                   <h3 className="font-semibold text-white mb-2">loop xtractor</h3>
                   <p className="text-sm text-slate-300 leading-relaxed">
-                    Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy — no clearance needed.
+                    Select and loop any segment with precision. Perfect for creating beats and samples with surgical accuracy. No clearance needed.
                   </p>
                 </div>
               </div>
@@ -591,7 +594,7 @@ const Home = () => {
                 <div>
                   <h3 className="font-semibold text-white mb-2">xcuevator</h3>
                   <p className="text-sm text-slate-300 leading-relaxed">
-                    Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation with AI-generated sounds.
+                    Trigger samples instantly with keyboard shortcuts. Great for live performance and real-time experimentation.
                   </p>
                 </div>
               </div>
@@ -606,7 +609,7 @@ const Home = () => {
                 <div>
                   <h3 className="font-semibold text-white mb-2">waveform visualization</h3>
                   <p className="text-sm text-slate-300 leading-relaxed">
-                    See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis — learn as you create.
+                    See your audio with crystal-clear waveform visualization. Dig deeper into your tracks with precision analysis. Learn as you create.
                   </p>
                 </div>
               </div>
@@ -619,9 +622,9 @@ const Home = () => {
                   <span className="text-2xl">🎼</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white mb-2">curated library</h3>
+                  <h3 className="font-semibold text-white mb-2">Library & discovery</h3>
                   <p className="text-sm text-slate-300 leading-relaxed">
-                    Access our handpicked collection of AI-generated, royalty-free tracks. Practice sampling safely while building your skills and creative confidence.
+                    Use provided royalty-free tracks when you need a starting point. Bring your own audio for everything else.
                   </p>
                 </div>
               </div>
@@ -695,7 +698,7 @@ const Home = () => {
                 </div>
                 <h3 className="text-xl font-semibold text-white mb-4">Direct Collaboration</h3>
                 <p className="text-slate-300 leading-relaxed">
-                  We're working toward tools that let creators connect and collaborate directly. No middlemen, no gatekeepers—just artists working together on their own terms.
+                  We're working toward tools that let creators connect and collaborate directly. No middlemen, no gatekeepers: just artists working together on their own terms.
                 </p>
               </div>
             </div>
@@ -730,7 +733,7 @@ const Home = () => {
               </div>
               <h3 className="text-xl font-semibold text-white">Load a track</h3>
               <p className="text-slate-300 leading-relaxed">
-                Load a track from the curated AI library (or our rotating demo if you're new).
+                Load a track from your audio (or use the rotating demo if you're new).
               </p>
             </div>
             
@@ -771,7 +774,7 @@ const Home = () => {
             
             <div className="text-center mb-8">
               <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-                What you get now—and what's coming next
+                What you get now and what's coming next
               </h2>
             </div>
             
@@ -784,7 +787,7 @@ const Home = () => {
                 </h3>
                 <ul className="space-y-2 text-slate-300 ml-4">
                   <li>• Sampling tool</li>
-                  <li>• Curated AI library</li>
+                  <li>• Creator uploads + available sounds</li>
                   <li>• Audio previews</li>
                 </ul>
               </div>
@@ -809,7 +812,7 @@ const Home = () => {
                   What we're exploring
                 </h3>
                 <ul className="space-y-2 text-slate-300 ml-4">
-                  <li>• Creator uploads</li>
+                  <li>• Creator-powered marketplace</li>
                   <li>• Collaboration tools</li>
                   <li>• Creator-to-creator connections</li>
                 </ul>
@@ -841,12 +844,12 @@ const Home = () => {
             <div className="mt-12 pt-8 border-t border-slate-700/50">
               <div className="grid md:grid-cols-3 gap-8 text-center">
                 <div>
-                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">325+</div>
-                  <div className="text-slate-300">Curated AI tracks ready for flipping</div>
+                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">Your tracks</div>
+                  <div className="text-slate-300">Upload audio and start flipping immediately</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">12</div>
-                  <div className="text-slate-300">New tracks added weekly during beta</div>
+                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">More to explore</div>
+                  <div className="text-slate-300">Additional sounds are added throughout beta</div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">Latency-friendly</div>
@@ -864,7 +867,7 @@ const Home = () => {
                 <div>
                   <h4 className="font-semibold text-white mb-2">Hey, I'm David</h4>
                   <p className="text-slate-300 leading-relaxed">
-                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler and a curated AI library you can actually use. But I'm also thinking about the bigger picture—a future where creators work directly with each other, without gatekeepers managing their relationships. This is just the first phase. Tell me what gets you to the next idea—I'll build toward that.
+                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun. The beta focuses on a nimble sampler, creator uploads, and sounds you can start exploring right away. But I'm also thinking about the bigger picture: a future where creators work directly with each other, without gatekeepers managing their relationships. This is just the first phase. Tell me what gets you to the next idea. I'll build toward that.
                   </p>
                 </div>
               </div>
@@ -916,7 +919,7 @@ const Home = () => {
               </div>
               <h3 className="text-xl font-semibold text-white">Practice flipping legally</h3>
               <p className="text-slate-300 leading-relaxed">
-                With royalty-free tracks built for sampling. Learn the craft without the legal stress.
+                With royalty-free provided material for sampling practice. Learn the craft without the legal stress.
               </p>
             </div>
           </div>
@@ -933,9 +936,9 @@ const Home = () => {
           <div className="max-w-3xl mx-auto space-y-6">
             {/* FAQ Item 1 */}
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
-              <h3 className="text-lg font-semibold text-white mb-3">Is the library royalty-free?</h3>
+              <h3 className="text-lg font-semibold text-white mb-3">Are provided tracks royalty-free?</h3>
               <p className="text-slate-300 leading-relaxed">
-                Yes, all tracks in our curated AI library are royalty-free and specifically designed for sampling workflows. You can use them for practice, flips, and creative projects without worrying about copyright issues.
+                Yes. Tracks we provide for sampling practice are royalty-free and specifically designed for flipping workflows. Use them for practice, flips, and creative projects without worrying about copyright issues.
               </p>
             </div>
             
@@ -943,7 +946,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">Can I upload my own audio?</h3>
               <p className="text-slate-300 leading-relaxed">
-                Not yet during beta, but it's planned for future releases. Right now, we're focused on perfecting the sampling experience with our curated AI library.
+                Yes. During beta, you can upload your own audio in the studio and start flipping immediately.
               </p>
             </div>
             
@@ -951,7 +954,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">Will this replace my DAW?</h3>
               <p className="text-slate-300 leading-relaxed">
-                No—Audafact is designed for fast sample exploration & idea capture. Think of it as a creative spark tool that works alongside your existing DAW workflow.
+                No. Audafact is designed for fast sample exploration & idea capture. Think of it as a creative spark tool that works alongside your existing DAW workflow.
               </p>
             </div>
             
@@ -959,7 +962,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">What about pricing?</h3>
               <p className="text-slate-300 leading-relaxed">
-                We're offering founders' trial pricing for beta users—exact details TBD. Join the waitlist for early access pricing and be among the first to experience Audafact.
+                We're offering founders' trial pricing for beta users (exact details TBD). Join the waitlist for early access pricing and be among the first to experience Audafact.
               </p>
             </div>
             
@@ -967,7 +970,7 @@ const Home = () => {
             <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
               <h3 className="text-lg font-semibold text-white mb-3">What's your vision for independent creators?</h3>
               <p className="text-slate-300 leading-relaxed">
-                We're building toward a future where creators work directly with each other, without labels or publishers managing their relationships. The current beta focuses on sampling tools and a curated library, but we're planning features that will put you in control of your creative partnerships and career trajectory.
+                We're building toward a future where creators work directly with each other, without labels or publishers managing their relationships. The current beta focuses on a fast sampler workflow and sounds to explore, with deeper creator-to-creator tools coming next.
               </p>
             </div>
         </div>
@@ -988,8 +991,8 @@ const Home = () => {
             </h2>
             <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
               {isMobile
-                ? 'Be among the first to access Audafact when we launch. Get early access to the AI library and share your creations without legal uncertainty.'
-                : 'Be among the first to access Audafact when we launch. Get early access to our curated AI music library and share your sampled creations freely without worrying about copyright issues. Join us as we build the future of creator collaboration.'}
+                ? 'Be among the first to access Audafact when we launch. Get early access to the sampler workflow and share your creations with confidence.'
+                : 'Be among the first to access Audafact when we launch. Get early access to the sampler workflow and available sounds to explore, and share your creations without legal stress. Join us as we build the future of creator collaboration.'}
             </p>
             <button
               className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
