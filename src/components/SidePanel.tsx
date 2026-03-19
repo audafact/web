@@ -6,10 +6,12 @@ import { DatabaseService } from '../services/databaseService';
 import { useAuth } from '../context/AuthContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useUser } from '../hooks/useUser';
+import { useGuest } from '../context/GuestContext';
 import { UpgradePrompt } from './UpgradePrompt';
-import { UserTrack } from '../types/music';
+import { UserTrack, type LibraryTrack } from '../types/music';
 import {
   getSampleSuggestions,
+  type SuggestionCandidate,
   type SuggestionReference,
 } from '@/services/sampleSuggestionService';
 import LibraryTrackItem from './LibraryTrackItem';
@@ -38,6 +40,8 @@ interface AudioAsset {
 
 interface UploadButtonProps {
   user: any;
+  guestUploadUsed: boolean;
+  tierId?: 'guest' | 'free' | 'starter' | 'pro';
   canPerformAction: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => Promise<boolean>;
   getUpgradeMessage: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => string;
   showSignupModal: (action: string) => void;
@@ -121,6 +125,8 @@ const SidePanelSubMenuItem: React.FC<SidePanelSubMenuItemProps> = ({
 
 const UploadButton: React.FC<UploadButtonProps> = ({
   user,
+  guestUploadUsed,
+  tierId,
   canPerformAction,
   getUpgradeMessage,
   showSignupModal,
@@ -133,7 +139,7 @@ const UploadButton: React.FC<UploadButtonProps> = ({
   useEffect(() => {
     const checkUploadCapacity = async () => {
       if (!user) {
-        setCanUpload(true); // Guest users can attempt upload (will show signup)
+        setCanUpload(!guestUploadUsed); // Allow exactly 1 guest upload per session
         return;
       }
       
@@ -146,12 +152,17 @@ const UploadButton: React.FC<UploadButtonProps> = ({
     };
 
     checkUploadCapacity();
-  }, [user, canPerformAction, getUpgradeMessage]);
+  }, [user, canPerformAction, getUpgradeMessage, guestUploadUsed]);
 
   const handleClick = async () => {
     // Check if user is authenticated
     if (!user) {
-      showSignupModal('upload');
+      if (guestUploadUsed) {
+        showSignupModal('upload');
+        return;
+      }
+
+      fileInputRef.current?.click();
       return;
     }
     
@@ -170,8 +181,14 @@ const UploadButton: React.FC<UploadButtonProps> = ({
     fileInputRef.current?.click();
   };
 
-  const isDisabled = user && canUpload === false;
-  const tooltipText = isDisabled ? upgradeMessage : 'Upload another track to your collection';
+  // Keep free/starter "at limit" state clickable so it can open an upgrade CTA.
+  const isAtUploadLimit = !!user && canUpload === false;
+  const isDisabled = !user && guestUploadUsed;
+  const tooltipText = isDisabled
+    ? !user
+      ? 'Create a free account to keep and manage your uploaded track'
+      : upgradeMessage
+    : 'Upload another track to your collection';
 
   return (
     <div className="pt-3 border-t border-audafact-divider">
@@ -190,6 +207,27 @@ const UploadButton: React.FC<UploadButtonProps> = ({
         </svg>
         Upload Another Track
       </button>
+
+      {isAtUploadLimit && (
+        <div className="mt-2 rounded-lg border border-audafact-accent-cyan/30 bg-audafact-surface-2 p-2.5">
+          <p className="text-xs audafact-text-secondary">
+            {tierId === 'starter'
+              ? 'You have reached your Starter upload limit. Upgrade to Pro for unlimited uploads, WAV export, and advanced performance modes.'
+              : tierId === 'free'
+                ? 'You have reached your Free upload limit. Upgrade to Starter or Pro to add more tracks and keep creating without interruption.'
+                : (upgradeMessage || 'You reached your upload limit. Upgrade to keep building with more tracks.')}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = '/pricing';
+            }}
+            className="mt-2 text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 transition-colors"
+          >
+            View plans
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -230,6 +268,23 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
+  const { guestTracks, isLoading: guestTracksLoading } = useGuest();
+
+  const guestLibraryTracks = useMemo<LibraryTrack[]>(() => {
+    return guestTracks.map((t) => ({
+      id: t.id,
+      name: t.name,
+      genre: t.genre,
+      bpm: t.bpm,
+      duration: t.duration ?? 0,
+      fileKey: t.file, // For guests: this is a direct URL (not an R2 object key)
+      previewUrl: t.file,
+      type: t.type,
+      size: t.size,
+      tags: [],
+      isDemo: true,
+    }));
+  }, [guestTracks]);
   
   // Collapsible menu state - Tracks open by default, but Sessions/Recordings use saved preference
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -256,17 +311,70 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [allowEmptyAudioTab, setAllowEmptyAudioTab] = useState(true); // Start with Audafact Library tab closed
   const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
 
-  // Suggested Matches section collapsed state (persisted)
-  const [suggestedMatchesExpanded, setSuggestedMatchesExpanded] = useState(() => {
-    const saved = localStorage.getItem('sidePanelSuggestedMatchesExpanded');
+  // Suggested Matches collapsed states (persisted per source)
+  const [suggestedLibraryMatchesExpanded, setSuggestedLibraryMatchesExpanded] = useState(() => {
+    const saved = localStorage.getItem('sidePanelSuggestedMatchesLibraryExpanded');
     if (saved === 'false') return false;
     return true;
   });
   useEffect(() => {
-    localStorage.setItem('sidePanelSuggestedMatchesExpanded', String(suggestedMatchesExpanded));
-  }, [suggestedMatchesExpanded]);
+    localStorage.setItem('sidePanelSuggestedMatchesLibraryExpanded', String(suggestedLibraryMatchesExpanded));
+  }, [suggestedLibraryMatchesExpanded]);
+
+  const [suggestedUploadsMatchesExpanded, setSuggestedUploadsMatchesExpanded] = useState(() => {
+    const saved = localStorage.getItem('sidePanelSuggestedMatchesUploadsExpanded');
+    if (saved === 'false') return false;
+    return true;
+  });
+  useEffect(() => {
+    localStorage.setItem('sidePanelSuggestedMatchesUploadsExpanded', String(suggestedUploadsMatchesExpanded));
+  }, [suggestedUploadsMatchesExpanded]);
 
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
+  // Guest-only: allow exactly 1 local upload per session (no refresh persistence).
+  const [guestUploadUsed, setGuestUploadUsed] = useState(false);
+  const [isAtSessionLimit, setIsAtSessionLimit] = useState(false);
+  const [isAtRecordingLimit, setIsAtRecordingLimit] = useState(false);
+
+  useEffect(() => {
+    // Reset guest-only state when a user signs in.
+    if (user) {
+      setGuestUploadUsed(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkSessionCapacity = async () => {
+      if (!user) {
+        if (mounted) setIsAtSessionLimit(false);
+        return;
+      }
+      const sessionAllowed = await canPerformAction('save_session');
+      if (mounted) setIsAtSessionLimit(!sessionAllowed);
+    };
+    checkSessionCapacity();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, savedSessions.length, canPerformAction]);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkRecordingCapacity = async () => {
+      if (!user) {
+        if (mounted) setIsAtRecordingLimit(false);
+        return;
+      }
+      const recordAllowed = await canPerformAction('record');
+      if (mounted) setIsAtRecordingLimit(!recordAllowed);
+    };
+    checkRecordingCapacity();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, savedRecordings.length, canPerformAction]);
+
   const [exportModalPerformance, setExportModalPerformance] = useState<{
     id: string;
     audioBlob?: Blob;
@@ -312,6 +420,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
   }, []);
 
   const { isPlaying, isLoading, toggle, isCurrentKey } = useSingleAudio();
+  const [currentPreviewTrackId, setCurrentPreviewTrackId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPlaying) setCurrentPreviewTrackId(null);
+  }, [isPlaying]);
 
   // Merge performances (in-memory) with savedRecordings (from DB) for display
   const mergedRecordings = useMemo(() => {
@@ -382,15 +495,50 @@ const SidePanel: React.FC<SidePanelProps> = ({
     }
   }, [pendingSession, savedSessions, user]);
 
-  const suggestedMatches = useMemo(() => {
-    if (!referenceForSuggestions || userLibraryTracks.length === 0) return null;
+  const suggestedLibraryMatches = useMemo(() => {
+    const libraryPool = tier.id === 'guest' ? guestLibraryTracks : userLibraryTracks;
+    if (!referenceForSuggestions || libraryPool.length === 0) return null;
     const ref = referenceForSuggestions;
+
     const hasKey = !!ref.key?.trim();
-    const hasBpm =
-      ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
+    const hasBpm = ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
     if (!hasKey && !hasBpm) return null;
-    return getSampleSuggestions(userLibraryTracks, ref);
-  }, [referenceForSuggestions, userLibraryTracks]);
+
+    const libraryCandidates: SuggestionCandidate[] = libraryPool.map((t) => ({
+      id: t.id,
+      name: t.name,
+      fileKey: t.fileKey,
+      type: t.type,
+      size: t.size,
+      bpm: t.bpm,
+      key: t.key ?? null,
+      beats: t.beats,
+    }));
+
+    return getSampleSuggestions(libraryCandidates, ref);
+  }, [referenceForSuggestions, tier.id, guestLibraryTracks, userLibraryTracks]);
+
+  const suggestedUploadsMatches = useMemo(() => {
+    if (!referenceForSuggestions || userTracks.length === 0) return null;
+    const ref = referenceForSuggestions;
+
+    const hasKey = !!ref.key?.trim();
+    const hasBpm = ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
+    if (!hasKey && !hasBpm) return null;
+
+    const uploadCandidates: SuggestionCandidate[] = userTracks.map((t) => ({
+      id: t.id,
+      name: t.name,
+      fileKey: t.fileKey,
+      type: t.type, // MIME type (e.g. audio/mpeg) - Studio uses this when decoding
+      size: t.size,
+      bpm: t.bpm,
+      key: t.key ?? null,
+      beats: t.beats,
+    }));
+
+    return getSampleSuggestions(uploadCandidates, ref);
+  }, [referenceForSuggestions, userTracks]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -593,10 +741,31 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
     // Check if user is authenticated
     if (!user) {
-      showSignupModal('upload');
-      // Reset the input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      if (guestUploadUsed) {
+        showSignupModal('upload');
+        // Reset the input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        return;
+      }
+
+      try {
+        // Session-only guest upload: Studio replaces the current track and builds cue points.
+        await onUploadTrack(file, 'cue');
+        setGuestUploadUsed(true);
+      } catch (error) {
+        console.error('Guest upload failed:', error);
+      } finally {
+        // Reset the input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      }
+
+      // Only close the sidebar on mobile and tablets (full-width mode)
+      if (window.innerWidth < 1024) {
+        onToggle();
       }
       return;
     }
@@ -713,17 +882,38 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   const handlePreviewPlay = async (asset: AudioAsset | UserTrack, isUserTrack: boolean) => {
     try {
-      const key = isUserTrack
-        ? (asset as UserTrack).fileKey
-        : (asset as AudioAsset).fileKey;
+      const assetId = (asset as any).id as string | undefined;
+      if (assetId) setCurrentPreviewTrackId(assetId);
 
-      if (!key) {
+      const fileKey = (asset as any).fileKey as string | undefined;
+      const directUrl =
+        !isUserTrack
+          ? ((asset as AudioAsset).fileUrl ?? fileKey)
+          : undefined;
+
+      // Guest library tracks use direct URLs (no signed R2 key), so play via an in-memory blob.
+      const looksLikeUrl =
+        !isUserTrack &&
+        typeof directUrl === 'string' &&
+        (directUrl.startsWith('/') || directUrl.startsWith('http'));
+
+      if (looksLikeUrl && directUrl) {
+        const res = await fetch(directUrl);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch preview audio (${res.status})`);
+        }
+        const blob = await res.blob();
+        toggle({ kind: 'blob', blob });
+        return;
+      }
+
+      if (!fileKey) {
         console.error("Missing fileKey for asset", asset);
         return;
       }
 
-      // One-line toggle: signs the key and plays, or stops if same track is currently playing
-      toggle({ kind: "key", key });
+      // Signed R2 key preview (authenticated/library items)
+      toggle({ kind: "key", key: fileKey });
 
       // If you kept per-asset UI state like `setPlayingAssets`, you can still set it here:
       // setPlayingAssets(prev => ({ ...prev, [asset.id]: true }));
@@ -874,30 +1064,30 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 {activeAudioTab === 'library' && (
                   <div id="audafact-library-content" role="tabpanel" aria-labelledby="audafact-library-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                                           <div className="space-y-4">
-                        {referenceForSuggestions != null && suggestedMatches != null && (
+                        {referenceForSuggestions != null && suggestedLibraryMatches != null && (
                           <div
                             className="rounded-lg border border-audafact-divider bg-audafact-surface-2/60 overflow-hidden"
                             aria-label="Suggested matches for current session"
                           >
                             <button
                               type="button"
-                              onClick={() => setSuggestedMatchesExpanded((v) => !v)}
+                              onClick={() => setSuggestedLibraryMatchesExpanded((v) => !v)}
                               className="w-full flex items-center justify-between gap-2 p-3 text-left audafact-heading text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2/80 transition-colors focus:outline-none focus:ring-1 focus:ring-audafact-accent-cyan focus:ring-inset"
-                              aria-expanded={suggestedMatchesExpanded}
+                              aria-expanded={suggestedLibraryMatchesExpanded}
                               aria-controls="suggested-matches-content"
                               id="suggested-matches-heading"
                             >
-                              <span>
-                                Suggested Matches
+                                  <span>
+                                  Suggested Matches
                                 {referenceForSuggestions?.referencePlaybackSpeed != null &&
                                   Math.abs(referenceForSuggestions.referencePlaybackSpeed - 1) >= 0.02 && (
                                     <span className="ml-1.5 font-normal text-audafact-text-secondary">
-                                      (at {referenceForSuggestions.referencePlaybackSpeed.toFixed(2)}×)
+                                      (at {referenceForSuggestions.referencePlaybackSpeed.toFixed(2)}x)
                                     </span>
                                   )}
                               </span>
                               <svg
-                                className={`w-4 h-4 flex-shrink-0 text-audafact-text-secondary transition-transform duration-200 ${suggestedMatchesExpanded ? 'rotate-180' : ''}`}
+                                className={`w-4 h-4 flex-shrink-0 text-audafact-text-secondary transition-transform duration-200 ${suggestedLibraryMatchesExpanded ? 'rotate-180' : ''}`}
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -906,8 +1096,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
                             </button>
-                            {suggestedMatchesExpanded && (
+                            {suggestedLibraryMatchesExpanded && (
                             <div id="suggested-matches-content" className="px-3 pb-3 pt-0" role="region" aria-labelledby="suggested-matches-heading">
+                              {tier.id === 'guest' && (
+                                <div className="text-xs audafact-text-secondary mb-3">
+                                  Preview is available. Create a free account to add suggested samples.
+                                </div>
+                              )}
                             {suggestionReferenceTrackOptions.length > 1 &&
                              effectiveSuggestionReferenceTrackId &&
                              onSuggestionReferenceTrackChange && (
@@ -966,13 +1161,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 </div>
                               </div>
                             )}
-                            {suggestedMatches.length === 0 ? (
-                              <p className="text-xs audafact-text-secondary leading-relaxed">
-                                No close matches — try exploring the library.
-                              </p>
-                            ) : (
+                            {suggestedLibraryMatches.length > 0 ? (
                               <ul className="space-y-2">
-                                {suggestedMatches.map(({ track, adjustmentLine, suggestedSpeedReason }) => {
+                                {suggestedLibraryMatches.map(({ track, adjustmentLine, suggestedSpeedReason }) => {
                                   const bpmOk =
                                     typeof track.bpm === 'number' &&
                                     track.bpm >= 40 &&
@@ -1015,7 +1206,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type,
+                                                type: track.type === 'wav' ? 'wav' : 'mp3',
                                                 size: track.size,
                                                 bpm: track.bpm,
                                               },
@@ -1023,18 +1214,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                             )
                                           }
                                           className={`p-2 rounded-md border border-audafact-divider text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 ${
-                                            isPlaying && isCurrentKey(track.fileKey)
+                                            isPlaying && currentPreviewTrackId === track.id
                                               ? 'text-audafact-accent-cyan'
                                               : ''
                                           }`}
                                           title={
-                                            isPlaying && isCurrentKey(track.fileKey)
+                                            isPlaying && currentPreviewTrackId === track.id
                                               ? 'Stop preview'
                                               : 'Preview'
                                           }
                                           aria-label={`Preview ${track.name}`}
                                         >
-                                          {isPlaying && isCurrentKey(track.fileKey) ? (
+                                          {isPlaying && currentPreviewTrackId === track.id ? (
                                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                               <rect x="6" y="4" width="4" height="16" />
                                               <rect x="14" y="4" width="4" height="16" />
@@ -1047,20 +1238,24 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() =>
+                                          onClick={() => {
+                                            if (tier.id === 'guest') {
+                                              showSignupModal('add_library_track');
+                                              return;
+                                            }
                                             handleAddTrack(
                                               {
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type,
+                                                type: track.type === 'wav' ? 'wav' : 'mp3',
                                                 size: track.size,
                                                 bpm: track.bpm,
-                                                key: track.key,
+                                                key: track.key ?? undefined,
                                               },
                                               false
-                                            )
-                                          }
+                                            );
+                                          }}
                                           className="p-2 rounded-md border border-audafact-divider text-audafact-text-primary hover:bg-audafact-accent-cyan/15 font-bold text-lg leading-none min-w-[2.25rem]"
                                           title={
                                             tier.id === 'guest'
@@ -1076,7 +1271,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   );
                                 })}
                               </ul>
-                            )}
+                            ) : null}
                             </div>
                             )}
                           </div>
@@ -1103,22 +1298,28 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         
                         {/* Enhanced Library Tracks */}
                         <div className="space-y-3">
-                          {userLoading ? (
+                          {(tier.id === 'guest' ? guestTracksLoading : userLoading) ? (
                             <div className="text-center py-4">
                               <div className="loading-spinner mx-auto"></div>
                               <p className="text-sm audafact-text-secondary mt-2">Loading tracks...</p>
                             </div>
-                          ) : userLibraryTracks.length === 0 ? (
+                          ) : (tier.id === 'guest' ? guestLibraryTracks.length === 0 : userLibraryTracks.length === 0) ? (
                             <div className="text-center py-4">
-                              <p className="text-sm audafact-text-secondary">No tracks available</p>
+                              {tier.id === 'guest' ? (
+                                <p className="text-sm audafact-text-secondary">
+                                  Create a free account to unlock the full Audafact library of royalty-free tracks.
+                                </p>
+                              ) : (
+                                <p className="text-sm audafact-text-secondary">No tracks available</p>
+                              )}
                             </div>
                           ) : (
-                            userLibraryTracks.map((track) => (
+                            (tier.id === 'guest' ? guestLibraryTracks : userLibraryTracks).map((track) => (
                               <LibraryTrackItem
                                 key={track.id}
                                 track={track}
                                 onPreview={() => handlePreviewPlay(track, false)}
-                                isPreviewing={isPlaying && isCurrentKey(track.fileKey)}
+                                isPreviewing={isPlaying && currentPreviewTrackId === track.id}
                                 onAddToStudio={() => handleAddTrack({
                                   id: track.id,
                                   name: track.name,
@@ -1156,22 +1357,36 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                           </div>
-                          <p className="audafact-text-secondary mb-4">Upload your own tracks</p>
-                          <p className="text-sm audafact-text-secondary mb-4">Sign up to upload and manage your audio files</p>
-                            <button
-                              onClick={() => {
-                                // Check if user is authenticated
-                                if (!user) {
-                                  showSignupModal('upload');
-                                  return;
-                                }
-                                // For authenticated users, open file browser
-                                fileInputRef.current?.click();
-                              }}
-                              className="audafact-button-primary"
-                            >
-                              Upload Track
-                            </button>
+                          <p className="audafact-text-secondary mb-4">Upload your own track</p>
+
+                          {guestUploadUsed ? (
+                            <>
+                              <div className="bg-audafact-surface-2 border border-audafact-divider rounded-lg p-4 mb-4 text-left">
+                                <p className="text-sm audafact-text-secondary">
+                                  This session-only upload will be available while you keep this tab open (refresh will clear it).
+                                  Create a free account to keep and manage your uploaded tracks.
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => showSignupModal('upload')}
+                                className="audafact-button-primary"
+                              >
+                                Create free account to keep it
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm audafact-text-secondary mb-4">
+                                1 upload per session. Create a free account to keep and manage your upload.
+                              </p>
+                              <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="audafact-button-primary"
+                              >
+                                Upload Track
+                              </button>
+                            </>
+                          )}
                         </div>
                       ) : userTracks.length === 0 ? (
                         // Authenticated user with no tracks
@@ -1519,6 +1734,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           {/* Upload Button - Less prominent when tracks exist */}
                           <UploadButton
                             user={user}
+                            guestUploadUsed={guestUploadUsed}
+                            tierId={tier.id}
                             canPerformAction={canPerformAction}
                             getUpgradeMessage={getUpgradeMessage}
                             showSignupModal={showSignupModal}
@@ -1534,14 +1751,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
             )}
           </div>
 
-          {/* Sessions Menu - Only show for authenticated users */}
-          {user && (
-            <div className="border-b border-audafact-divider">
+          {/* Sessions Menu - visible to guests but gated */}
+          <div className="border-b border-audafact-divider">
               <button
-                onClick={() => toggleMenu('sessions')}
+                onClick={() => {
+                  if (!user) {
+                    showSignupModal('save_session');
+                    return;
+                  }
+                  toggleMenu('sessions');
+                }}
                 className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
               >
-                <span>Sessions</span>
+                <span>
+                  Sessions
+                  {!user && <span className="ml-2 text-xs audafact-text-secondary">(Unlock: save sessions)</span>}
+                </span>
                 <svg 
                   className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['sessions'] ? 'rotate-90' : ''}`} 
                   fill="none" 
@@ -1552,7 +1777,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 </svg>
               </button>
               
-              {expandedMenus['sessions'] && (
+              {user && expandedMenus['sessions'] && (
               <div className="bg-audafact-surface-2">
                 <div role="tablist" aria-label="Sessions" className="flex flex-col gap-1 px-2 py-1.5">
                   <SidePanelSubMenuItem
@@ -1585,6 +1810,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         <h3 className="text-md font-medium audafact-heading">Saved Sessions</h3>
                         <span className="text-xs audafact-text-secondary">{savedSessions.length} sessions</span>
                       </div>
+                      {isAtSessionLimit && (
+                        <div className="rounded-lg border border-audafact-accent-cyan/30 bg-audafact-surface-2 p-2.5">
+                          <p className="text-xs audafact-text-secondary">
+                            {tier.id === 'starter'
+                              ? 'You have reached your Starter session limit. Upgrade to Pro for unlimited sessions, WAV export, and advanced performance modes.'
+                              : tier.id === 'free'
+                                ? 'You have reached your Free session limit. Upgrade to Starter or Pro to save more sessions and keep your workflow organized.'
+                                : 'You reached your session limit. Upgrade to keep saving more sessions.'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.location.href = '/pricing';
+                            }}
+                            className="mt-2 text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 transition-colors"
+                          >
+                            View plans
+                          </button>
+                        </div>
+                      )}
 
                       {savedSessions.length === 0 ? (
                         <div className="text-center py-8 flex-1 flex flex-col justify-center">
@@ -1715,19 +1960,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+              )}
             </div>
           )}
-          {/* Recordings Menu - Only show for authenticated users */}
-          {user && (
-            <div className="border-b border-audafact-divider">
-              <button
-                onClick={() => toggleMenu('recordings')}
-                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
-              >
-                <span>Recordings</span>
+          </div>
+          {/* Recordings Menu - visible to guests but gated */}
+          <div className="border-b border-audafact-divider">
+            <button
+              onClick={() => {
+                if (!user) {
+                  showSignupModal('record');
+                  return;
+                }
+                toggleMenu('recordings');
+              }}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
+            >
+              <span>
+                Recordings
+                {!user && <span className="ml-2 text-xs audafact-text-secondary">(Unlock: record & export)</span>}
+              </span>
                 <svg 
                   className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['recordings'] ? 'rotate-90' : ''}`} 
                   fill="none" 
@@ -1736,15 +1988,34 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
-              </button>
-              {expandedMenus['recordings'] && (
+            </button>
+              {user && expandedMenus['recordings'] && (
                   <div className="bg-audafact-surface-2">
                     <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                         <div className="flex items-center justify-between">
                           <h3 className="text-md font-medium audafact-heading">Recordings</h3>
                           <span className="text-xs audafact-text-secondary">{mergedRecordings.length} recordings</span>
                         </div>
-                        
+                        {isAtRecordingLimit && (
+                          <div className="mt-3 rounded-lg border border-audafact-accent-cyan/30 bg-audafact-surface-2 p-2.5">
+                            <p className="text-xs audafact-text-secondary">
+                              {tier.id === 'starter'
+                                ? 'You have reached your Starter recording limit. Upgrade to Pro for unlimited recordings, WAV export, and advanced performance modes.'
+                                : tier.id === 'free'
+                                  ? 'You have reached your Free recording limit. Upgrade to Starter or Pro to save more recordings and keep creating.'
+                                  : 'You reached your recording limit. Upgrade to keep saving more recordings.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.location.href = '/pricing';
+                              }}
+                              className="mt-2 text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 transition-colors"
+                            >
+                              View plans
+                            </button>
+                          </div>
+                        )}
                         {mergedRecordings.length === 0 ? (
                           <div className="text-center py-8 flex-1 flex flex-col justify-center">
                             <div className="text-audafact-text-secondary mb-4">
@@ -1837,7 +2108,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                           </button>
                                         </Tooltip>
                                       )}
-                                      {canAccessFeature('download') && item.fileKey && (
+                                      {canAccessFeature('download') && (item.fileKey || (item.audioBlob instanceof Blob)) && (
                                         <Tooltip content="Download" position="top" delay={150}>
                                           <div className="relative">
                                             <button
@@ -1973,9 +2244,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                         )}
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
         </div>
       </div>
       

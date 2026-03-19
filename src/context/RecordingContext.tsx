@@ -303,13 +303,25 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               console.error('Error checking user record:', userError);
             }
 
+            // Use head: true for reliable count (avoids pagination/parsing quirks)
             const { count: recordingCount, error: countError } = await supabase
               .from('recordings')
-              .select('id', { count: 'exact' })
+              .select('*', { count: 'exact', head: true })
               .eq('user_id', user.id);
 
-            if (!countError) {
-              const currentRecordingCount = recordingCount || 0;
+            let currentRecordingCount: number;
+            if (!countError && recordingCount != null) {
+              currentRecordingCount = recordingCount;
+            } else {
+              // Fallback: fetch and count when head count unavailable or errored
+              const { data: recordingRows } = await supabase
+                .from('recordings')
+                .select('id')
+                .eq('user_id', user.id);
+              currentRecordingCount = recordingRows?.length ?? 0;
+            }
+
+            {
               const { data: userData, error: userTierError } = await supabase
                 .from('users')
                 .select('access_tier')
