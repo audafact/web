@@ -1134,13 +1134,66 @@ const Studio = () => {
           // If the currently loaded track already matches the bundled track, do nothing
           if (tracks[0]?.id === currentGuestTrack.id) return;
           
-          // In demo mode, we don't need to update tracks since we're using bundled tracks
-          // Just log the demo event and keep the current track
+          // Reload the guest buffer so next/prev actually swaps the loaded audio + cue points.
+          (async () => {
+            try {
+              setIsInitializingAudio(true);
+              setError(null);
 
-          trackGuestEvent('next_track', { 
-            fromTrackId: tracks[0]?.id,
-            toTrackId: currentGuestTrack.id
-          });
+              const response = await fetch(currentGuestTrack.file);
+              const blob = await response.blob();
+              const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, {
+                type: `audio/${currentGuestTrack.type}`,
+              });
+
+              const buffer = await loadAudioBuffer(file, audioContext);
+              const trackId = currentGuestTrack.id;
+              const mode: 'cue' | 'loop' = tracks[0]?.mode === 'loop' ? 'loop' : 'cue';
+
+              const newTrack: Track = {
+                id: trackId,
+                file,
+                buffer,
+                peaks: extractPeaksFromBuffer(buffer),
+                mode,
+                chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
+                loopStart: 0,
+                loopEnd: buffer.duration,
+                cuePoints: Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10)),
+                tempo: currentGuestTrack.bpm || 120,
+                timeSignature: { numerator: 4, denominator: 4 },
+                firstMeasureTime: 0,
+                showMeasures: false,
+              };
+
+              setTracks([newTrack]);
+              setCurrentTrackIndex(0);
+              setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
+              setShowCueThumbs((prev) => ({ ...prev, [trackId]: mode === 'cue' }));
+              if (mode === 'cue') setSelectedCueTrackId(trackId);
+              setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
+              setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
+              setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
+              setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
+              setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
+              setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
+              setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
+              setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
+              setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
+              setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
+
+              trackGuestEvent('next_track', {
+                fromTrackId: tracks[0]?.id,
+                toTrackId: currentGuestTrack.id,
+              });
+            } catch (error) {
+              console.error('Failed to reload guest track:', error);
+              const msg = error instanceof Error ? error.message : '';
+              setError(msg || 'Failed to load guest track');
+            } finally {
+              setIsInitializingAudio(false);
+            }
+          })();
         }
       }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
 
@@ -2600,6 +2653,47 @@ const Studio = () => {
       // Load the audio buffer
       const buffer = await loadAudioBuffer(file, context);
       
+      // Guest uploads are session-only and replace the current demo track.
+      if (isGuestMode) {
+        const trackId = `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const cuePoints = Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
+
+        const newTrack: Track = {
+          id: trackId,
+          file,
+          buffer,
+          peaks: extractPeaksFromBuffer(buffer),
+          mode: 'cue',
+          chopTriggerStyle: 'cue',
+          loopStart: 0,
+          loopEnd: buffer.duration,
+          cuePoints,
+          tempo: currentGuestTrack?.bpm || 120,
+          timeSignature: { numerator: 4, denominator: 4 },
+          firstMeasureTime: 0,
+          showMeasures: false,
+        };
+
+        setTracks([newTrack]);
+        setCurrentTrackIndex(0);
+        setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
+        setShowCueThumbs((prev) => ({ ...prev, [trackId]: true }));
+        setSelectedCueTrackId(trackId);
+        setArmedLoopTrackIds(new Set());
+        setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
+        setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
+        setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
+        setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
+        setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
+        setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
+        setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
+        setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
+        setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
+
+        addingTrackIdRef.current = trackId; // Defer clearing placeholder until waveform is ready
+        return;
+      }
+
       // Create a new track
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -2960,7 +3054,7 @@ const Studio = () => {
         
         const buffer = await loadAudioBuffer(file, context);
         const trackId = currentGuestTrack.id;
-        const mode = preferredMode ?? loadPreferredMode() ?? 'cue';
+        const mode: 'cue' | 'loop' = preferredMode ?? 'cue';
         
         const newTrack: Track = {
           id: trackId,
@@ -2983,13 +3077,13 @@ const Studio = () => {
         setTracks([newTrack]);
         setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: false }));
-        setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
+        setShowCueThumbs(prev => ({ ...prev, [trackId]: mode === 'cue' }));
+        setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
         setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
         setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
         setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
         if (mode === 'cue') setSelectedCueTrackId(trackId);
-        else if (mode === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(trackId));
         
         // Track demo event
         trackGuestEvent('session_started', { 
@@ -3620,6 +3714,11 @@ const Studio = () => {
                     <p className="text-sm text-audafact-text-secondary text-center">
                       Find it. Dig it. Chop it. Loop it. Build something in seconds.
                     </p>
+                    {isGuestMode && (
+                      <p className="text-xs text-audafact-text-secondary text-center -mt-2">
+                        Start digging loads chop/cue by default; choose loop/chop below anytime.
+                      </p>
+                    )}
                     <div className="space-y-3">
                       <button
                         onClick={() => {
