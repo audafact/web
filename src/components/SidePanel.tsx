@@ -650,6 +650,62 @@ const SidePanel: React.FC<SidePanelProps> = ({
     };
   }, [user?.id, onUploadAnalysisUpdated]);
 
+  // Polling fallback for analysis completion when Realtime doesn't deliver
+  // (e.g. uploads table not in supabase_realtime publication)
+  useEffect(() => {
+    const analyzingIds = userTracks.filter((t) => t.isAnalyzing).map((t) => t.id);
+    if (analyzingIds.length === 0 || !user?.id) return;
+
+    const poll = async () => {
+      const { data: rows } = await supabase
+        .from('uploads')
+        .select('id, bpm, key, beat_times, genres, mood_themes, tags')
+        .in('id', analyzingIds);
+
+      if (!rows || rows.length === 0) return;
+
+      const completed = rows.filter(
+        (row) =>
+          row.bpm != null ||
+          (row.key != null && String(row.key).trim() !== '') ||
+          (Array.isArray(row.beat_times) && row.beat_times.length > 0) ||
+          (Array.isArray(row.genres) && row.genres.length > 0) ||
+          (Array.isArray(row.mood_themes) && row.mood_themes.length > 0) ||
+          (Array.isArray(row.tags) && row.tags.length > 0)
+      );
+      if (completed.length === 0) return;
+
+      setUserTracks((prev) =>
+        prev.map((t) => {
+          const row = completed.find((r) => r.id === t.id);
+          if (!row)
+            return t;
+          return {
+            ...t,
+            bpm: row.bpm ?? t.bpm,
+            key: row.key ?? t.key,
+            beats: Array.isArray(row.beat_times) && row.beat_times.length > 0 ? row.beat_times : t.beats,
+            genres: Array.isArray(row.genres) && row.genres.length > 0 ? row.genres : t.genres,
+            mood_themes: Array.isArray(row.mood_themes) && row.mood_themes.length > 0 ? row.mood_themes : t.mood_themes,
+            tags: Array.isArray(row.tags) && row.tags.length > 0 ? row.tags : t.tags,
+            isAnalyzing: false,
+          };
+        })
+      );
+      for (const row of completed) {
+        onUploadAnalysisUpdated?.(row.id, {
+          bpm: row.bpm ?? undefined,
+          key: row.key ?? undefined,
+          beats: Array.isArray(row.beat_times) && row.beat_times.length > 0 ? row.beat_times : undefined,
+        });
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => clearInterval(interval);
+  }, [user?.id, userTracks, onUploadAnalysisUpdated]);
+
   // Toggle menu function
   const toggleMenu = (menuKey: string) => {
     setExpandedMenus(prev => {
