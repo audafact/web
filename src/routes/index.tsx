@@ -50,30 +50,30 @@ export const router = createBrowserRouter([
           </TapTempoProvider>
         ),
       },
-      // {
-      //   path: 'pricing',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <Pricing />
-      //     </Suspense>
-      //   ),
-      // },
-      // {
-      //   path: 'checkout-result',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <CheckoutResult />
-      //     </Suspense>
-      //   ),
-      // },
-      // {
-      //   path: 'profile',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <Profile />
-      //     </Suspense>
-      //   ),
-      // },
+      {
+        path: 'pricing',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Pricing />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'checkout-result',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <CheckoutResult />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'profile',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Profile />
+          </Suspense>
+        ),
+      },
       {
         path: 'privacy',
         element: (
@@ -115,30 +115,30 @@ export const router = createBrowserRouter([
       //     </Suspense>
       //   ),
       // },
-      {
-        path: 'pricing',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'checkout-result',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'profile',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
+      // {
+      //   path: 'pricing',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'checkout-result',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'profile',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
       // Catch-all 404 route
       {
         path: '*',
