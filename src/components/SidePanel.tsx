@@ -11,7 +11,6 @@ import { UpgradePrompt } from './UpgradePrompt';
 import { UserTrack, type LibraryTrack } from '../types/music';
 import {
   getSampleSuggestions,
-  type SuggestionCandidate,
   type SuggestionReference,
 } from '@/services/sampleSuggestionService';
 import LibraryTrackItem from './LibraryTrackItem';
@@ -311,24 +310,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [allowEmptyAudioTab, setAllowEmptyAudioTab] = useState(true); // Start with Audafact Library tab closed
   const [allowEmptySessionsTab, setAllowEmptySessionsTab] = useState(false);
 
-  // Suggested Matches collapsed states (persisted per source)
-  const [suggestedLibraryMatchesExpanded, setSuggestedLibraryMatchesExpanded] = useState(() => {
-    const saved = localStorage.getItem('sidePanelSuggestedMatchesLibraryExpanded');
+  // Suggested Matches section collapsed state (persisted)
+  const [suggestedMatchesExpanded, setSuggestedMatchesExpanded] = useState(() => {
+    const saved = localStorage.getItem('sidePanelSuggestedMatchesExpanded');
     if (saved === 'false') return false;
     return true;
   });
   useEffect(() => {
-    localStorage.setItem('sidePanelSuggestedMatchesLibraryExpanded', String(suggestedLibraryMatchesExpanded));
-  }, [suggestedLibraryMatchesExpanded]);
-
-  const [suggestedUploadsMatchesExpanded, setSuggestedUploadsMatchesExpanded] = useState(() => {
-    const saved = localStorage.getItem('sidePanelSuggestedMatchesUploadsExpanded');
-    if (saved === 'false') return false;
-    return true;
-  });
-  useEffect(() => {
-    localStorage.setItem('sidePanelSuggestedMatchesUploadsExpanded', String(suggestedUploadsMatchesExpanded));
-  }, [suggestedUploadsMatchesExpanded]);
+    localStorage.setItem('sidePanelSuggestedMatchesExpanded', String(suggestedMatchesExpanded));
+  }, [suggestedMatchesExpanded]);
 
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
   // Guest-only: allow exactly 1 local upload per session (no refresh persistence).
@@ -499,9 +489,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
     const libraryPool = tier.id === 'guest' ? guestLibraryTracks : userLibraryTracks;
     if (!referenceForSuggestions || libraryPool.length === 0) return null;
     const ref = referenceForSuggestions;
-
     const hasKey = !!ref.key?.trim();
-    const hasBpm = ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
+    const hasBpm =
+      ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
     if (!hasKey && !hasBpm) return null;
 
     const libraryCandidates: SuggestionCandidate[] = libraryPool.map((t) => ({
@@ -517,28 +507,6 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
     return getSampleSuggestions(libraryCandidates, ref);
   }, [referenceForSuggestions, tier.id, guestLibraryTracks, userLibraryTracks]);
-
-  const suggestedUploadsMatches = useMemo(() => {
-    if (!referenceForSuggestions || userTracks.length === 0) return null;
-    const ref = referenceForSuggestions;
-
-    const hasKey = !!ref.key?.trim();
-    const hasBpm = ref.bpm != null && ref.bpm >= 40 && ref.bpm <= 300;
-    if (!hasKey && !hasBpm) return null;
-
-    const uploadCandidates: SuggestionCandidate[] = userTracks.map((t) => ({
-      id: t.id,
-      name: t.name,
-      fileKey: t.fileKey,
-      type: t.type, // MIME type (e.g. audio/mpeg) - Studio uses this when decoding
-      size: t.size,
-      bpm: t.bpm,
-      key: t.key ?? null,
-      beats: t.beats,
-    }));
-
-    return getSampleSuggestions(uploadCandidates, ref);
-  }, [referenceForSuggestions, userTracks]);
 
   // Load user tracks from database on mount
   useEffect(() => {
@@ -1064,30 +1032,30 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 {activeAudioTab === 'library' && (
                   <div id="audafact-library-content" role="tabpanel" aria-labelledby="audafact-library-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                                           <div className="space-y-4">
-                        {referenceForSuggestions != null && suggestedLibraryMatches != null && (
+                        {referenceForSuggestions != null && suggestedMatches != null && (
                           <div
                             className="rounded-lg border border-audafact-divider bg-audafact-surface-2/60 overflow-hidden"
                             aria-label="Suggested matches for current session"
                           >
                             <button
                               type="button"
-                              onClick={() => setSuggestedLibraryMatchesExpanded((v) => !v)}
+                              onClick={() => setSuggestedMatchesExpanded((v) => !v)}
                               className="w-full flex items-center justify-between gap-2 p-3 text-left audafact-heading text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2/80 transition-colors focus:outline-none focus:ring-1 focus:ring-audafact-accent-cyan focus:ring-inset"
-                              aria-expanded={suggestedLibraryMatchesExpanded}
+                              aria-expanded={suggestedMatchesExpanded}
                               aria-controls="suggested-matches-content"
                               id="suggested-matches-heading"
                             >
-                                  <span>
-                                  Suggested Matches
+                              <span>
+                                Suggested Matches
                                 {referenceForSuggestions?.referencePlaybackSpeed != null &&
                                   Math.abs(referenceForSuggestions.referencePlaybackSpeed - 1) >= 0.02 && (
                                     <span className="ml-1.5 font-normal text-audafact-text-secondary">
-                                      (at {referenceForSuggestions.referencePlaybackSpeed.toFixed(2)}x)
+                                      (at {referenceForSuggestions.referencePlaybackSpeed.toFixed(2)}×)
                                     </span>
                                   )}
                               </span>
                               <svg
-                                className={`w-4 h-4 flex-shrink-0 text-audafact-text-secondary transition-transform duration-200 ${suggestedLibraryMatchesExpanded ? 'rotate-180' : ''}`}
+                                className={`w-4 h-4 flex-shrink-0 text-audafact-text-secondary transition-transform duration-200 ${suggestedMatchesExpanded ? 'rotate-180' : ''}`}
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -1096,7 +1064,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
                             </button>
-                            {suggestedLibraryMatchesExpanded && (
+                            {suggestedMatchesExpanded && (
                             <div id="suggested-matches-content" className="px-3 pb-3 pt-0" role="region" aria-labelledby="suggested-matches-heading">
                               {tier.id === 'guest' && (
                                 <div className="text-xs audafact-text-secondary mb-3">
@@ -1161,9 +1129,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                 </div>
                               </div>
                             )}
-                            {suggestedLibraryMatches.length > 0 ? (
+                            {suggestedMatches.length === 0 ? (
+                              <p className="text-xs audafact-text-secondary leading-relaxed">
+                                No close matches — try exploring the library.
+                              </p>
+                            ) : (
                               <ul className="space-y-2">
-                                {suggestedLibraryMatches.map(({ track, adjustmentLine, suggestedSpeedReason }) => {
+                                {suggestedMatches.map(({ track, adjustmentLine, suggestedSpeedReason }) => {
                                   const bpmOk =
                                     typeof track.bpm === 'number' &&
                                     track.bpm >= 40 &&
@@ -1206,7 +1178,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type === 'wav' ? 'wav' : 'mp3',
+                                                type: track.type,
                                                 size: track.size,
                                                 bpm: track.bpm,
                                               },
@@ -1248,10 +1220,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type === 'wav' ? 'wav' : 'mp3',
+                                                type: track.type,
                                                 size: track.size,
                                                 bpm: track.bpm,
-                                                key: track.key ?? undefined,
+                                                key: track.key,
                                               },
                                               false
                                             );
@@ -1271,7 +1243,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   );
                                 })}
                               </ul>
-                            ) : null}
+                            )}
                             </div>
                             )}
                           </div>
