@@ -1,24 +1,9 @@
 /**
- * Rank tracks (library + uploads) by key + tempo compatibility with a session reference track.
+ * Rank library tracks by key + tempo compatibility with a session reference track.
  * MVP: client-side only, weighted scores and human-readable adjustment hints.
- *
- * PRD (sample suggestions): Guests may view suggestions; "add suggested sample" → SignupModal
- * ("Add this sample by creating a free account"). Free+ can add.
  */
 
-export interface SuggestionCandidate {
-  id: string;
-  name: string;
-  fileKey: string;
-  // For library tracks this will be "wav" | "mp3".
-  // For uploads this should be the MIME type (e.g. "audio/mpeg") so Studio can decode reliably.
-  type: string;
-  size: string;
-  bpm?: number;
-  key?: string | null;
-  /** Optional beat grid; not required for matching today, but useful for future UI. */
-  beats?: number[];
-}
+import type { LibraryTrack } from '../types/music';
 
 const KEY_REGEX = /^(C#|Db|D#|Eb|F#|Gb|G#|Ab|A#|Bb|[CDEFGAB])(m|min|maj|major)?$/i;
 
@@ -38,7 +23,7 @@ export interface SuggestionReference {
 }
 
 export interface SampleSuggestion {
-  track: SuggestionCandidate;
+  track: LibraryTrack;
   score: number;
   adjustmentLine: string;
   /** Suggested playback speed when adding this track to align with reference (0.5–2) */
@@ -253,7 +238,7 @@ function suggestedSpeedForCandidate(
  * Rank library tracks for suggestions. Returns 0–6 items; empty if nothing passes threshold.
  */
 export function getSampleSuggestions(
-  candidates: SuggestionCandidate[],
+  libraryTracks: LibraryTrack[],
   reference: SuggestionReference
 ): SampleSuggestion[] {
   const refKey = reference.key?.trim() ? parseKey(reference.key) : null;
@@ -265,12 +250,12 @@ export function getSampleSuggestions(
   const excludeKey = reference.excludeFileKey;
 
   const scored: Array<{
-    track: SuggestionCandidate;
+    track: LibraryTrack;
     score: number;
     parts: string[];
   }> = [];
 
-  for (const track of candidates) {
+  for (const track of libraryTracks) {
     if (excludeId && track.id === excludeId) continue;
     if (excludeKey && track.fileKey === excludeKey) continue;
 
