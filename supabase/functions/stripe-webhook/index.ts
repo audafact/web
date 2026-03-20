@@ -1,10 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import Stripe from 'https://esm.sh/stripe@12.0.0'
+// Deno needs async webhooks + SubtleCrypto provider (see Supabase Stripe example)
+import Stripe from 'https://esm.sh/stripe@14.21.0?target=denonext'
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2023-10-16',
 })
+
+/** Required for constructEventAsync in Deno / Supabase Edge (Web Crypto is async-only) */
+const cryptoProvider = Stripe.createSubtleCryptoProvider()
 
 const endpointSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
 
@@ -17,7 +21,13 @@ serve(async (req) => {
 
   try {
     const body = await req.text()
-    const event = stripe.webhooks.constructEvent(body, signature, endpointSecret)
+    const event = await stripe.webhooks.constructEventAsync(
+      body,
+      signature,
+      endpointSecret,
+      undefined,
+      cryptoProvider
+    )
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
