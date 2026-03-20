@@ -43,6 +43,8 @@ interface WaveformDisplayProps {
   chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange?: (index: number, time: number | null) => void;
+  /** Loop drag state: (start, end) when dragging, (null, null) when drag ends */
+  onLoopDragStateChange?: (start: number | null, end: number | null) => void;
   // Called when waveform has finished loading and is ready for display
   onReady?: () => void;
   // When true, hide the internal loading overlay (parent provides its own, e.g. skeleton)
@@ -92,6 +94,7 @@ const WaveformDisplay = ({
   chopTriggerStyle,
   // Drag state callback for real-time timestamp updates
   onCueDragStateChange,
+  onLoopDragStateChange,
   onReady,
   suppressLoadingOverlay = false,
   peaks: peaksProp,
@@ -134,15 +137,26 @@ const WaveformDisplay = ({
   // Flag to track when we're updating cue points internally (from drag operations)
   // This prevents the effect from recreating regions when the change originates from our own drag
   const isInternalCueUpdateRef = useRef<boolean>(false);
+  // Flag to track when loop region is being dragged/resized - skip recreation during active drag
+  const isInternalLoopUpdateRef = useRef<boolean>(false);
 
   const onLoopPointsChangeRef = useRef(onLoopPointsChange);
+  const onLoopDragStateChangeRef = useRef(onLoopDragStateChange);
   const onCuePointChangeRef = useRef(onCuePointChange);
+  const lastLoopDragUpdateRef = useRef(0);
+  const lastLoopTrackUpdateRef = useRef(0);
+  const lastSentLoopStartRef = useRef<number | undefined>(undefined);
+  const lastSentLoopEndRef = useRef<number | undefined>(undefined);
   const onReadyRef = useRef(onReady);
   const onReadyCalledRef = useRef(false);
 
   useEffect(() => {
     onLoopPointsChangeRef.current = onLoopPointsChange;
   }, [onLoopPointsChange]);
+
+  useEffect(() => {
+    onLoopDragStateChangeRef.current = onLoopDragStateChange;
+  }, [onLoopDragStateChange]);
 
   useEffect(() => {
     onReadyRef.current = onReady;
@@ -630,6 +644,42 @@ const WaveformDisplay = ({
         }
       });
 
+      // Update parent state only on drop to avoid playback glitching during drag.
+      // onLoopDragStateChange provides display-only live values during drag.
+      region.on('update-start', () => {
+        isInternalLoopUpdateRef.current = true;
+        const duration = wavesurfer.getDuration();
+        const epsilon = 0.05;
+        const start = Math.max(0, Math.min(region.start, duration - epsilon));
+        const end = Math.max(start + 0.01, Math.min(region.end, duration));
+        onLoopDragStateChangeRef.current?.(start, end);
+        lastLoopTrackUpdateRef.current = -Infinity;
+      });
+
+      region.on('update', () => {
+        isInternalLoopUpdateRef.current = true;
+        const now = performance.now();
+        const duration = wavesurfer.getDuration();
+        const epsilon = 0.05;
+        const start = Math.max(0, Math.min(region.start, duration - epsilon));
+        const end = Math.max(start + 0.01, Math.min(region.end, duration));
+        if (now - lastLoopDragUpdateRef.current >= 50) {
+          lastLoopDragUpdateRef.current = now;
+          onLoopDragStateChangeRef.current?.(start, end);
+        }
+        if (now - lastLoopTrackUpdateRef.current >= 600) {
+          const prevStart = lastSentLoopStartRef.current;
+          const prevEnd = lastSentLoopEndRef.current;
+          const meaningfulChange = prevStart === undefined || Math.abs(start - prevStart) > 0.02 || Math.abs(end - prevEnd) > 0.02;
+          if (meaningfulChange) {
+            lastLoopTrackUpdateRef.current = now;
+            lastSentLoopStartRef.current = start;
+            lastSentLoopEndRef.current = end;
+            onLoopPointsChangeRef.current(start, end);
+          }
+        }
+      });
+
       region.on('update-end', () => {
         const duration = wavesurfer.getDuration();
         const epsilon = 0.05;
@@ -637,15 +687,24 @@ const WaveformDisplay = ({
         const start = Math.max(0, Math.min(region.start, duration - epsilon));
         const end = Math.max(start + 0.1, Math.min(region.end, duration));
 
+        if (onLoopDragStateChangeRef.current) {
+          onLoopDragStateChangeRef.current(null, null);
+        }
+
+        // Update refs immediately to prevent recreation when effect runs
+        prevLoopStartRef.current = start;
+        prevLoopEndRef.current = end;
+
+        lastSentLoopStartRef.current = start;
+        lastSentLoopEndRef.current = end;
         debouncedUpdate(() => {
           onLoopPointsChangeRef.current(start, end);
-          // Update refs to prevent recreation
-          prevLoopStartRef.current = start;
-          prevLoopEndRef.current = end;
+          // Clear flag after parent callback so effect can run for external changes
+          setTimeout(() => {
+            isInternalLoopUpdateRef.current = false;
+          }, 150);
         });
       });
-
-
 
       currentRegionsRef.current = [region];
     } else if (mode === 'cue') {
@@ -985,6 +1044,24 @@ const WaveformDisplay = ({
         // may already contain the new value before the parent state updates, and syncing
         // back to props can cause duplicate region creation / visual glitches.)
         return;
+      }
+      if (mode === 'loop' && loopChanged && isInternalLoopUpdateRef.current) {
+        return;
+      }
+
+      // If loop points changed externally, update existing region in place to avoid recreate/visual ghost
+      if (mode === 'loop' && loopChanged) {
+        const loopRegion = currentRegionsRef.current[0];
+        if (loopRegion) {
+          const duration = wavesurfer.getDuration();
+          const epsilon = 0.05;
+          const clampedStart = Math.max(0, Math.min(loopStart, duration - epsilon));
+          const clampedEnd = Math.max(clampedStart + 0.01, Math.min(loopEnd, duration));
+          loopRegion.setOptions({ start: clampedStart, end: clampedEnd });
+          prevLoopStartRef.current = loopStart;
+          prevLoopEndRef.current = loopEnd;
+          return;
+        }
       }
       
       // If cue points changed, try to update just the changed region(s) instead of recreating all
