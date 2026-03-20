@@ -133,6 +133,8 @@ interface TrackControlsProps {
   recordingDestination?: MediaStreamAudioDestinationNode | null;
   // Add drag state props for real-time timestamp updates
   cueDragState?: { [index: number]: number } | null;
+  /** When dragging loop region, live (start, end) for display only. Playback uses loopStart/loopEnd. */
+  loopDragState?: { start: number; end: number } | null;
   /** When mode is 'cue', how pads trigger playback. Default 'cue'. */
   chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
 }
@@ -143,6 +145,7 @@ const TrackControls = ({
   audioBuffer, 
   loopStart, 
   loopEnd, 
+  loopDragState = null,
   cuePoints, 
   ensureAudio, 
   isSelected = false,
@@ -725,14 +728,22 @@ const TrackControls = ({
   }, [mode, isPlaying, currentTime, loopStart, loopEnd, audioContext]);
 
   // Handle loop point changes during playback - must restart audio source
-  // since BufferSourceNode loop region cannot be changed after creation
+  // since BufferSourceNode loop region cannot be changed after creation.
+  // NOTE: Do NOT include currentTime in deps - it updates every rAF and would cause
+  // this effect to run 60+ times/sec, creating race conditions. We use refs for position.
+  const LOOP_EPSILON = 0.015;
   useEffect(() => {
+    const prevStart = prevLoopStartRef.current;
+    const prevEnd = prevLoopEndRef.current;
+    const startChanged = Math.abs(loopStart - prevStart) >= LOOP_EPSILON;
+    const endChanged = Math.abs(loopEnd - prevEnd) >= LOOP_EPSILON;
+
     if (
       mode !== 'loop' ||
       !isPlaying ||
       !audioSourceRef.current ||
       !audioContext ||
-      (prevLoopStartRef.current === loopStart && prevLoopEndRef.current === loopEnd)
+      (!startChanged && !endChanged)
     ) {
       prevLoopStartRef.current = loopStart;
       prevLoopEndRef.current = loopEnd;
@@ -740,22 +751,21 @@ const TrackControls = ({
     }
 
     const currentSourceNode = audioSourceRef.current;
-    const currentPosition = currentTime;
+    if (!currentSourceNode || !audioContext) return;
 
-    // Clamp position to new loop region for seamless transition
+    const playbackRate = currentSourceNode.playbackRate.value;
+    const elapsed = audioContext.currentTime - startTimeRef.current;
+    const currentPosition = playbackStartTimeRef.current + elapsed * playbackRate;
+
     let newStartPosition: number;
     if (currentPosition < loopStart) {
-      // Was before new loop start - jump to loop start
       newStartPosition = loopStart;
     } else if (currentPosition > loopEnd) {
-      // Was past new loop end - loop back to start
       newStartPosition = loopStart;
     } else {
-      // Within new loop region - continue from current position
       newStartPosition = currentPosition;
     }
 
-    // Stop current source and create new one with updated loop region
     currentSourceNode.stop();
 
     const audioChain = createAudioChainWithCurrentSettings();
@@ -783,7 +793,7 @@ const TrackControls = ({
 
     prevLoopStartRef.current = loopStart;
     prevLoopEndRef.current = loopEnd;
-  }, [mode, isPlaying, loopStart, loopEnd, currentTime, audioContext, createAudioChainWithCurrentSettings, onPlaybackTimeChange]);
+  }, [mode, isPlaying, loopStart, loopEnd, audioContext, createAudioChainWithCurrentSettings, onPlaybackTimeChange]);
 
   // Start/stop time updates
   useEffect(() => {
@@ -1278,7 +1288,7 @@ const TrackControls = ({
           
           {mode === 'loop' && (
             <div className="text-xs md:text-sm audafact-text-secondary">
-              Loop: {loopStart.toFixed(2)}s - {loopEnd.toFixed(2)}s
+              Loop: {(loopDragState ?? { start: loopStart, end: loopEnd }).start.toFixed(2)}s - {(loopDragState ?? { start: loopStart, end: loopEnd }).end.toFixed(2)}s
             </div>
           )}
         </div>

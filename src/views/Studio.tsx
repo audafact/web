@@ -100,6 +100,7 @@ const Studio = () => {
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
   // Track drag state for real-time timestamp updates
   const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
+  const [loopDragStates, setLoopDragStates] = useState<{ [trackId: string]: { start: number; end: number } }>({});
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
@@ -2087,6 +2088,16 @@ const Studio = () => {
       }
 
       return newState;
+    });
+  };
+
+  const handleLoopDragStateChange = (trackId: string, start: number | null, end: number | null) => {
+    setLoopDragStates(prev => {
+      if (start === null || end === null) {
+        const { [trackId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [trackId]: { start, end } };
     });
   };
   
@@ -4526,6 +4537,7 @@ const Studio = () => {
                 loopEnd={track.loopEnd}
                 cuePoints={track.cuePoints}
                 onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+                onLoopDragStateChange={(start, end) => handleLoopDragStateChange(track.id, start, end)}
                 onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
                 playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
                 playbackTime={playbackTimes[track.id] || 0}
@@ -4563,6 +4575,7 @@ const Studio = () => {
                 audioBuffer={track.buffer}
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
+                loopDragState={loopDragStates[track.id] || null}
                 cuePoints={track.cuePoints}
                 ensureAudio={ensureAudioBeforeAction}
                 isSelected={track.id === selectedCueTrackId}
