@@ -700,9 +700,76 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const savePerformanceName = useCallback(async (performanceId: string, filename: string) => {
     const performance = performances.find(p => p.id === performanceId);
-    if (!performance?.databaseId || !user?.id) return;
-    await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
-    refreshSavedRecordings();
+    if (!performance || !user?.id) return;
+    if (performance.databaseId) {
+      await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
+      refreshSavedRecordings();
+      return;
+    }
+    // No databaseId yet: create the save with user's filename (save-only flow)
+    if (!performance.audioBlob) return;
+    try {
+      const { count: recordingCount } = await supabase
+        .from('recordings')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      const { data: userData } = await supabase
+        .from('users')
+        .select('access_tier')
+        .eq('id', user.id)
+        .single();
+      const rawTier = userData?.access_tier || 'free';
+      const normalized =
+        rawTier === 'pro' || rawTier === 'enterprise' ? 'pro'
+        : rawTier === 'starter' ? 'starter' : 'free';
+      const maxRecordings = getNumericLimitsForDbTier(normalized).maxRecordings;
+      if ((recordingCount ?? 0) >= maxRecordings) return;
+      const baseName = filename.replace(/\.(mp3|wav)$/i, '') || 'recording';
+      const notes = `Performance recording with ${performance.events?.length ?? 0} events`;
+      const r2Result = await StorageService.uploadRecordingBlob(
+        performance.audioBlob,
+        user.id,
+        undefined,
+        notes,
+        baseName
+      );
+      let recordingRecord: Awaited<ReturnType<typeof DatabaseService.createRecording>> = null;
+      if (r2Result) {
+        recordingRecord = await DatabaseService.createRecording({
+          user_id: user.id,
+          session_id: undefined,
+          recording_url: `https://media.audafact.com/${r2Result.key}`,
+          length: performance.duration / 1000,
+          notes,
+          file_key: r2Result.key,
+          content_hash: r2Result.content_hash,
+          size_bytes: r2Result.size_bytes,
+          content_type: r2Result.content_type,
+          original_name: filename,
+        });
+      }
+      if (!recordingRecord) {
+        recordingRecord = await DatabaseService.createRecording({
+          user_id: user.id,
+          session_id: undefined,
+          recording_url: `local://recording_${Date.now()}.wav`,
+          length: performance.duration / 1000,
+          notes,
+          original_name: filename,
+        });
+      }
+      if (recordingRecord) {
+        setPerformances(prev => prev.map(p =>
+          p.id === performanceId
+            ? { ...p, databaseId: recordingRecord!.id, fileKey: r2Result?.key }
+            : p
+        ));
+        await DatabaseService.updateRecordingOriginalName(recordingRecord.id, user.id, filename);
+        refreshSavedRecordings();
+      }
+    } catch (error) {
+      console.error('Failed to save performance to app:', error);
+    }
   }, [performances, user?.id, refreshSavedRecordings]);
 
   const updateRecordingName = useCallback(async (recordingId: string, filename: string) => {
