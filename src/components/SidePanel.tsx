@@ -219,9 +219,15 @@ const UploadButton: React.FC<UploadButtonProps> = ({
           </p>
           <button
             type="button"
-            onClick={() => {
-              window.location.href = '/pricing';
-            }}
+            onClick={() => setShowUpgradePrompt({
+              show: true,
+              message: tierId === 'starter'
+                ? 'You have reached your Starter upload limit. Upgrade to Pro for unlimited uploads, WAV export, and advanced performance modes.'
+                : tierId === 'free'
+                  ? 'You have reached your Free upload limit. Upgrade to Starter or Pro to add more tracks and keep creating without interruption.'
+                  : (upgradeMessage || 'You reached your upload limit. Upgrade to keep building with more tracks.'),
+              feature: 'Track Upload'
+            })}
             className="mt-2 text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 transition-colors"
           >
             View plans
@@ -335,6 +341,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [guestUploadUsed, setGuestUploadUsed] = useState(false);
   const [isAtSessionLimit, setIsAtSessionLimit] = useState(false);
   const [isAtRecordingLimit, setIsAtRecordingLimit] = useState(false);
+  const [isAtUploadLimit, setIsAtUploadLimit] = useState(false);
 
   useEffect(() => {
     // Reset guest-only state when a user signs in.
@@ -374,6 +381,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
       mounted = false;
     };
   }, [user?.id, savedRecordings.length, canPerformAction]);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkUploadCapacity = async () => {
+      if (!user) {
+        if (mounted) setIsAtUploadLimit(false);
+        return;
+      }
+      const uploadAllowed = await canPerformAction('upload');
+      if (mounted) setIsAtUploadLimit(!uploadAllowed);
+    };
+    checkUploadCapacity();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, userTracks.length, canPerformAction]);
 
   const [exportModalPerformance, setExportModalPerformance] = useState<{
     id: string;
@@ -1382,7 +1405,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   fileKey: track.fileKey,
                                   type: track.type,
                                   size: track.size,
-                                  bpm: track.bpm
+                                  bpm: track.bpm,
+                                  key: track.key ?? undefined
                                 }, false)}
                                 canAddToStudio={tier.id !== 'guest'}
                                 isProOnly={track.isProOnly || false}
@@ -1399,10 +1423,25 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 {activeAudioTab === 'my-tracks' && (
                   <div id="my-tracks-content" role="tabpanel" aria-labelledby="my-tracks-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                     <div className="space-y-4">
-                      <div className="flex items-center justify-center">
+                      <div className="flex items-center justify-between">
                         <h3 className="text-md font-medium audafact-heading">
                           {user ? 'My Uploaded Tracks' : 'Upload Tracks'}
                         </h3>
+                        {user && isAtUploadLimit && (tier.id === 'free' || tier.id === 'starter') && (
+                          <button
+                            type="button"
+                            onClick={() => setShowUpgradePrompt({
+                              show: true,
+                              message: tier.id === 'starter'
+                                ? 'You have reached your Starter upload limit. Upgrade to Pro for unlimited uploads, WAV export, and advanced performance modes.'
+                                : 'You have reached your Free upload limit. Upgrade to Starter or Pro to add more tracks and keep creating without interruption.',
+                              feature: 'Track Upload'
+                            })}
+                            className="text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80"
+                          >
+                            At limit • Upgrade
+                          </button>
+                        )}
                       </div>
 
                       {!user ? (
@@ -1700,7 +1739,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     name: track.name,
                                     id: track.id,
                                     fileKey: track.fileKey,
-                                    fileType: track.type
+                                    fileType: track.type,
+                                    bpm: track.bpm,
+                                    key: track.key ?? undefined,
+                                    beats: track.beats
                                   }));
                                   e.dataTransfer.effectAllowed = 'copy';
                                 }}
@@ -1822,6 +1864,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                 <span>
                   Sessions
                   {!user && <span className="ml-2 text-xs audafact-text-secondary">(Unlock: save sessions)</span>}
+                  {user && (tier.id === 'free' || tier.id === 'starter') && isAtSessionLimit && (
+                    <span className="ml-2 text-xs audafact-text-secondary">(At limit — upgrade)</span>
+                  )}
                 </span>
                 <svg 
                   className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['sessions'] ? 'rotate-90' : ''}`} 
@@ -1864,7 +1909,24 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-md font-medium audafact-heading">Saved Sessions</h3>
-                        <span className="text-xs audafact-text-secondary">{savedSessions.length} sessions</span>
+                        <span className="text-xs audafact-text-secondary">
+                          {savedSessions.length} sessions
+                          {isAtSessionLimit && (tier.id === 'free' || tier.id === 'starter') && (
+                            <button
+                              type="button"
+                              onClick={() => setShowUpgradePrompt({
+                                show: true,
+                                message: tier.id === 'starter'
+                                  ? 'You have reached your Starter session limit. Upgrade to Pro for unlimited sessions, WAV export, and advanced performance modes.'
+                                  : 'You have reached your Free session limit. Upgrade to Starter or Pro to save more sessions and keep your workflow organized.',
+                                feature: 'Saved Sessions'
+                              })}
+                              className="ml-1.5 text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 font-medium"
+                            >
+                              • Upgrade
+                            </button>
+                          )}
+                        </span>
                       </div>
                       {isAtSessionLimit && (
                         <div className="rounded-lg border border-audafact-accent-cyan/30 bg-audafact-surface-2 p-2.5">
@@ -1877,9 +1939,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           </p>
                           <button
                             type="button"
-                            onClick={() => {
-                              window.location.href = '/pricing';
-                            }}
+                            onClick={() => setShowUpgradePrompt({
+                              show: true,
+                              message: tier.id === 'starter'
+                                ? 'You have reached your Starter session limit. Upgrade to Pro for unlimited sessions, WAV export, and advanced performance modes.'
+                                : tier.id === 'free'
+                                  ? 'You have reached your Free session limit. Upgrade to Starter or Pro to save more sessions and keep your workflow organized.'
+                                  : getUpgradeMessage('save_session'),
+                              feature: 'Saved Sessions'
+                            })}
                             className="mt-2 text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 transition-colors"
                           >
                             View plans
@@ -2035,6 +2103,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
               <span>
                 Recordings
                 {!user && <span className="ml-2 text-xs audafact-text-secondary">(Unlock: record & export)</span>}
+                {user && (tier.id === 'free' || tier.id === 'starter') && isAtRecordingLimit && (
+                  <span className="ml-2 text-xs audafact-text-secondary">(At limit — upgrade)</span>
+                )}
               </span>
                 <svg 
                   className={`w-4 h-4 transition-transform duration-200 ${expandedMenus['recordings'] ? 'rotate-90' : ''}`} 
@@ -2050,7 +2121,24 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     <div className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
                         <div className="flex items-center justify-between">
                           <h3 className="text-md font-medium audafact-heading">Recordings</h3>
-                          <span className="text-xs audafact-text-secondary">{mergedRecordings.length} recordings</span>
+                          <span className="text-xs audafact-text-secondary">
+                            {mergedRecordings.length} recordings
+                            {isAtRecordingLimit && (tier.id === 'free' || tier.id === 'starter') && (
+                              <button
+                                type="button"
+                                onClick={() => setShowUpgradePrompt({
+                                  show: true,
+                                  message: tier.id === 'starter'
+                                    ? 'You have reached your Starter recording limit. Upgrade to Pro for unlimited recordings, WAV export, and advanced performance modes.'
+                                    : 'You have reached your Free recording limit. Upgrade to Starter or Pro to save more recordings and keep creating.',
+                                  feature: 'Recordings'
+                                })}
+                                className="ml-1.5 text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 font-medium"
+                              >
+                                • Upgrade
+                              </button>
+                            )}
+                          </span>
                         </div>
                         {isAtRecordingLimit && (
                           <div className="mt-3 rounded-lg border border-audafact-accent-cyan/30 bg-audafact-surface-2 p-2.5">
@@ -2063,9 +2151,15 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             </p>
                             <button
                               type="button"
-                              onClick={() => {
-                                window.location.href = '/pricing';
-                              }}
+                              onClick={() => setShowUpgradePrompt({
+                                show: true,
+                                message: tier.id === 'starter'
+                                  ? 'You have reached your Starter recording limit. Upgrade to Pro for unlimited recordings, WAV export, and advanced performance modes.'
+                                  : tier.id === 'free'
+                                    ? 'You have reached your Free recording limit. Upgrade to Starter or Pro to save more recordings and keep creating.'
+                                    : getUpgradeMessage('record'),
+                                feature: 'Recordings'
+                              })}
                               className="mt-2 text-xs font-medium text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 transition-colors"
                             >
                               View plans

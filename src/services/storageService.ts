@@ -150,7 +150,8 @@ export class StorageService {
     blob: Blob,
     userId: string,
     sessionId?: string,
-    notes?: string
+    notes?: string,
+    originalName?: string
   ): Promise<{
     key: string;
     content_hash: string;
@@ -158,7 +159,8 @@ export class StorageService {
     content_type: string;
     original_name: string;
   } | null> {
-    const file = new File([blob], "recording.wav", { type: "audio/wav" });
+    const name = originalName ? (originalName.endsWith('.wav') ? originalName : `${originalName}.wav`) : 'recording.wav';
+    const file = new File([blob], name, { type: "audio/wav" });
     const result = await this.uploadRecording(file, userId, sessionId ?? "", notes);
     if (result.error || !result.data?.metadata) return null;
     const meta = result.data.metadata;

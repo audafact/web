@@ -1001,6 +1001,9 @@ const Studio = () => {
         const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
           ? settings.chopTriggerStyle
           : 'cue';
+        const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
+          ? asset.bpm
+          : (settings.tempo || 120);
         const newTrack: Track = {
           id: trackId,
           file,
@@ -1012,7 +1015,7 @@ const Studio = () => {
           cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
             buffer.duration * (i / 10)
           ),
-          tempo: settings.tempo || 120,
+          tempo: trackTempo,
           timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
           firstMeasureTime: settings.firstMeasureTime || 0,
           showMeasures: settings.showMeasures || false,
@@ -1625,6 +1628,9 @@ const Studio = () => {
       const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
         : 'cue';
+      const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
+        ? asset.bpm
+        : (settings.tempo || 120);
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
@@ -1639,7 +1645,7 @@ const Studio = () => {
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ),
-        tempo: settings.tempo || 120,
+        tempo: trackTempo,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
         showMeasures: settings.showMeasures || false,
@@ -2503,7 +2509,10 @@ const Studio = () => {
           fileKey: trackData.fileKey,
           type: trackData.fileType || 'audio/wav',
           size: '-',
-          uploadedAt: Date.now()
+          uploadedAt: Date.now(),
+          bpm: trackData.bpm,
+          key: trackData.key,
+          beats: trackData.beats
         };
         await handleAddUserTrack(userTrack, 'cue');
         return;
@@ -3143,6 +3152,9 @@ const Studio = () => {
       const chopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
         : 'cue';
+      const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
+        ? asset.bpm
+        : (settings.tempo || 120);
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
@@ -3157,7 +3169,7 @@ const Studio = () => {
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ),
-        tempo: settings.tempo || 120,
+        tempo: trackTempo,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
         showMeasures: settings.showMeasures || false,

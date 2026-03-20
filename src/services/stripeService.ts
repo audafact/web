@@ -21,14 +21,16 @@ export const createCheckoutSession = async (
         priceId,
         userId: user.id,
         email: user.email,
-        successUrl: `${window.location.origin}/checkout-result?success=true`,
+        successUrl: `${window.location.origin}/checkout-result?success=true&tier=${planTier}`,
         cancelUrl: `${window.location.origin}/checkout-result?canceled=true`,
         planTier,
       }
     });
 
     if (error) {
-      return { error: error.message || 'Failed to create checkout session' };
+      // Surface the actual error from the Edge Function (e.g. Stripe/db errors)
+      const message = (data as { error?: string })?.error || error.message || 'Failed to create checkout session';
+      return { error: message };
     }
 
     return { url: data?.url };
