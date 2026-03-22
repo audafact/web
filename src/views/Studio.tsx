@@ -2177,12 +2177,8 @@ const Studio = () => {
   };
 
   const handleChopTriggerStyleChange = (trackId: string, chopTriggerStyle: 'cue' | 'hold' | 'one-shot') => {
-    if (chopTriggerStyle !== 'cue' && tier.id !== 'pro') {
-      setShowUpgradePrompt({
-        show: true,
-        message: 'Unlock expressive performance modes with Pro.',
-        feature: 'Hold & One-Shot',
-      });
+    if (chopTriggerStyle !== 'cue' && tier.id === 'guest') {
+      openSignupModal('trigger_styles');
       return;
     }
     setTracks(prev =>
@@ -4622,7 +4618,7 @@ const Studio = () => {
                   <span className="text-xs audafact-text-secondary">Trigger style:</span>
                   <div className="flex rounded-md border border-audafact-divider p-0.5 bg-audafact-surface-2">
                     {(['cue', 'hold', 'one-shot'] as const).map((style) => {
-                      const locked = style !== 'cue' && tier.id !== 'pro';
+                      const locked = style !== 'cue' && tier.id === 'guest';
                       return (
                       <button
                         key={style}
@@ -4630,7 +4626,7 @@ const Studio = () => {
                         onClick={() => handleChopTriggerStyleChange(track.id, style)}
                         title={
                           locked
-                            ? 'Pro — Unlock expressive performance modes'
+                            ? 'Sign up to unlock Hold and One-Shot modes'
                             : style === 'cue'
                               ? 'Jump to cue and continue'
                               : style === 'hold'

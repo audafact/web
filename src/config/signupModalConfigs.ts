@@ -59,6 +59,18 @@ export const SIGNUP_MODAL_CONFIGS: Record<string, SignupModalConfig> = {
     ctaText: "Sign up to add tracks",
     redirectAction: 'add_library_track'
   },
+
+  trigger_styles: {
+    title: "Unlock Hold and One-Shot modes",
+    message: "Create a free account to use expressive performance modes.",
+    benefits: [
+      "Hold — play while key is held",
+      "One-Shot — play slice once",
+      "Save sessions and export",
+      "All free account features"
+    ],
+    ctaText: "Sign up for free",
+  },
   
   edit_cues: {
     title: "🎯 Customize your cues",

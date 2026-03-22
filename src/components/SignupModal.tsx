@@ -112,6 +112,8 @@ const SignupModal: React.FC<SignupModalProps> = ({
         return 'Set custom cue points';
       case 'add_second_source':
         return 'multiple tracks';
+      case 'trigger_styles':
+        return 'Hold and One-Shot trigger styles';
       default:
         return 'Access premium features';
     }
