@@ -115,9 +115,9 @@ export function getNumericLimitsForDbTier(accessTier: string): NumericAccessLimi
   }
 }
 
-/** Pro-only: Hold / One-Shot trigger styles */
+/** Guest-only gate: Hold / One-Shot trigger styles require a free account */
 export function canUseAdvancedTriggerStyles(tierId: string): boolean {
-  return tierId === "pro";
+  return tierId !== "guest";
 }
 
 export function canExportWavTier(tierId: string): boolean {

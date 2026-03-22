@@ -43,7 +43,7 @@ const plans: PricingPlan[] = [
       '2 recordings',
       'MP3 export',
       'Multiple sources + catalog',
-      'Cue trigger style',
+      'All trigger styles (Cue, Hold, One-Shot)',
     ],
     priceId: '',
   },
@@ -71,7 +71,6 @@ const plans: PricingPlan[] = [
     features: [
       'Unlimited uploads, sessions & recordings',
       'WAV export for your DAW',
-      'Hold & One-Shot trigger styles',
       'Full performance + production control',
     ],
     priceId: proMonthlyPriceId,
@@ -163,7 +162,7 @@ export const Pricing: React.FC = () => {
             </div>
             <h1 className="text-3xl font-bold audafact-heading mb-4">You&apos;re on Pro</h1>
             <p className="text-lg audafact-text-secondary mb-8">
-              Full performance + production control — WAV export, all trigger styles, unlimited creation.
+              Full performance + production control — WAV export, unlimited creation.
             </p>
             <a href="/studio" className="audafact-button-primary">
               Go to Studio
