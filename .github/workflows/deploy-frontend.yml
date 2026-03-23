@@ -31,6 +31,8 @@ jobs:
         run: npm run build:production
         env:
           VITE_APP_ENV: production
+          # Ignore any repo .env / machine VITE_API_BASE_URL; use config/production.json (+ /api) via vite.config.js
+          VITE_API_BASE_URL: ""
 
       - name: Deploy to Cloudflare Pages
         run: wrangler pages deploy dist --project-name=audafact-web-prod --branch main

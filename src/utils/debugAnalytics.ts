@@ -84,8 +84,8 @@ export const debugAnalyticsAuth = async () => {
     console.log("\n4️⃣ Testing token with your Worker...");
     if (session.access_token) {
       try {
-        const { API_CONFIG } = await import("../config/api");
-        const response = await fetch(`${API_CONFIG.BASE_URL}/api/analytics`, {
+        const { API_CONFIG, buildApiUrl } = await import("../config/api");
+        const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.ANALYTICS), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

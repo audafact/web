@@ -1,7 +1,7 @@
 {
   "name": "Preview",
   "domain": "${branch}.audafact-web-prod.pages.dev",
-  "apiUrl": "https://audafact-api.david-g-cortinas.workers.dev",
+  "apiUrl": "https://audafact-api.david-g-cortinas.workers.dev/api",
   "turnstileSiteKey": "0x4AAAAAABpJ3cypikhi7CPU",
   "corsOrigins": [
     "https://${branch}.audafact-web-prod.pages.dev"

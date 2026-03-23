@@ -77,8 +77,8 @@ describe("Analytics & Funnel Tracking", () => {
         bpm: 128,
       });
 
-      // Wait for async processing
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Wait for dynamic import of api config + fetch in sendEvent
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(mockFetch).toHaveBeenCalledWith(
         "https://audafact-api.david-g-cortinas.workers.dev/api/analytics",
