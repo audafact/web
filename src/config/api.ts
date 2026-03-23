@@ -49,6 +49,9 @@ export const API_CONFIG = {
   ENDPOINTS: {
     SIGN_UPLOAD: "/sign-upload",
     ANALYTICS: "/analytics",
+    ANALYTICS_CREATIVE_METRICS: "/analytics/creative-metrics",
+    ANALYTICS_FUNNEL: "/analytics/funnel",
+    ANALYTICS_EARLY_WARNINGS: "/analytics/early-warnings",
     TRIGGER_ANALYSIS: "/trigger-analysis",
   },
 

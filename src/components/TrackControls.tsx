@@ -1,6 +1,95 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
+import { useAnalytics } from '../hooks/useAnalytics';
+import { useUser } from '../hooks/useUser';
+
+// Utility function to format cue point timestamps
+const formatCueTimestamp = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 100);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
+};
+
+// Frequency filter logarithmic scale helpers (20Hz - 20kHz)
+const FREQ_MIN = 20;
+const FREQ_MAX = 20000;
+const FREQ_RATIO = FREQ_MAX / FREQ_MIN; // 1000
+
+const sliderToFreq = (sliderValue: number): number => {
+  const t = sliderValue / 100; // 0-100 -> 0-1
+  return FREQ_MIN * Math.pow(FREQ_RATIO, t);
+};
+
+const freqToSlider = (freq: number): number => {
+  const clamped = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+  return 100 * (Math.log(clamped / FREQ_MIN) / Math.log(FREQ_RATIO));
+};
+
+const formatFreqDisplay = (freq: number): string => {
+  return freq >= 1000 ? `${(freq / 1000).toFixed(1)}kHz` : `${Math.round(freq)}Hz`;
+};
+
+const formatVolumeDisplay = (vol: number): string => `${Math.round(vol * 100)}%`;
+
+const formatSpeedDisplay = (s: number): string => `${s.toFixed(2)}x`;
+
+const parseFreqInput = (input: string): number | null => {
+  const trimmed = input.replace(/\s/g, '').toLowerCase();
+  const match = trimmed.match(/^([\d.]+)\s*(hz|khz|k)?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  const unit = match[2];
+  if (unit === 'k' || unit === 'khz') val *= 1000;
+  return Math.max(FREQ_MIN, Math.min(FREQ_MAX, val));
+};
+
+const parseVolumeInput = (input: string): number | null => {
+  const trimmed = input.replace(/\s/g, '');
+  const match = trimmed.match(/^([\d.]+)\s*%?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  if (val > 1) val /= 100;
+  return Math.max(0, Math.min(1, val));
+};
+
+const parseSpeedInput = (
+  input: string,
+  minSpeed: number,
+  maxSpeed: number,
+  trackTempo: number
+): number | null => {
+  const trimmed = input.replace(/\s/g, '').toLowerCase();
+  const match = trimmed.match(/^([\d.]+)\s*(x|bpm)?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  const unit = match[2];
+  if (unit === 'bpm' && trackTempo > 0) {
+    val = val / trackTempo;
+  }
+  return Math.max(minSpeed, Math.min(maxSpeed, val));
+};
+
+// Helper function to get current timestamp for a cue point (considering drag state)
+const getCurrentCueTimestamp = (cuePoints: number[], cueDragState: { [index: number]: number } | null, index: number): number => {
+  // If this cue point is being dragged, use the drag state value
+  if (cueDragState && cueDragState[index] !== undefined) {
+    return cueDragState[index];
+  }
+  // Otherwise use the actual cue point value
+  return cuePoints[index] || 0;
+};
+
+// Slice end for One-Shot: next cue or track end; clamped to (sliceStart, duration]
+const getSliceEnd = (cuePoints: number[], index: number, duration: number, sliceStart: number): number => {
+  const rawEnd = index < cuePoints.length - 1 ? cuePoints[index + 1] : duration;
+  const end = Math.min(duration, Math.max(sliceStart + 0.001, rawEnd));
+  return end;
+};
 
 // Utility function to format cue point timestamps
 const formatCueTimestamp = (seconds: number): string => {
@@ -173,6 +262,8 @@ const TrackControls = ({
   chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
+  const { trackEvent } = useAnalytics();
+  const { tier } = useUser();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
   
@@ -1145,6 +1236,7 @@ const TrackControls = ({
             chopTriggerStyle: style
           }
         });
+        trackEvent('cue_triggered', { cueIndex: index, trackId, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
       }
       
       sourceNode.onended = () => {
