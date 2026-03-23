@@ -22,7 +22,7 @@ interface SidePanelProviderProps {
 }
 
 export const SidePanelProvider: React.FC<SidePanelProviderProps> = ({ children }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
 
   const toggleSidePanel = () => setIsOpen(!isOpen);
   const openSidePanel = () => setIsOpen(true);

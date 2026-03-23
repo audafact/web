@@ -108,9 +108,18 @@ export class StorageService {
     contentType: string,
     sizeBytes: number,
     title: string | undefined,
-    token: string
+    token: string,
+    uploadType?: "upload" | "recording"
   ): Promise<{ url: string; key: string }> {
     const apiUrl = buildApiUrl(API_CONFIG.ENDPOINTS.SIGN_UPLOAD);
+
+    const body: Record<string, unknown> = {
+      filename,
+      contentType,
+      sizeBytes,
+      title,
+    };
+    if (uploadType) body.uploadType = uploadType;
 
     const response = await fetch(apiUrl, {
       method: "POST",
@@ -118,12 +127,7 @@ export class StorageService {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        filename,
-        contentType,
-        sizeBytes,
-        title,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -136,6 +140,36 @@ export class StorageService {
     return {
       url: data.url,
       key: data.key,
+    };
+  }
+
+  /**
+   * Result shape for recording uploads (for DB insert)
+   */
+  static async uploadRecordingBlob(
+    blob: Blob,
+    userId: string,
+    sessionId?: string,
+    notes?: string,
+    originalName?: string
+  ): Promise<{
+    key: string;
+    content_hash: string;
+    size_bytes: number;
+    content_type: string;
+    original_name: string;
+  } | null> {
+    const name = originalName ? (originalName.endsWith('.wav') ? originalName : `${originalName}.wav`) : 'recording.wav';
+    const file = new File([blob], name, { type: "audio/wav" });
+    const result = await this.uploadRecording(file, userId, sessionId ?? "", notes);
+    if (result.error || !result.data?.metadata) return null;
+    const meta = result.data.metadata;
+    return {
+      key: meta.serverKey,
+      content_hash: meta.fullHash,
+      size_bytes: meta.sizeBytes ?? file.size,
+      content_type: meta.contentType ?? "audio/wav",
+      original_name: meta.originalName ?? "recording.wav",
     };
   }
 
@@ -172,7 +206,8 @@ export class StorageService {
         file.type || "application/octet-stream",
         file.size,
         notes,
-        token
+        token,
+        "recording"
       );
 
       // 3) Upload to R2 using signed URL

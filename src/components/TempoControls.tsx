@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTapTempo } from '../context/TapTempoContext';
 
 interface TempoControlsProps {
   trackId: string;
@@ -13,6 +14,7 @@ const TempoControls = ({
   onTempoChange, 
   playbackSpeed = 1,
 }: TempoControlsProps) => {
+  const { setTapTempoActive } = useTapTempo();
   const [tempo, setTempo] = useState(initialTempo);
   const [tempoInput, setTempoInput] = useState(initialTempo.toString());
   const [isTapTempoActive, setIsTapTempoActive] = useState(false);
@@ -136,6 +138,12 @@ const TempoControls = ({
       document.removeEventListener('keydown', handleKeyPress);
     };
   }, [isTapTempoActive, handleTap]);
+
+  // Sync tap tempo active state to context so Studio can skip Space when tap tempo is active
+  useEffect(() => {
+    setTapTempoActive(isTapTempoActive);
+    return () => setTapTempoActive(false);
+  }, [isTapTempoActive, setTapTempoActive]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -1,26 +1,8 @@
-import { supabase } from "@/services/supabase";
+import { signFile, API_BASE, authHeader } from "@/lib/api";
 
-const API_BASE =
-  import.meta.env.MODE === "staging"
-    ? "http://localhost:5173/api/staging" // Use proxy for staging
-    : "https://audafact-api.david-g-cortinas.workers.dev";
-
-async function authHeader() {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error("Not authenticated");
-  return { Authorization: `Bearer ${token}` };
-}
-
-/** Get a short-lived signed GET URL for playback/download */
+/** Get a short-lived signed GET URL for playback/download (uses shared cache) */
 export async function getSignedUrl(key: string): Promise<string> {
-  const headers = await authHeader();
-  const r = await fetch(
-    `${API_BASE}/api/sign-file?key=${encodeURIComponent(key)}`,
-    { headers }
-  );
-  if (!r.ok) throw new Error(`sign-file failed: ${r.status}`);
-  const { url } = await r.json();
+  const url = await signFile(key);
   if (!url) throw new Error("No URL returned");
   return url;
 }

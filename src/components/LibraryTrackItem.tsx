@@ -24,6 +24,11 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
     onAddToStudio();
   };
 
+  const genresText = [track.genre, ...(track.tags ?? [])]
+    .filter(Boolean)
+    .flatMap((s) => String(s).split(',').map((x) => x.trim()).filter(Boolean))
+    .join(', ');
+
   const handleDragStart = (e: React.DragEvent) => {
     if (tier.id === 'guest') {
       e.preventDefault();
@@ -46,7 +51,20 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
       className={`track-item ${isProOnly ? 'pro-only' : ''}`}
       draggable={canAddToStudio}
       onDragStart={handleDragStart}
+      title={canAddToStudio ? 'Drag to studio or click + to add' : undefined}
     >
+      {canAddToStudio && (
+        <div className="flex flex-col gap-0.5 self-center text-audafact-text-secondary opacity-60 mr-2" aria-hidden>
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <circle cx="9" cy="6" r="1.5" />
+            <circle cx="15" cy="6" r="1.5" />
+            <circle cx="9" cy="12" r="1.5" />
+            <circle cx="15" cy="12" r="1.5" />
+            <circle cx="9" cy="18" r="1.5" />
+            <circle cx="15" cy="18" r="1.5" />
+          </svg>
+        </div>
+      )}
       <div className="track-info">
         <div className="track-header">
           <h4 className="track-name">{track.name}</h4>
@@ -58,16 +76,15 @@ const LibraryTrackItem: React.FC<LibraryTrackItemProps> = ({
         )}
         
         <div className="track-meta">
-          <span className="track-genre">{track.genre}</span>
           <span className="track-bpm">{track.bpm} BPM</span>
           {track.key && <span className="track-key">{track.key}</span>}
         </div>
-        
-        <div className="track-tags">
-          {track.tags.slice(0, 3).map(tag => (
-            <span key={tag} className="track-tag">{tag}</span>
-          ))}
-        </div>
+
+        {genresText && (
+          <p className="track-genres" title={genresText}>
+            {genresText}
+          </p>
+        )}
       </div>
       
       <div className="track-actions">

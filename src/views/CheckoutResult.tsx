@@ -13,6 +13,7 @@ export const CheckoutResult: React.FC = () => {
 
   const success = searchParams.get('success') === 'true';
   const canceled = searchParams.get('canceled') === 'true';
+  const tierFromUrl = searchParams.get('tier') as 'starter' | 'pro' | null;
 
   useEffect(() => {
     if (success && countdown > 0) {
@@ -42,16 +43,18 @@ export const CheckoutResult: React.FC = () => {
               </div>
             </div>
             <h1 className="text-3xl font-bold audafact-heading mb-4">
-              Welcome to Pro Creator!
+              {tierFromUrl === 'starter' ? 'Welcome to Starter!' : 'Welcome to Pro Creator!'}
             </h1>
             <p className="text-lg audafact-text-secondary mb-8">
-              Your subscription has been activated successfully. You now have access to all premium features.
+              {tierFromUrl === 'starter'
+                ? 'Your Starter subscription is active. You have more room to create with higher limits.'
+                : 'Your subscription has been activated successfully. You now have access to all premium features.'}
             </p>
             
-            {accessTier === 'pro' && (
+            {(accessTier === 'pro' || accessTier === 'starter') && (
               <div className="bg-audafact-accent-green bg-opacity-10 border border-audafact-accent-green border-opacity-20 rounded-lg p-4 mb-8">
                 <p className="text-audafact-accent-green font-medium">
-                  ✓ Pro access confirmed
+                  ✓ {accessTier === 'pro' ? 'Pro' : 'Starter'} access confirmed
                 </p>
               </div>
             )}

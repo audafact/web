@@ -444,10 +444,10 @@ const Home = () => {
   return (
     <div className="min-h-screen">
       {/* Sticky Header */}
+      {/* 
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700/50">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
-            {/* Logo */}
             <div className="flex items-center">
               <img 
                 src="/favicon.svg" 
@@ -456,8 +456,6 @@ const Home = () => {
               />
               <span className="text-white font-semibold text-lg">Audafact</span>
             </div>
-            
-            {/* Right side CTAs */}
             <div className="flex items-center gap-3">
               <button
                 onClick={handleOpenModal}
@@ -470,6 +468,7 @@ const Home = () => {
           </div>
         </div>
       </header>
+      */}
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-16">

@@ -8,6 +8,7 @@ import { useGuest } from '../context/GuestContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
+import { useUserAccess } from '../hooks/useUserAccess';
 import { createOnboardingSteps, createQuickOnboardingSteps } from '../config/onboardingConfig';
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
@@ -91,15 +92,18 @@ const Studio = () => {
   const { modalState, closeSignupModal, showSignupModal: openSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { user, tier, libraryTracks, loading: userLoading } = useUser();
+  const { accessTier, proAccessSource } = useUserAccess();
   const { isTapTempoActive } = useTapTempo();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [showEarlyCreatorModal, setShowEarlyCreatorModal] = useState<boolean>(false);
   const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
   // Track drag state for real-time timestamp updates
   const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
+  const [loopDragStates, setLoopDragStates] = useState<{ [trackId: string]: { start: number; end: number } }>({});
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
@@ -170,6 +174,24 @@ const Studio = () => {
       window.history.replaceState({}, '', newUrl.toString());
     }
   }, [isVerified, user, isGuestMode]);
+
+  useEffect(() => {
+    if (!user || authLoading || userLoading) return;
+    if (accessTier !== 'pro') return;
+    if (proAccessSource !== 'founder_manual' && proAccessSource !== 'invite_code') return;
+
+    const storageKey = `early_creator_modal_seen_${user.id}`;
+    if (localStorage.getItem(storageKey) === 'true') return;
+
+    setShowEarlyCreatorModal(true);
+  }, [user, authLoading, userLoading, accessTier, proAccessSource]);
+
+  const closeEarlyCreatorModal = () => {
+    if (user) {
+      localStorage.setItem(`early_creator_modal_seen_${user.id}`, 'true');
+    }
+    setShowEarlyCreatorModal(false);
+  };
 
   // Verification handlers
   const handleStartDemo = async () => {
@@ -1000,6 +1022,9 @@ const Studio = () => {
         const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
           ? settings.chopTriggerStyle
           : 'cue';
+        const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
+          ? asset.bpm
+          : (settings.tempo || 120);
         const newTrack: Track = {
           id: trackId,
           file,
@@ -1011,7 +1036,7 @@ const Studio = () => {
           cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
             buffer.duration * (i / 10)
           ),
-          tempo: settings.tempo || 120,
+          tempo: trackTempo,
           timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
           firstMeasureTime: settings.firstMeasureTime || 0,
           showMeasures: settings.showMeasures || false,
@@ -1134,13 +1159,66 @@ const Studio = () => {
           // If the currently loaded track already matches the bundled track, do nothing
           if (tracks[0]?.id === currentGuestTrack.id) return;
           
-          // In demo mode, we don't need to update tracks since we're using bundled tracks
-          // Just log the demo event and keep the current track
+          // Reload the guest buffer so next/prev actually swaps the loaded audio + cue points.
+          (async () => {
+            try {
+              setIsInitializingAudio(true);
+              setError(null);
 
-          trackGuestEvent('next_track', { 
-            fromTrackId: tracks[0]?.id,
-            toTrackId: currentGuestTrack.id
-          });
+              const response = await fetch(currentGuestTrack.file);
+              const blob = await response.blob();
+              const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, {
+                type: `audio/${currentGuestTrack.type}`,
+              });
+
+              const buffer = await loadAudioBuffer(file, audioContext);
+              const trackId = currentGuestTrack.id;
+              const mode: 'cue' | 'loop' = tracks[0]?.mode === 'loop' ? 'loop' : 'cue';
+
+              const newTrack: Track = {
+                id: trackId,
+                file,
+                buffer,
+                peaks: extractPeaksFromBuffer(buffer),
+                mode,
+                chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
+                loopStart: 0,
+                loopEnd: buffer.duration,
+                cuePoints: Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10)),
+                tempo: currentGuestTrack.bpm || 120,
+                timeSignature: { numerator: 4, denominator: 4 },
+                firstMeasureTime: 0,
+                showMeasures: false,
+              };
+
+              setTracks([newTrack]);
+              setCurrentTrackIndex(0);
+              setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
+              setShowCueThumbs((prev) => ({ ...prev, [trackId]: mode === 'cue' }));
+              if (mode === 'cue') setSelectedCueTrackId(trackId);
+              setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
+              setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
+              setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
+              setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
+              setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
+              setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
+              setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
+              setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
+              setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
+              setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
+
+              trackGuestEvent('next_track', {
+                fromTrackId: tracks[0]?.id,
+                toTrackId: currentGuestTrack.id,
+              });
+            } catch (error) {
+              console.error('Failed to reload guest track:', error);
+              const msg = error instanceof Error ? error.message : '';
+              setError(msg || 'Failed to load guest track');
+            } finally {
+              setIsInitializingAudio(false);
+            }
+          })();
         }
       }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
 
@@ -1571,6 +1649,9 @@ const Studio = () => {
       const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
         : 'cue';
+      const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
+        ? asset.bpm
+        : (settings.tempo || 120);
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
@@ -1585,7 +1666,7 @@ const Studio = () => {
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ),
-        tempo: settings.tempo || 120,
+        tempo: trackTempo,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
         showMeasures: settings.showMeasures || false,
@@ -2036,6 +2117,16 @@ const Studio = () => {
       return newState;
     });
   };
+
+  const handleLoopDragStateChange = (trackId: string, start: number | null, end: number | null) => {
+    setLoopDragStates(prev => {
+      if (start === null || end === null) {
+        const { [trackId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [trackId]: { start, end } };
+    });
+  };
   
   const handleModeChange = (trackId: string, mode: 'preview' | 'loop' | 'cue') => {
     if (!tracks) return;
@@ -2107,12 +2198,8 @@ const Studio = () => {
   };
 
   const handleChopTriggerStyleChange = (trackId: string, chopTriggerStyle: 'cue' | 'hold' | 'one-shot') => {
-    if (chopTriggerStyle !== 'cue' && tier.id !== 'pro') {
-      setShowUpgradePrompt({
-        show: true,
-        message: 'Unlock expressive performance modes with Pro.',
-        feature: 'Hold & One-Shot',
-      });
+    if (chopTriggerStyle !== 'cue' && tier.id === 'guest') {
+      openSignupModal('trigger_styles');
       return;
     }
     setTracks(prev =>
@@ -2439,7 +2526,10 @@ const Studio = () => {
           fileKey: trackData.fileKey,
           type: trackData.fileType || 'audio/wav',
           size: '-',
-          uploadedAt: Date.now()
+          uploadedAt: Date.now(),
+          bpm: trackData.bpm,
+          key: trackData.key,
+          beats: trackData.beats
         };
         await handleAddUserTrack(userTrack, 'cue');
         return;
@@ -2600,6 +2690,47 @@ const Studio = () => {
       // Load the audio buffer
       const buffer = await loadAudioBuffer(file, context);
       
+      // Guest uploads are session-only and replace the current demo track.
+      if (isGuestMode) {
+        const trackId = `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const cuePoints = Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
+
+        const newTrack: Track = {
+          id: trackId,
+          file,
+          buffer,
+          peaks: extractPeaksFromBuffer(buffer),
+          mode: 'cue',
+          chopTriggerStyle: 'cue',
+          loopStart: 0,
+          loopEnd: buffer.duration,
+          cuePoints,
+          tempo: currentGuestTrack?.bpm || 120,
+          timeSignature: { numerator: 4, denominator: 4 },
+          firstMeasureTime: 0,
+          showMeasures: false,
+        };
+
+        setTracks([newTrack]);
+        setCurrentTrackIndex(0);
+        setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
+        setShowCueThumbs((prev) => ({ ...prev, [trackId]: true }));
+        setSelectedCueTrackId(trackId);
+        setArmedLoopTrackIds(new Set());
+        setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
+        setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
+        setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
+        setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
+        setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
+        setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
+        setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
+        setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
+        setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
+
+        addingTrackIdRef.current = trackId; // Defer clearing placeholder until waveform is ready
+        return;
+      }
+
       // Create a new track
       const newTrack: Track = {
         id: `track-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -2960,7 +3091,7 @@ const Studio = () => {
         
         const buffer = await loadAudioBuffer(file, context);
         const trackId = currentGuestTrack.id;
-        const mode = preferredMode ?? loadPreferredMode() ?? 'cue';
+        const mode: 'cue' | 'loop' = preferredMode ?? 'cue';
         
         const newTrack: Track = {
           id: trackId,
@@ -2983,13 +3114,13 @@ const Studio = () => {
         setTracks([newTrack]);
         setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: false }));
-        setShowCueThumbs(prev => ({ ...prev, [trackId]: true }));
+        setShowCueThumbs(prev => ({ ...prev, [trackId]: mode === 'cue' }));
+        setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
         setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
         setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
         setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
         if (mode === 'cue') setSelectedCueTrackId(trackId);
-        else if (mode === 'loop') setArmedLoopTrackIds(prev => new Set(prev).add(trackId));
         
         // Track demo event
         trackGuestEvent('session_started', { 
@@ -3038,6 +3169,9 @@ const Studio = () => {
       const chopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
         : 'cue';
+      const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
+        ? asset.bpm
+        : (settings.tempo || 120);
       const newTrack: Track = {
         id: trackId,
         sourceAssetId: asset.id,
@@ -3052,7 +3186,7 @@ const Studio = () => {
         cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
           buffer.duration * (i / 10)
         ),
-        tempo: settings.tempo || 120,
+        tempo: trackTempo,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
         showMeasures: settings.showMeasures || false,
@@ -3620,6 +3754,11 @@ const Studio = () => {
                     <p className="text-sm text-audafact-text-secondary text-center">
                       Find it. Dig it. Chop it. Loop it. Build something in seconds.
                     </p>
+                    {isGuestMode && (
+                      <p className="text-xs text-audafact-text-secondary text-center -mt-2">
+                        Start digging loads chop/cue by default; choose loop/chop below anytime.
+                      </p>
+                    )}
                     <div className="space-y-3">
                       <button
                         onClick={() => {
@@ -4427,6 +4566,7 @@ const Studio = () => {
                 loopEnd={track.loopEnd}
                 cuePoints={track.cuePoints}
                 onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+                onLoopDragStateChange={(start, end) => handleLoopDragStateChange(track.id, start, end)}
                 onCuePointChange={(index, time) => handleCuePointChange(track.id, index, time)}
                 playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
                 playbackTime={playbackTimes[track.id] || 0}
@@ -4464,6 +4604,7 @@ const Studio = () => {
                 audioBuffer={track.buffer}
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
+                loopDragState={loopDragStates[track.id] || null}
                 cuePoints={track.cuePoints}
                 ensureAudio={ensureAudioBeforeAction}
                 isSelected={track.id === selectedCueTrackId}
@@ -4498,7 +4639,7 @@ const Studio = () => {
                   <span className="text-xs audafact-text-secondary">Trigger style:</span>
                   <div className="flex rounded-md border border-audafact-divider p-0.5 bg-audafact-surface-2">
                     {(['cue', 'hold', 'one-shot'] as const).map((style) => {
-                      const locked = style !== 'cue' && tier.id !== 'pro';
+                      const locked = style !== 'cue' && tier.id === 'guest';
                       return (
                       <button
                         key={style}
@@ -4506,7 +4647,7 @@ const Studio = () => {
                         onClick={() => handleChopTriggerStyleChange(track.id, style)}
                         title={
                           locked
-                            ? 'Pro — Unlock expressive performance modes'
+                            ? 'Sign up to unlock Hold and One-Shot modes'
                             : style === 'cue'
                               ? 'Jump to cue and continue'
                               : style === 'hold'
@@ -4544,6 +4685,33 @@ const Studio = () => {
         })}
         </div>
       </div>
+
+      {/* Signup Modal */}
+      {showEarlyCreatorModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-xl audafact-card-enhanced p-6">
+            <h2 className="text-2xl font-bold audafact-heading mb-3">
+              You&apos;ve been given Pro access as an early creator
+            </h2>
+            <p className="audafact-text-secondary mb-4">
+              You&apos;re part of a small group helping shape where Audafact goes next.
+            </p>
+            <div className="rounded-lg bg-audafact-surface-2 p-4 mb-6">
+              <p className="text-sm font-semibold audafact-heading mb-2">Try one of these now:</p>
+              <ul className="text-sm audafact-text-secondary space-y-1">
+                <li>- Chop one library track and test trigger styles</li>
+                <li>- Record a short performance and export it</li>
+                <li>- Share one piece of honest feedback after your session</li>
+              </ul>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" className="audafact-button-primary" onClick={closeEarlyCreatorModal}>
+                Let&apos;s create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Signup Modal */}
       <SignupModal

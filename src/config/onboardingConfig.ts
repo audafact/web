@@ -24,9 +24,16 @@ export const createOnboardingSteps = (
   },
   {
     id: 'track-navigation',
-    title: 'Track Navigation',
-    description: 'Use these arrow buttons to navigate between different tracks. You can also swipe left/right on mobile or use keyboard arrows.',
-    targetSelector: '[data-testid="previous-track-button"], [data-testid="next-track-button"]',
+    title: 'Switch & add tracks',
+    description: 'Use Prev/Next to switch between tracks. Swipe left/right on mobile or use keyboard arrows.',
+    targetSelector: '[data-testid="track-loader-bar"]',
+    position: 'bottom'
+  },
+  {
+    id: 'add-track',
+    title: 'Add More Tracks',
+    description: 'Add tracks with the Add button, swipe down on the bar, or drag tracks from the library into the studio.',
+    targetSelector: '[data-testid="add-track-button"], [data-testid="track-loader-bar"]',
     position: 'bottom'
   },
   {
@@ -71,7 +78,7 @@ export const createOnboardingSteps = (
   {
     id: 'cue-triggering',
     title: 'Triggering Cues',
-    description: 'In Chop mode, press keys 1-0 to trigger different cue points. Each number corresponds to a specific position in the track.',
+    description: 'In Chop mode, press keys 1-0 to trigger different cue points. Each number corresponds to a specific position in the track. You can switch trigger style to Cue, Hold, or One-Shot for different playback behavior.',
     targetSelector: '.audafact-waveform-bg',
     position: 'top',
     action: handlers.onTriggerCue
@@ -141,9 +148,9 @@ export const createQuickOnboardingSteps = (
   },
   {
     id: 'navigation',
-    title: 'Track Navigation',
-    description: 'Use arrow buttons to switch between tracks, or swipe on mobile.',
-    targetSelector: '[data-testid="previous-track-button"], [data-testid="next-track-button"]',
+    title: 'Switch & add tracks',
+    description: 'Use Prev/Next to switch tracks. Add tracks with the Add button or swipe down. Drag from the library to add.',
+    targetSelector: '[data-testid="track-loader-bar"]',
     position: 'bottom'
   },
   {

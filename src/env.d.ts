@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_STRIPE_TEST_PRODUCT_MONTHLY: string;
   readonly VITE_STRIPE_TEST_PRODUCT_YEARLY: string;
   readonly VITE_STRIPE_TEST_PRODUCT_EARLY_ADOPTER: string;
+  readonly VITE_STRIPE_TEST_PRICE_STARTER_MONTHLY?: string;
+  readonly VITE_STRIPE_LIVE_PRICE_STARTER_MONTHLY?: string;
   readonly VITE_STRIPE_TEST_PRICE_MONTHLY: string;
   readonly VITE_STRIPE_TEST_PRICE_YEARLY: string;
   readonly VITE_STRIPE_TEST_PRICE_EARLY_ADOPTER: string;
@@ -22,6 +24,7 @@ interface ImportMetaEnv {
   readonly VITE_EMAILJS_SERVICE_ID: string;
   readonly VITE_EMAILJS_TEMPLATE_ID: string;
   readonly VITE_EMAILJS_PUBLIC_KEY: string;
+  readonly VITE_HOST_EXPERIENCE?: "app" | "marketing";
   readonly MODE: string;
   readonly PROD: boolean;
 }

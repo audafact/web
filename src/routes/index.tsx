@@ -1,11 +1,12 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout from '../components/Layout';
+import { TapTempoProvider } from '../context/TapTempoContext';
 import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
 import { AuthVerification } from '../auth/AuthVerification';
 import { CheckEmailPage } from '../auth/CheckEmailPage';
-import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { getHostExperience } from '../routing/hostRouting';
 
 // Lazy load views for better performance
 const Home = lazy(() => import('../views/Home'));
@@ -26,51 +27,79 @@ const LoadingSpinner = () => (
   </div>
 );
 
-export const router = createBrowserRouter([
+const RootRouteResolver = () => {
+  const experience = getHostExperience();
+
+  if (experience === 'app') {
+    return (
+      <TapTempoProvider>
+        <Suspense fallback={<LoadingSpinner />}>
+          <Studio />
+        </Suspense>
+      </TapTempoProvider>
+    );
+  }
+
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <Home />
+    </Suspense>
+  );
+};
+
+const LegacyStudioRedirect = () => <Navigate to="/" replace />;
+
+export const appRoutes = [
   {
     path: '/',
     element: <Layout />,
     children: [
       {
         index: true,
+        element: <RootRouteResolver />,
+      },
+      {
+        path: 'studio',
+        element: <LegacyStudioRedirect />,
+      },
+      {
+        path: 'pricing',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <Home />
+            <Pricing />
           </Suspense>
         ),
       },
-      // {
-      //   path: 'studio',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <Studio />
-      //     </Suspense>
-      //   ),
-      // },
-      // {
-      //   path: 'pricing',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <Pricing />
-      //     </Suspense>
-      //   ),
-      // },
-      // {
-      //   path: 'checkout-result',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <CheckoutResult />
-      //     </Suspense>
-      //   ),
-      // },
-      // {
-      //   path: 'profile',
-      //   element: (
-      //     <Suspense fallback={<LoadingSpinner />}>
-      //       <Profile />
-      //     </Suspense>
-      //   ),
-      // },
+      {
+        path: 'stash',
+        element: (
+          <TapTempoProvider>
+            <Suspense fallback={<LoadingSpinner />}>
+              <Studio />
+            </Suspense>
+          </TapTempoProvider>
+        ),
+      },
+      {
+        path: 'checkout-result',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <CheckoutResult />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'account',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Profile />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'profile',
+        element: <Navigate to="/account" replace />,
+      },
       {
         path: 'privacy',
         element: (
@@ -104,38 +133,38 @@ export const router = createBrowserRouter([
         ),
       },
       // Blocked routes - redirect to 404
-      {
-        path: 'studio',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'pricing',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'checkout-result',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
-      {
-        path: 'profile',
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <NotFound />
-          </Suspense>
-        ),
-      },
+      // {
+      //   path: 'studio',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'pricing',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'checkout-result',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
+      // {
+      //   path: 'profile',
+      //   element: (
+      //     <Suspense fallback={<LoadingSpinner />}>
+      //       <NotFound />
+      //     </Suspense>
+      //   ),
+      // },
       // Catch-all 404 route
       {
         path: '*',
@@ -147,55 +176,55 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  // {
-  //   path: '/auth',
-  //   element: <AuthPage />,
-  // },
-  // {
-  //   path: '/auth/callback',
-  //   element: <AuthCallback />,
-  // },
-  // {
-  //   path: '/auth/verify',
-  //   element: <AuthVerification />,
-  // },
-  // {
-  //   path: '/auth/check-email',
-  //   element: <CheckEmailPage />,
-  // },
-  // Blocked auth routes - redirect to 404
   {
     path: '/auth',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <AuthPage />,
   },
   {
     path: '/auth/callback',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <AuthCallback />,
   },
   {
     path: '/auth/verify',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <AuthVerification />,
   },
   {
     path: '/auth/check-email',
-    element: (
-      <Suspense fallback={<LoadingSpinner />}>
-        <NotFound />
-      </Suspense>
-    ),
+    element: <CheckEmailPage />,
   },
+  // Blocked auth routes - redirect to 404
+  // {
+  //   path: '/auth',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
+  // {
+  //   path: '/auth/callback',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
+  // {
+  //   path: '/auth/verify',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
+  // {
+  //   path: '/auth/check-email',
+  //   element: (
+  //     <Suspense fallback={<LoadingSpinner />}>
+  //       <NotFound />
+  //     </Suspense>
+  //   ),
+  // },
   // Global catch-all for any other routes
   {
     path: '*',
@@ -205,4 +234,6 @@ export const router = createBrowserRouter([
       </Suspense>
     ),
   },
-]); 
+];
+
+export const router = createBrowserRouter(appRoutes);

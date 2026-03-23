@@ -1,12 +1,22 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import Stripe from 'https://esm.sh/stripe@12.0.0'
+// Deno needs async webhooks + SubtleCrypto provider (see Supabase Stripe example)
+import Stripe from 'https://esm.sh/stripe@14.21.0?target=denonext'
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2023-10-16',
 })
 
+/** Required for constructEventAsync in Deno / Supabase Edge (Web Crypto is async-only) */
+const cryptoProvider = Stripe.createSubtleCryptoProvider()
+
 const endpointSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
+
+/** Map Stripe interval (month/year) to DB format (monthly/yearly) */
+function toPlanInterval(stripeInterval: string | null | undefined): 'monthly' | 'yearly' {
+  if (stripeInterval === 'year') return 'yearly'
+  return 'monthly' // 'month', 'day', 'week', or missing
+}
 
 serve(async (req) => {
   const signature = req.headers.get('stripe-signature')
@@ -17,7 +27,13 @@ serve(async (req) => {
 
   try {
     const body = await req.text()
-    const event = stripe.webhooks.constructEvent(body, signature, endpointSecret)
+    const event = await stripe.webhooks.constructEventAsync(
+      body,
+      signature,
+      endpointSecret,
+      undefined,
+      cryptoProvider
+    )
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -27,23 +43,52 @@ serve(async (req) => {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
+        const supabaseUserId = session.metadata?.supabase_user_id
+
+        console.log('[checkout.session.completed] metadata:', JSON.stringify(session.metadata), 'subscription:', session.subscription)
+
+        if (!supabaseUserId) {
+          console.error('Missing session.metadata.supabase_user_id - cannot update user')
+          return new Response('Missing metadata.supabase_user_id', { status: 400 })
+        }
+
+        if (!session.subscription) {
+          console.error('Missing session.subscription - expected for subscription checkout')
+          return new Response('Missing subscription', { status: 400 })
+        }
+
         const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
-        
-        // Update user access tier
-        const { error } = await supabase
+        const priceId = subscription.items.data[0].price.id
+        const starterPriceId = Deno.env.get('STRIPE_STARTER_PRICE_ID') ?? ''
+        const access_tier =
+          starterPriceId && priceId === starterPriceId ? 'starter' : 'pro'
+
+        const planInterval = toPlanInterval(subscription.items.data[0].price.recurring?.interval)
+
+        const { data: updatedRows, error } = await supabase
           .from('users')
           .update({
-            access_tier: 'pro',
+            access_tier,
             subscription_id: subscription.id,
-            plan_interval: subscription.items.data[0].price.recurring?.interval || 'monthly',
-            price_id: subscription.items.data[0].price.id,
+            plan_interval: planInterval,
+            price_id: priceId,
+            pro_access_source: null,
+            pro_expires_at: null,
           })
-          .eq('id', session.metadata?.supabase_user_id)
+          .eq('id', supabaseUserId)
+          .select('id, access_tier')
 
         if (error) {
-          console.error('Error updating user access:', error)
-          return new Response('Error updating user', { status: 500 })
+          console.error('Error updating user access:', error.message, JSON.stringify(error))
+          return new Response(`Error updating user: ${error.message}`, { status: 500 })
         }
+
+        if (!updatedRows || updatedRows.length === 0) {
+          console.error('No user row updated for id:', supabaseUserId, '- user may not exist in public.users')
+          return new Response('User not found in public.users', { status: 404 })
+        }
+
+        console.log('Updated user', supabaseUserId, 'to access_tier:', access_tier)
         break
       }
 
@@ -58,6 +103,8 @@ serve(async (req) => {
             subscription_id: null,
             plan_interval: null,
             price_id: null,
+            pro_access_source: null,
+            pro_expires_at: null,
           })
           .eq('subscription_id', subscription.id)
 
@@ -79,13 +126,20 @@ serve(async (req) => {
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription
-        
-        // Update subscription details if needed
+        const priceId = subscription.items.data[0].price.id
+        const starterPriceId = Deno.env.get('STRIPE_STARTER_PRICE_ID') ?? ''
+        const access_tier =
+          starterPriceId && priceId === starterPriceId ? 'starter' : 'pro'
+        const planInterval = toPlanInterval(subscription.items.data[0].price.recurring?.interval)
+
         const { error } = await supabase
           .from('users')
           .update({
-            plan_interval: subscription.items.data[0].price.recurring?.interval || 'monthly',
-            price_id: subscription.items.data[0].price.id,
+            plan_interval: planInterval,
+            price_id: priceId,
+            access_tier,
+            pro_access_source: null,
+            pro_expires_at: null,
           })
           .eq('subscription_id', subscription.id)
 

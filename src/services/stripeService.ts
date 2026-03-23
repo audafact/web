@@ -5,7 +5,10 @@ interface CheckoutSessionResponse {
   error?: string;
 }
 
-export const createCheckoutSession = async (priceId: string): Promise<CheckoutSessionResponse> => {
+export const createCheckoutSession = async (
+  priceId: string,
+  planTier: 'starter' | 'pro' = 'pro'
+): Promise<CheckoutSessionResponse> => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -18,13 +21,16 @@ export const createCheckoutSession = async (priceId: string): Promise<CheckoutSe
         priceId,
         userId: user.id,
         email: user.email,
-        successUrl: `${window.location.origin}/checkout-result?success=true`,
-        cancelUrl: `${window.location.origin}/checkout-result?canceled=true`
+        successUrl: `${window.location.origin}/checkout-result?success=true&tier=${planTier}`,
+        cancelUrl: `${window.location.origin}/checkout-result?canceled=true`,
+        planTier,
       }
     });
 
     if (error) {
-      return { error: error.message || 'Failed to create checkout session' };
+      // Surface the actual error from the Edge Function (e.g. Stripe/db errors)
+      const message = (data as { error?: string })?.error || error.message || 'Failed to create checkout session';
+      return { error: message };
     }
 
     return { url: data?.url };

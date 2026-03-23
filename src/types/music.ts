@@ -11,7 +11,9 @@ export interface Measure {
 // Database Types
 export interface User {
   id: string;
-  access_tier: "free" | "pro" | "enterprise";
+  access_tier: "free" | "starter" | "pro" | "enterprise";
+  pro_access_source?: "founder_manual" | "invite_code" | null;
+  pro_expires_at?: string | null;
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
@@ -27,12 +29,59 @@ export interface Upload {
   duration?: number;
   created_at: string;
   updated_at: string;
+  // Audio analysis results
+  bpm?: number;
+  key?: string;
+  /** Beat positions in seconds (adaptive grid) */
+  beat_times?: number[] | null;
+  /** ML-extracted genre labels */
+  genres?: string[] | null;
+  /** ML-extracted mood/theme labels */
+  mood_themes?: string[] | null;
+  /** ML-extracted tags */
+  tags?: string[] | null;
+  /** When ML fields were last updated */
+  ml_analyzed_at?: string | null;
   // Legacy fields for backward compatibility
   file_url?: string;
   full_hash?: string;
   short_hash?: string;
   server_key?: string;
   original_name?: string;
+}
+
+/** Complete session state for full restore (excludes zoom, playback position) */
+export interface SessionFullState {
+  tracks: Array<{
+    id: string;
+    sourceAssetId?: string;
+    fileKey?: string;
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+    mode: string;
+    loopStart: number;
+    loopEnd: number;
+    cuePoints: number[];
+    tempo: number;
+    timeSignature: TimeSignature;
+    firstMeasureTime: number;
+    showMeasures: boolean;
+    showCueThumbs: boolean;
+    playbackSpeed: number;
+    volume: number;
+    lowpassFreq: number;
+    highpassFreq: number;
+    filterEnabled: boolean;
+    expandedControls?: boolean;
+    chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
+  }>;
+  selectedCueTrackId: string | null;
+  armedLoopTrackIds: string[];
+  currentTrackIndex: number;
+  lastUsedVolume: number;
+  timestamp?: number;
+  version?: number;
 }
 
 export interface Session {
@@ -45,6 +94,7 @@ export interface Session {
   mode: "loop" | "chop";
   created_at: string;
   updated_at: string;
+  full_state?: SessionFullState | null;
 }
 
 export interface Recording {
@@ -55,6 +105,12 @@ export interface Recording {
   length?: number;
   notes?: string;
   created_at: string;
+  // R2 storage fields (optional; migration added these columns)
+  file_key?: string;
+  content_hash?: string;
+  size_bytes?: number;
+  content_type?: string;
+  original_name?: string;
 }
 
 // Storage Types
@@ -96,6 +152,8 @@ export interface FeatureAccess {
   canSaveSession: boolean;
   canRecord: boolean;
   canDownload: boolean;
+  canExportMp3: boolean;
+  canExportWav: boolean;
   canEditCues: boolean;
   canEditLoops: boolean;
   canBrowseLibrary: boolean;
@@ -110,7 +168,7 @@ export interface UsageLimits {
 }
 
 export interface UserTier {
-  id: "guest" | "free" | "pro";
+  id: "guest" | "free" | "starter" | "pro";
   name: string;
   features: FeatureAccess;
   limits: UsageLimits;
@@ -139,6 +197,8 @@ export interface LibraryTrack {
   genre: string;
   bpm: number;
   key?: string;
+  /** Beat positions in seconds when bulk-analyzed on library_tracks */
+  beats?: number[];
   duration: number;
   fileKey: string; // Transformed from database field file_key
   previewKey?: string; // Transformed from database field preview_key
@@ -180,4 +240,16 @@ export interface UserTrack {
   size: string;
   url?: string;
   uploadedAt: number;
+  bpm?: number; // Detected tempo from audio analysis; Studio uses 120 if absent
+  key?: string; // Detected musical key from audio analysis
+  /** Beat positions in seconds from audio analysis (adaptive grid) */
+  beats?: number[];
+  /** True when track was just uploaded and tempo/key analysis is pending */
+  isAnalyzing?: boolean;
+  /** ML-extracted genre labels */
+  genres?: string[];
+  /** ML-extracted mood/theme labels */
+  mood_themes?: string[];
+  /** ML-extracted tags */
+  tags?: string[];
 }

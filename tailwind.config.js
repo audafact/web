@@ -14,6 +14,8 @@ export default {
           "surface-1-enhanced": "#1A1F2E",
           // Surface Elevation 2 (Button hover/Dropdown background) - Medium midnight blue
           "surface-2": "#1F2937",
+          // Surface Elevation 3 (Sub-menu active/hover) - Slightly elevated
+          "surface-3": "#374151",
           // Accent Cyan (Waveform lines, progress bars, cue overlays) - Brighter cyan
           "accent-cyan": "#00F5C3",
           // Accent Blue (Secondary action highlight) - Bright blue
@@ -44,6 +46,15 @@ export default {
       },
       letterSpacing: {
         "tool-name": "0.025em",
+      },
+      keyframes: {
+        "recording-blink": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.35" },
+        },
+      },
+      animation: {
+        "recording-blink": "recording-blink 1.2s ease-in-out infinite",
       },
     },
   },

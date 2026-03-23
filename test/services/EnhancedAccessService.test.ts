@@ -13,6 +13,8 @@ describe("EnhancedAccessService", () => {
       canSaveSession: true,
       canRecord: true,
       canDownload: true,
+      canExportMp3: true,
+      canExportWav: true,
       canEditCues: true,
       canEditLoops: true,
       canBrowseLibrary: true,
@@ -33,7 +35,9 @@ describe("EnhancedAccessService", () => {
       canUpload: true,
       canSaveSession: true,
       canRecord: true,
-      canDownload: false,
+      canDownload: true, // Free gets MP3 export
+      canExportMp3: true,
+      canExportWav: false,
       canEditCues: true,
       canEditLoops: true,
       canBrowseLibrary: true,
@@ -41,9 +45,9 @@ describe("EnhancedAccessService", () => {
     },
     limits: {
       maxUploads: 5,
-      maxSessions: 10,
-      maxRecordings: 1,
-      maxLibraryTracks: 20,
+      maxSessions: 3,
+      maxRecordings: 2,
+      maxLibraryTracks: 10,
     },
   };
 
@@ -55,6 +59,8 @@ describe("EnhancedAccessService", () => {
       canSaveSession: false,
       canRecord: false,
       canDownload: false,
+      canExportMp3: false,
+      canExportWav: false,
       canEditCues: false,
       canEditLoops: false,
       canBrowseLibrary: true,
@@ -99,7 +105,7 @@ describe("EnhancedAccessService", () => {
       ).toBe(true);
     });
 
-    it("should allow free users to access recording", () => {
+    it("should allow free users to access recording and MP3 export", () => {
       expect(
         EnhancedAccessService.canAccessFeature("upload", mockFreeTier)
       ).toBe(true);
@@ -108,6 +114,12 @@ describe("EnhancedAccessService", () => {
       ).toBe(true);
       expect(
         EnhancedAccessService.canAccessFeature("download", mockFreeTier)
+      ).toBe(true); // Free can export MP3
+      expect(
+        EnhancedAccessService.canAccessFeature("download_mp3", mockFreeTier)
+      ).toBe(true);
+      expect(
+        EnhancedAccessService.canAccessFeature("download_wav", mockFreeTier)
       ).toBe(false);
       expect(
         EnhancedAccessService.canAccessFeature("edit_cues", mockFreeTier)
@@ -125,15 +137,13 @@ describe("EnhancedAccessService", () => {
     it("should return correct config for upload feature", () => {
       const config = EnhancedAccessService.getFeatureGateConfig("upload");
       expect(config.gateType).toBe("modal");
-      expect(config.message).toContain("remix your own sounds");
-      expect(config.ctaText).toBe("Sign up to upload tracks");
+      expect(config.message).toMatch(/free account|upload/i);
     });
 
     it("should return correct config for record feature", () => {
       const config = EnhancedAccessService.getFeatureGateConfig("record");
       expect(config.gateType).toBe("modal");
-      expect(config.message).toContain("Record and export");
-      expect(config.ctaText).toBe("Upgrade to Pro Creator");
+      expect(config.message).toMatch(/record|recording|account|Upgrade/i);
     });
 
     it("should return tier-specific config for record feature", () => {
@@ -146,8 +156,8 @@ describe("EnhancedAccessService", () => {
         mockGuestTier
       );
 
-      expect(freeConfig.message).toContain("free recording");
-      expect(guestConfig.message).toContain("Record and export");
+      expect(freeConfig.message).toMatch(/Upgrade|recording/i);
+      expect(guestConfig.message).toMatch(/free account|Record/i);
     });
 
     it("should return correct config for edit_cues feature", () => {

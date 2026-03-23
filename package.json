@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/copy-lame.js",
     "dev": "vite",
+    "dev:app": "VITE_HOST_EXPERIENCE=app vite",
+    "dev:marketing": "VITE_HOST_EXPERIENCE=marketing vite",
     "dev:staging": "VITE_APP_ENV=staging vite",
     "dev:preview": "VITE_APP_ENV=preview vite",
     "dev:production": "VITE_APP_ENV=production vite",
@@ -51,21 +54,22 @@
     "@tailwindcss/typography": "^0.5.0",
     "@wavesurfer/react": "^1.0.11",
     "dotenv": "^17.2.1",
+    "lamejs": "^1.2.1",
     "lucide-react": "^0.517.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.0.0",
+    "react-router-dom": "^6.30.3",
     "tailwindcss": "^3.0.0",
     "wavesurfer.js": "^7.10.0",
     "web-audio-beat-detector": "^8.2.29"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.873.0",
+    "@aws-sdk/client-s3": "^3.994.0",
     "@aws-sdk/lib-storage": "^3.873.0",
     "@babel/plugin-transform-react-jsx": "^7.27.1",
     "@babel/preset-react": "^7.27.1",
-    "@playwright/experimental-ct-react": "^1.55.0",
-    "@playwright/test": "^1.55.0",
+    "@playwright/experimental-ct-react": "^1.57.0",
+    "@playwright/test": "^1.57.0",
     "@storybook/addon-a11y": "^8.6.14",
     "@storybook/addon-docs": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
@@ -89,16 +93,19 @@
     "eslint-plugin-react-hooks": "^4.0.0",
     "eslint-plugin-react-refresh": "^0.4.0",
     "eslint-plugin-storybook": "^0.10.1",
-    "happy-dom": "^18.0.1",
-    "jsdom": "^22.1.0",
+    "happy-dom": "^20.0.11",
+    "jsdom": "^28.1.0",
     "postcss": "^8.0.0",
-    "storybook": "^8.6.14",
-    "supabase": "^2.33.7",
+    "storybook": "^8.6.17",
+    "supabase": "^2.78.1",
     "terser": "^5.43.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.0.0",
-    "vite": "^4.0.0",
-    "vitest": "^0.34.6"
+    "vite": "^7.2.6",
+    "vitest": "^4.0.15"
+  },
+  "overrides": {
+    "glob": "10.5.0"
   },
   "eslintConfig": {
     "extends": [

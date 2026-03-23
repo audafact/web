@@ -19,6 +19,7 @@ export interface DatabaseLibraryTrack {
   genre: string;
   bpm: number | null;
   key: string | null;
+  beat_times?: number[] | null;
   duration: number | null;
 
   // legacy URL columns (kept for fallback)
@@ -71,6 +72,10 @@ export class LibraryService {
         genre: t.genre,
         bpm: t.bpm ?? 0,
         key: t.key ?? undefined,
+        beats:
+          Array.isArray(t.beat_times) && t.beat_times.length > 0
+            ? t.beat_times
+            : undefined,
         duration: t.duration ?? 0,
         fileKey,
         previewKey,
@@ -94,6 +99,9 @@ export class LibraryService {
     type: "wav" | "mp3";
     size: string;
     is_demo: boolean;
+    bpm?: number;
+    key?: string;
+    beats?: number[];
   }> {
     return tracks.map((t) => ({
       id: t.id,
@@ -102,6 +110,9 @@ export class LibraryService {
       type: t.type,
       size: t.size,
       is_demo: false,
+      bpm: t.bpm && t.bpm >= 40 && t.bpm <= 300 ? t.bpm : undefined,
+      key: t.key ?? undefined,
+      beats: t.beats,
     }));
   }
 

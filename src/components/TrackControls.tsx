@@ -2,6 +2,93 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
 
+// Utility function to format cue point timestamps
+const formatCueTimestamp = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 100);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
+};
+
+// Frequency filter logarithmic scale helpers (20Hz - 20kHz)
+const FREQ_MIN = 20;
+const FREQ_MAX = 20000;
+const FREQ_RATIO = FREQ_MAX / FREQ_MIN; // 1000
+
+const sliderToFreq = (sliderValue: number): number => {
+  const t = sliderValue / 100; // 0-100 -> 0-1
+  return FREQ_MIN * Math.pow(FREQ_RATIO, t);
+};
+
+const freqToSlider = (freq: number): number => {
+  const clamped = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+  return 100 * (Math.log(clamped / FREQ_MIN) / Math.log(FREQ_RATIO));
+};
+
+const formatFreqDisplay = (freq: number): string => {
+  return freq >= 1000 ? `${(freq / 1000).toFixed(1)}kHz` : `${Math.round(freq)}Hz`;
+};
+
+const formatVolumeDisplay = (vol: number): string => `${Math.round(vol * 100)}%`;
+
+const formatSpeedDisplay = (s: number): string => `${s.toFixed(2)}x`;
+
+const parseFreqInput = (input: string): number | null => {
+  const trimmed = input.replace(/\s/g, '').toLowerCase();
+  const match = trimmed.match(/^([\d.]+)\s*(hz|khz|k)?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  const unit = match[2];
+  if (unit === 'k' || unit === 'khz') val *= 1000;
+  return Math.max(FREQ_MIN, Math.min(FREQ_MAX, val));
+};
+
+const parseVolumeInput = (input: string): number | null => {
+  const trimmed = input.replace(/\s/g, '');
+  const match = trimmed.match(/^([\d.]+)\s*%?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  if (val > 1) val /= 100;
+  return Math.max(0, Math.min(1, val));
+};
+
+const parseSpeedInput = (
+  input: string,
+  minSpeed: number,
+  maxSpeed: number,
+  trackTempo: number
+): number | null => {
+  const trimmed = input.replace(/\s/g, '').toLowerCase();
+  const match = trimmed.match(/^([\d.]+)\s*(x|bpm)?$/);
+  if (!match) return null;
+  let val = parseFloat(match[1]);
+  if (Number.isNaN(val)) return null;
+  const unit = match[2];
+  if (unit === 'bpm' && trackTempo > 0) {
+    val = val / trackTempo;
+  }
+  return Math.max(minSpeed, Math.min(maxSpeed, val));
+};
+
+// Helper function to get current timestamp for a cue point (considering drag state)
+const getCurrentCueTimestamp = (cuePoints: number[], cueDragState: { [index: number]: number } | null, index: number): number => {
+  // If this cue point is being dragged, use the drag state value
+  if (cueDragState && cueDragState[index] !== undefined) {
+    return cueDragState[index];
+  }
+  // Otherwise use the actual cue point value
+  return cuePoints[index] || 0;
+};
+
+// Slice end for One-Shot: next cue or track end; clamped to (sliceStart, duration]
+const getSliceEnd = (cuePoints: number[], index: number, duration: number, sliceStart: number): number => {
+  const rawEnd = index < cuePoints.length - 1 ? cuePoints[index + 1] : duration;
+  const end = Math.min(duration, Math.max(sliceStart + 0.001, rawEnd));
+  return end;
+};
+
 interface TrackControlsProps {
   mode: 'preview' | 'loop' | 'cue';
   audioContext: AudioContext | null;
@@ -40,8 +127,16 @@ interface TrackControlsProps {
   trackId?: string;
   // Seek function ref
   seekFunctionRef?: React.MutableRefObject<((seekTime: number) => void) | null>;
+  // Toggle playback function ref (for global space bar trigger)
+  togglePlaybackFunctionRef?: React.MutableRefObject<(() => void) | null>;
   // Recording destination for audio capture
   recordingDestination?: MediaStreamAudioDestinationNode | null;
+  // Add drag state props for real-time timestamp updates
+  cueDragState?: { [index: number]: number } | null;
+  /** When dragging loop region, live (start, end) for display only. Playback uses loopStart/loopEnd. */
+  loopDragState?: { start: number; end: number } | null;
+  /** When mode is 'cue', how pads trigger playback. Default 'cue'. */
+  chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
 }
 
 const TrackControls = ({ 
@@ -50,6 +145,7 @@ const TrackControls = ({
   audioBuffer, 
   loopStart, 
   loopEnd, 
+  loopDragState = null,
   cuePoints, 
   ensureAudio, 
   isSelected = false,
@@ -71,7 +167,10 @@ const TrackControls = ({
   onDelete,
   trackId,
   seekFunctionRef,
-  recordingDestination
+  togglePlaybackFunctionRef,
+  recordingDestination,
+  cueDragState = null,
+  chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
   const [speed, setSpeed] = useState(playbackSpeed);
@@ -98,6 +197,14 @@ const TrackControls = ({
   const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
   const [internalHighpassFreq, setInternalHighpassFreq] = useState(highpassFreq || 20);
   const [isFilterSectionExpanded, setIsFilterSectionExpanded] = useState(false);
+  const [lowpassInputValue, setLowpassInputValue] = useState(formatFreqDisplay(lowpassFreq || 20000));
+  const [highpassInputValue, setHighpassInputValue] = useState(formatFreqDisplay(highpassFreq || 20));
+  const [volumeInputValue, setVolumeInputValue] = useState(() => formatVolumeDisplay(volume));
+  const [speedInputValue, setSpeedInputValue] = useState(() => formatSpeedDisplay(playbackSpeed));
+  const volumeInputFocusedRef = useRef(false);
+  const speedInputFocusedRef = useRef(false);
+  const lowpassInputFocusedRef = useRef(false);
+  const highpassInputFocusedRef = useRef(false);
   
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -113,6 +220,9 @@ const TrackControls = ({
   
   // Track mode changes to handle audio source updates
   const prevModeRef = useRef<string>(mode);
+  // Track loop point changes for mid-playback restart
+  const prevLoopStartRef = useRef<number>(loopStart);
+  const prevLoopEndRef = useRef<number>(loopEnd);
   
   // Filter refs
   const lowpassFilterRef = useRef<BiquadFilterNode | null>(null);
@@ -122,8 +232,14 @@ const TrackControls = ({
   const currentLowpassFreqRef = useRef<number>(lowpassFreq || 20000);
   const currentHighpassFreqRef = useRef<number>(highpassFreq || 20);
   
+  // Hold style: which pad triggered playback (for keyup/pointerup stop)
+  const holdTriggeredByRef = useRef<number | null>(null);
+  const stopChopPlaybackRef = useRef<() => void>(() => {});
   // Track when we're processing a seek to prevent interference from update loop
   const isSeekingRef = useRef<boolean>(false);
+  // Track if current source is looping - avoids stale currentTime in updatePlaybackTime closure
+  const isSourceLoopingRef = useRef<boolean>(false);
+  const playCuePointRef = useRef<(index: number) => void>(() => {});
 
   // Sync internal filter state with external props
   useEffect(() => {
@@ -140,7 +256,30 @@ const TrackControls = ({
     }
   }, [highpassFreq]);
 
+  // Sync editable input values when props change (when not focused)
+  useEffect(() => {
+    if (!lowpassInputFocusedRef.current) {
+      setLowpassInputValue(formatFreqDisplay(lowpassFreq ?? internalLowpassFreq ?? 20000));
+    }
+  }, [lowpassFreq, internalLowpassFreq]);
 
+  useEffect(() => {
+    if (!highpassInputFocusedRef.current) {
+      setHighpassInputValue(formatFreqDisplay(highpassFreq ?? internalHighpassFreq ?? 20));
+    }
+  }, [highpassFreq, internalHighpassFreq]);
+
+  useEffect(() => {
+    if (!volumeInputFocusedRef.current) {
+      setVolumeInputValue(formatVolumeDisplay(volume));
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    if (!speedInputFocusedRef.current) {
+      setSpeedInputValue(formatSpeedDisplay(speed));
+    }
+  }, [speed]);
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
@@ -164,15 +303,26 @@ const TrackControls = ({
     return speedToTempo(speed);
   }, [speed, speedToTempo]);
 
+  const FILTER_RAMP_DURATION = 0.03; // 30ms smooth transition
+
   // Filter control functions
   const handleLowpassFreqChange = useCallback((freq: number) => {
-    setInternalLowpassFreq(freq);
-    currentLowpassFreqRef.current = freq;
-    if (lowpassFilterRef.current) {
-      lowpassFilterRef.current.frequency.setValueAtTime(freq, audioContext?.currentTime || 0);
+    const clampedFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+    setInternalLowpassFreq(clampedFreq);
+    currentLowpassFreqRef.current = clampedFreq;
+    if (lowpassFilterRef.current && audioContext) {
+      const now = audioContext.currentTime;
+      lowpassFilterRef.current.frequency.setValueAtTime(
+        lowpassFilterRef.current.frequency.value,
+        now
+      );
+      lowpassFilterRef.current.frequency.exponentialRampToValueAtTime(
+        clampedFreq,
+        now + FILTER_RAMP_DURATION
+      );
     }
     if (onLowpassFreqChange) {
-      onLowpassFreqChange(freq);
+      onLowpassFreqChange(clampedFreq);
     }
     
     // Record filter change event
@@ -183,7 +333,7 @@ const TrackControls = ({
         data: { 
           filterType: 'lowpass',
           oldFreq: internalLowpassFreq,
-          newFreq: freq,
+          newFreq: clampedFreq,
           mode
         }
       });
@@ -191,13 +341,22 @@ const TrackControls = ({
   }, [audioContext, onLowpassFreqChange, trackId, addRecordingEvent, internalLowpassFreq, mode]);
 
   const handleHighpassFreqChange = useCallback((freq: number) => {
-    setInternalHighpassFreq(freq);
-    currentHighpassFreqRef.current = freq;
-    if (highpassFilterRef.current) {
-      highpassFilterRef.current.frequency.setValueAtTime(freq, audioContext?.currentTime || 0);
+    const clampedFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
+    setInternalHighpassFreq(clampedFreq);
+    currentHighpassFreqRef.current = clampedFreq;
+    if (highpassFilterRef.current && audioContext) {
+      const now = audioContext.currentTime;
+      highpassFilterRef.current.frequency.setValueAtTime(
+        highpassFilterRef.current.frequency.value,
+        now
+      );
+      highpassFilterRef.current.frequency.exponentialRampToValueAtTime(
+        clampedFreq,
+        now + FILTER_RAMP_DURATION
+      );
     }
     if (onHighpassFreqChange) {
-      onHighpassFreqChange(freq);
+      onHighpassFreqChange(clampedFreq);
     }
     
     // Record filter change event
@@ -208,14 +367,52 @@ const TrackControls = ({
         data: { 
           filterType: 'highpass',
           oldFreq: internalHighpassFreq,
-          newFreq: freq,
+          newFreq: clampedFreq,
           mode
         }
       });
     }
   }, [audioContext, onHighpassFreqChange, trackId, addRecordingEvent, internalHighpassFreq, mode]);
 
+  const handleLowpassInputBlur = useCallback(() => {
+    lowpassInputFocusedRef.current = false;
+    const parsed = parseFreqInput(lowpassInputValue);
+    if (parsed !== null) {
+      handleLowpassFreqChange(parsed);
+      setLowpassInputValue(formatFreqDisplay(parsed));
+    } else {
+      setLowpassInputValue(formatFreqDisplay(lowpassFreq ?? internalLowpassFreq ?? 20000));
+    }
+  }, [lowpassInputValue, lowpassFreq, internalLowpassFreq, handleLowpassFreqChange]);
 
+  const handleHighpassInputBlur = useCallback(() => {
+    highpassInputFocusedRef.current = false;
+    const parsed = parseFreqInput(highpassInputValue);
+    if (parsed !== null) {
+      handleHighpassFreqChange(parsed);
+      setHighpassInputValue(formatFreqDisplay(parsed));
+    } else {
+      setHighpassInputValue(formatFreqDisplay(highpassFreq ?? internalHighpassFreq ?? 20));
+    }
+  }, [highpassInputValue, highpassFreq, internalHighpassFreq, handleHighpassFreqChange]);
+
+  const handleVolumeInputBlur = useCallback(() => {
+    volumeInputFocusedRef.current = false;
+    const parsed = parseVolumeInput(volumeInputValue);
+    if (parsed !== null && onVolumeChange) {
+      onVolumeChange(parsed);
+      if (trackId) {
+        addRecordingEvent({
+          type: 'volume_change',
+          trackId,
+          data: { oldVolume: volume, newVolume: parsed, mode },
+        });
+      }
+      setVolumeInputValue(formatVolumeDisplay(parsed));
+    } else {
+      setVolumeInputValue(formatVolumeDisplay(volume));
+    }
+  }, [volumeInputValue, volume, onVolumeChange, trackId, addRecordingEvent, mode]);
 
   // Check if filters are actually active (have non-default values)
   const areFiltersActive = useCallback(() => {
@@ -238,59 +435,40 @@ const TrackControls = ({
     sourceNode.playbackRate.value = currentSpeed;
     gainNode.gain.value = currentVolume;
     
-    // Create Web Audio API filters if they have non-default values
+    // Always create filter nodes so real-time adjustments work from first playback.
+    // Passthrough values (20Hz highpass, 20kHz lowpass) when "inactive" are sonically equivalent to no filter.
     const lowpassFreq = currentLowpassFreqRef.current;
     const highpassFreq = currentHighpassFreqRef.current;
-    const isLowpassActive = lowpassFreq < 20000;
-    const isHighpassActive = highpassFreq > 20;
     
-    if (isLowpassActive || isHighpassActive) {
-      const lowpassFilter = audioContext.createBiquadFilter();
-      lowpassFilter.type = 'lowpass';
-      lowpassFilter.frequency.value = lowpassFreq;
-      lowpassFilter.Q.value = 1;
-      
-      const highpassFilter = audioContext.createBiquadFilter();
-      highpassFilter.type = 'highpass';
-      highpassFilter.frequency.value = highpassFreq;
-      highpassFilter.Q.value = 1;
-      
-      // Store filter refs
-      lowpassFilterRef.current = lowpassFilter;
-      highpassFilterRef.current = highpassFilter;
-      
-      // Connect: source -> highpass -> lowpass -> gain -> destination
-      sourceNode.connect(highpassFilter);
-      highpassFilter.connect(lowpassFilter);
-      lowpassFilter.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Also connect to recording destination if available
-      if (recordingDestination) {
-        // Create a separate gain node for recording to avoid conflicts
-        const recordingGain = audioContext.createGain();
-        recordingGain.gain.value = gainNode.gain.value;
-        lowpassFilter.connect(recordingGain);
-        recordingGain.connect(recordingDestination);
-      }
-      
-      return { sourceNode, gainNode, lowpassFilter, highpassFilter };
-    } else {
-      // Connect: source -> gain -> destination (no filters)
-      sourceNode.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Also connect to recording destination if available
-      if (recordingDestination) {
-        // Create a separate gain node for recording to avoid conflicts
-        const recordingGain = audioContext.createGain();
-        recordingGain.gain.value = gainNode.gain.value;
-        sourceNode.connect(recordingGain);
-        recordingGain.connect(recordingDestination);
-      }
-      
-      return { sourceNode, gainNode };
+    const lowpassFilter = audioContext.createBiquadFilter();
+    lowpassFilter.type = 'lowpass';
+    lowpassFilter.frequency.value = lowpassFreq;
+    lowpassFilter.Q.value = 1;
+    
+    const highpassFilter = audioContext.createBiquadFilter();
+    highpassFilter.type = 'highpass';
+    highpassFilter.frequency.value = highpassFreq;
+    highpassFilter.Q.value = 1;
+    
+    // Store filter refs for real-time updates
+    lowpassFilterRef.current = lowpassFilter;
+    highpassFilterRef.current = highpassFilter;
+    
+    // Connect: source -> highpass -> lowpass -> gain -> destination
+    sourceNode.connect(highpassFilter);
+    highpassFilter.connect(lowpassFilter);
+    lowpassFilter.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // Also connect to recording destination if available
+    if (recordingDestination) {
+      const recordingGain = audioContext.createGain();
+      recordingGain.gain.value = gainNode.gain.value;
+      lowpassFilter.connect(recordingGain);
+      recordingGain.connect(recordingDestination);
     }
+    
+    return { sourceNode, gainNode, lowpassFilter, highpassFilter };
   }, [audioContext, audioBuffer, recordingDestination, trackId, mode]);
 
   // Optimized time update function using requestAnimationFrame
@@ -325,15 +503,14 @@ const TrackControls = ({
       if (mode === 'loop') {
         // For loop mode, calculate position within loop region
         const loopDuration = loopEnd - loopStart;
-        
-        // Check if we're currently outside the loop region
-        const currentVisualPosition = currentTime;
-        const isOutsideLoop = currentVisualPosition < loopStart || currentVisualPosition > loopEnd;
-        
+        // Use isSourceLoopingRef - currentTime (React state) is stale in this rAF callback
+        const isOutsideLoop = !isSourceLoopingRef.current;
+
         if (isOutsideLoop) {
           // If outside loop region, continue from current position until we reach the loop
           const currentPlaybackTime = playbackStartTimeRef.current + (elapsed * playbackRate);
-          const finalTime = currentPlaybackTime >= audioBuffer.duration ? 0 : currentPlaybackTime;
+          // Clamp to duration instead of wrapping to 0 - keeps playhead at end when playing post-loop to finish
+          const finalTime = Math.min(currentPlaybackTime, audioBuffer.duration);
           setCurrentTime(finalTime);
           if (onPlaybackTimeChange) {
             onPlaybackTimeChange(finalTime);
@@ -356,16 +533,17 @@ const TrackControls = ({
               sourceNode.loop = true;
               sourceNode.loopStart = loopStart;
               sourceNode.loopEnd = loopEnd;
-              
+              isSourceLoopingRef.current = true;
+
               // Start from the current position within the loop
               const positionInLoop = finalTime - loopStart;
               sourceNode.start(0, loopStart + positionInLoop);
-              
+
               // Update refs
               audioSourceRef.current = sourceNode;
               gainNodeRef.current = gainNode;
-              if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
-              if (highpassFilter) highpassFilterRef.current = highpassFilter;
+              lowpassFilterRef.current = lowpassFilter;
+              highpassFilterRef.current = highpassFilter;
               
               // Update start time for accurate position calculation
               startTimeRef.current = audioContext.currentTime;
@@ -373,8 +551,10 @@ const TrackControls = ({
             }
           }
         } else {
-          // If inside loop region, use normal loop calculation
-          const position = loopStart + ((elapsed * playbackRate) % loopDuration);
+          // If inside loop region, calculate position from actual start (handles mid-loop restarts)
+          const rawPosition = playbackStartTimeRef.current + (elapsed * playbackRate);
+          const offsetInLoop = ((rawPosition - loopStart) % loopDuration + loopDuration) % loopDuration;
+          const position = loopStart + offsetInLoop;
           setCurrentTime(position);
           if (onPlaybackTimeChange) {
             onPlaybackTimeChange(position);
@@ -383,7 +563,8 @@ const TrackControls = ({
       } else {
         // For non-loop mode, calculate position from the actual starting position
         const currentPlaybackTime = playbackStartTimeRef.current + (elapsed * playbackRate);
-        const finalTime = currentPlaybackTime >= audioBuffer.duration ? 0 : currentPlaybackTime;
+        // Clamp to duration instead of wrapping - keeps playhead at end until source stops
+        const finalTime = Math.min(currentPlaybackTime, audioBuffer.duration);
         setCurrentTime(finalTime);
         if (onPlaybackTimeChange) {
           onPlaybackTimeChange(finalTime);
@@ -431,23 +612,26 @@ const TrackControls = ({
           sourceNode.loop = true;
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;
+          isSourceLoopingRef.current = true;
           sourceNode.start(0, seekTime);
         } else {
           // If seeking outside loop region, don't loop yet
           sourceNode.loop = false;
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, seekTime);
         }
       } else {
         // Preview or cue mode - no looping
         sourceNode.loop = false;
+        isSourceLoopingRef.current = false;
         sourceNode.start(0, seekTime);
       }
       
       // Update refs
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
-      if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
-      if (highpassFilter) highpassFilterRef.current = highpassFilter;
+      lowpassFilterRef.current = lowpassFilter;
+      highpassFilterRef.current = highpassFilter;
       
       // Update timing references for accurate position calculation
       startTimeRef.current = audioContext.currentTime;
@@ -504,22 +688,26 @@ const TrackControls = ({
             sourceNode.loop = true;
             sourceNode.loopStart = loopStart;
             sourceNode.loopEnd = loopEnd;
+            isSourceLoopingRef.current = true;
             sourceNode.start(0, currentTime);
             playbackStartTimeRef.current = currentTime;
           } else if (isAfterLoop) {
             // If after loop region, continue without looping
             sourceNode.loop = false;
+            isSourceLoopingRef.current = false;
             sourceNode.start(0, currentTime);
             playbackStartTimeRef.current = currentTime;
           } else {
             // If before loop region, start from current position but prepare for looping
             sourceNode.loop = false; // Don't loop yet
+            isSourceLoopingRef.current = false;
             sourceNode.start(0, currentTime);
             playbackStartTimeRef.current = currentTime;
           }
         } else {
           // Preview or cue mode - no looping
           sourceNode.loop = false;
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, currentTime);
           playbackStartTimeRef.current = currentTime;
         }
@@ -527,8 +715,8 @@ const TrackControls = ({
         // Update refs
         audioSourceRef.current = sourceNode;
         gainNodeRef.current = gainNode;
-        if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
-        if (highpassFilter) highpassFilterRef.current = highpassFilter;
+        lowpassFilterRef.current = lowpassFilter;
+        highpassFilterRef.current = highpassFilter;
         
         // Update start time for accurate position calculation
         startTimeRef.current = audioContext?.currentTime || 0;
@@ -538,6 +726,74 @@ const TrackControls = ({
     // Update prevModeRef
     prevModeRef.current = mode;
   }, [mode, isPlaying, currentTime, loopStart, loopEnd, audioContext]);
+
+  // Handle loop point changes during playback - must restart audio source
+  // since BufferSourceNode loop region cannot be changed after creation.
+  // NOTE: Do NOT include currentTime in deps - it updates every rAF and would cause
+  // this effect to run 60+ times/sec, creating race conditions. We use refs for position.
+  const LOOP_EPSILON = 0.015;
+  useEffect(() => {
+    const prevStart = prevLoopStartRef.current;
+    const prevEnd = prevLoopEndRef.current;
+    const startChanged = Math.abs(loopStart - prevStart) >= LOOP_EPSILON;
+    const endChanged = Math.abs(loopEnd - prevEnd) >= LOOP_EPSILON;
+
+    if (
+      mode !== 'loop' ||
+      !isPlaying ||
+      !audioSourceRef.current ||
+      !audioContext ||
+      (!startChanged && !endChanged)
+    ) {
+      prevLoopStartRef.current = loopStart;
+      prevLoopEndRef.current = loopEnd;
+      return;
+    }
+
+    const currentSourceNode = audioSourceRef.current;
+    if (!currentSourceNode || !audioContext) return;
+
+    const playbackRate = currentSourceNode.playbackRate.value;
+    const elapsed = audioContext.currentTime - startTimeRef.current;
+    const currentPosition = playbackStartTimeRef.current + elapsed * playbackRate;
+
+    let newStartPosition: number;
+    if (currentPosition < loopStart) {
+      newStartPosition = loopStart;
+    } else if (currentPosition > loopEnd) {
+      newStartPosition = loopStart;
+    } else {
+      newStartPosition = currentPosition;
+    }
+
+    currentSourceNode.stop();
+
+    const audioChain = createAudioChainWithCurrentSettings();
+    if (audioChain) {
+      const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+
+      sourceNode.loop = true;
+      sourceNode.loopStart = loopStart;
+      sourceNode.loopEnd = loopEnd;
+      isSourceLoopingRef.current = true;
+      sourceNode.start(0, newStartPosition);
+
+      audioSourceRef.current = sourceNode;
+      gainNodeRef.current = gainNode;
+      if (lowpassFilter) lowpassFilterRef.current = lowpassFilter;
+      if (highpassFilter) highpassFilterRef.current = highpassFilter;
+
+      startTimeRef.current = audioContext.currentTime;
+      playbackStartTimeRef.current = newStartPosition;
+      setCurrentTime(newStartPosition);
+      if (onPlaybackTimeChange) {
+        onPlaybackTimeChange(newStartPosition);
+      }
+    }
+
+    prevLoopStartRef.current = loopStart;
+    prevLoopEndRef.current = loopEnd;
+  }, [mode, isPlaying, loopStart, loopEnd, audioContext, createAudioChainWithCurrentSettings, onPlaybackTimeChange]);
 
   // Start/stop time updates
   useEffect(() => {
@@ -556,12 +812,61 @@ const TrackControls = ({
     };
   }, [isPlaying, updatePlaybackTime]);
 
+  // Stop chop playback (Hold style release). Cleans up source, nodes, rAF, and clears hold ref. Defined early so effects below can depend on it.
+  const stopChopPlayback = useCallback(() => {
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.stop();
+      } catch (_) {}
+      audioSourceRef.current = null;
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+    if (lowpassFilterRef.current) {
+      lowpassFilterRef.current.disconnect();
+      lowpassFilterRef.current = null;
+    }
+    if (highpassFilterRef.current) {
+      highpassFilterRef.current.disconnect();
+      highpassFilterRef.current = null;
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    holdTriggeredByRef.current = null;
+    setIsPlaying(false);
+    if (onPlaybackStateChange) {
+      onPlaybackStateChange(false);
+    }
+  }, [onPlaybackStateChange]);
 
   // Handle keyboard events for cue points
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // Skip when user is typing in an input (volume, speed, filters, etc.)
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement ||
+        (active as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      if (
+        active instanceof HTMLInputElement &&
+        (active as HTMLInputElement).type !== 'range'
+      ) {
+        return;
+      }
+
       // Only handle key presses if this is a cue track AND it's selected
       if (mode !== 'cue' || !isSelected) return;
+
+      // Hold style: ignore key repeat so holding the key acts as a gate (play on first keydown, stop on keyup). Cue/One-Shot keep repeat = roll/retrigger.
+      if (chopTriggerStyle === 'hold' && event.repeat) return;
 
       // Map number keys 1-0 to cue points
       const keyMap: { [key: string]: number } = {
@@ -572,7 +877,13 @@ const TrackControls = ({
       const cueIndex = keyMap[event.key];
 
       if (cueIndex !== undefined && cueIndex < cuePoints.length) {
-        playCuePoint(cueIndex);
+        // One-Shot: don't trigger if this node is at or past the next (invalid slice)
+        if (chopTriggerStyle === 'one-shot' && cueIndex < cuePoints.length - 1) {
+          const curr = Number(cuePoints[cueIndex]);
+          const next = Number(cuePoints[cueIndex + 1]);
+          if (!Number.isNaN(curr) && !Number.isNaN(next) && curr >= next) return;
+        }
+        playCuePointRef.current(cueIndex);
       }
     };
 
@@ -580,7 +891,28 @@ const TrackControls = ({
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [mode, isSelected, cuePoints]);
+  }, [mode, isSelected, cuePoints, chopTriggerStyle, cueDragState]);
+
+  // Keyup: stop Hold-style playback when the triggering key is released
+  useEffect(() => {
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (mode !== 'cue' || chopTriggerStyle !== 'hold' || !isSelected) return;
+      const keyMap: { [key: string]: number } = {
+        '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+        '6': 5, '7': 6, '8': 7, '9': 8, '0': 9
+      };
+      const cueIndex = keyMap[event.key];
+      if (cueIndex !== undefined && holdTriggeredByRef.current === cueIndex) {
+        stopChopPlaybackRef.current();
+      }
+    };
+    window.addEventListener('keyup', handleKeyUp);
+    return () => window.removeEventListener('keyup', handleKeyUp);
+  }, [mode, chopTriggerStyle, isSelected]);
+
+  useEffect(() => {
+    stopChopPlaybackRef.current = stopChopPlayback;
+  }, [stopChopPlayback]);
 
   // Handle play/pause functionality
   const togglePlayback = async () => {
@@ -635,28 +967,25 @@ const TrackControls = ({
           sourceNode.loop = true;
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;
+          isSourceLoopingRef.current = true;
           sourceNode.start(0, loopStart);
           playbackStartTimeRef.current = loopStart;
         } else if (mode === 'cue' && activeCueIndex !== null) {
           const cueStartTime = cuePoints[activeCueIndex];
           cueStartTimeRef.current = cueStartTime;
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, cueStartTime);
           playbackStartTimeRef.current = cueStartTime;
         } else {
+          isSourceLoopingRef.current = false;
           sourceNode.start(0, currentTime);
           playbackStartTimeRef.current = currentTime;
         }
 
         audioSourceRef.current = sourceNode;
         gainNodeRef.current = gainNode;
-        
-        // Store filter references if they exist
-        if (lowpassFilter) {
-          lowpassFilterRef.current = lowpassFilter;
-        }
-        if (highpassFilter) {
-          highpassFilterRef.current = highpassFilter;
-        }
+        lowpassFilterRef.current = lowpassFilter;
+        highpassFilterRef.current = highpassFilter;
         setIsPlaying(true);
         if (onPlaybackStateChange) {
           onPlaybackStateChange(true);
@@ -709,18 +1038,40 @@ const TrackControls = ({
       setIsPlaying(false);
     }
   };
-  
-  // Play from a specific cue point
+
+  // Expose togglePlayback to parent for global space bar trigger
+  useEffect(() => {
+    if (togglePlaybackFunctionRef) {
+      togglePlaybackFunctionRef.current = togglePlayback;
+    }
+    return () => {
+      if (togglePlaybackFunctionRef) {
+        togglePlaybackFunctionRef.current = null;
+      }
+    };
+  }, [togglePlaybackFunctionRef, togglePlayback]);
+
+  // Play from a specific cue point (behavior depends on chopTriggerStyle)
   const playCuePoint = async (index: number) => {
     
     if (!audioContext || !audioBuffer || index >= cuePoints.length) {
       return;
     }
 
+    const style = chopTriggerStyle;
+    const cueTime = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+
+    // One-Shot: invalid trigger if this node is at or past the next node (no valid slice)
+    if (style === 'one-shot' && index < cuePoints.length - 1) {
+      const currNum = Number(cuePoints[index]);
+      const nextNum = Number(cuePoints[index + 1]);
+      if (!Number.isNaN(currNum) && !Number.isNaN(nextNum) && currNum >= nextNum) return;
+    }
+
     try {
       await ensureAudio(() => {});
       
-      // Stop current playback if any
+      // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {
         audioSourceRef.current.stop();
         audioSourceRef.current = null;
@@ -738,49 +1089,51 @@ const TrackControls = ({
         highpassFilterRef.current = null;
       }
       
-      // Set the active cue index and update refs immediately
       setActiveCueIndex(index);
       activeCueIndexRef.current = index;
-      const cueTime = cuePoints[index];
       cueStartTimeRef.current = cueTime;
       setCurrentTime(cueTime);
       if (onPlaybackTimeChange) {
         onPlaybackTimeChange(cueTime);
       }
       
-      // Create audio chain manually to ensure current volume and speed are applied
       const audioChain = createAudioChainWithCurrentSettings();
       if (!audioChain) return;
       
       const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+      const playbackRate = currentSpeedRef.current;
       
-      // Store references
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
-      
-      // Store filter references if they exist
-      if (lowpassFilter) {
-        lowpassFilterRef.current = lowpassFilter;
-      }
-      if (highpassFilter) {
-        highpassFilterRef.current = highpassFilter;
-      }
-      
-      // Store start time
+      lowpassFilterRef.current = lowpassFilter;
+      highpassFilterRef.current = highpassFilter;
+      isSourceLoopingRef.current = false;
       startTimeRef.current = audioContext.currentTime;
-      
-      sourceNode.start(0, cueTime);
-      playbackStartTimeRef.current = cueTime;
+
+      if (style === 'one-shot') {
+        const sliceStart = cueTime;
+        const sliceEnd = getSliceEnd(cuePoints, index, audioBuffer.duration, sliceStart);
+        const durationSec = (sliceEnd - sliceStart) / playbackRate;
+        sourceNode.start(0, sliceStart);
+        sourceNode.stop(audioContext.currentTime + durationSec);
+        playbackStartTimeRef.current = sliceStart;
+      } else {
+        // Cue or Hold: play from cue to end of buffer
+        sourceNode.start(0, cueTime);
+        playbackStartTimeRef.current = cueTime;
+        if (style === 'hold') {
+          holdTriggeredByRef.current = index;
+        }
+      }
+
       setIsPlaying(true);
       if (onPlaybackStateChange) {
         onPlaybackStateChange(true);
       }
       
-      // Start the animation frame loop for smooth updates
       lastUpdateTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
       
-      // Record cue trigger event
       if (trackId) {
         addRecordingEvent({
           type: 'cue_trigger',
@@ -788,14 +1141,15 @@ const TrackControls = ({
           data: {
             cueIndex: index,
             cueTime,
-            mode
+            mode,
+            chopTriggerStyle: style
           }
         });
       }
       
-      // Handle playback end
       sourceNode.onended = () => {
         if (audioSourceRef.current === sourceNode) {
+          holdTriggeredByRef.current = null;
           setIsPlaying(false);
           audioSourceRef.current = null;
           gainNodeRef.current = null;
@@ -819,9 +1173,14 @@ const TrackControls = ({
     } catch (error) {
       console.error('Error in playCuePoint:', error);
       setIsPlaying(false);
+      holdTriggeredByRef.current = null;
     }
   };
-  
+
+  useEffect(() => {
+    playCuePointRef.current = playCuePoint;
+  });
+
   // Update volume when it changes
   useEffect(() => {
     currentVolumeRef.current = volume;
@@ -830,7 +1189,55 @@ const TrackControls = ({
     }
   }, [volume]);
   
-  // Update playback rate when speed changes
+  // Handle speed slider changes - resets playhead anchor when rate changes during playback
+  const handleSpeedSliderChange = useCallback((newSpeed: number, recordEvent: boolean) => {
+    const oldSpeed = currentSpeedRef.current;
+    setSpeed(newSpeed);
+    currentSpeedRef.current = newSpeed;
+
+    // When speed changes during playback, reset the playhead anchor so the time calculation
+    // stays correct (the formula assumes constant rate since start)
+    if (isPlaying && audioContext && audioSourceRef.current) {
+      const timestamp = audioContext.getOutputTimestamp();
+      const contextTime = timestamp.contextTime ?? audioContext.currentTime;
+      if (typeof contextTime === 'number') {
+        const elapsed = contextTime - startTimeRef.current;
+        const rawPosition = playbackStartTimeRef.current + (elapsed * oldSpeed);
+        playbackStartTimeRef.current = rawPosition;
+        startTimeRef.current = contextTime;
+      }
+    }
+
+    // Apply playback rate immediately for real-time feedback
+    if (audioSourceRef.current) {
+      audioSourceRef.current.playbackRate.value = newSpeed;
+    }
+    if (onSpeedChange) onSpeedChange(newSpeed);
+
+    if (recordEvent && trackId) {
+      addRecordingEvent({
+        type: 'speed_change',
+        trackId,
+        data: { oldSpeed, newSpeed, mode },
+      });
+    }
+  }, [isPlaying, audioContext, onSpeedChange, trackId, addRecordingEvent, mode]);
+
+  const handleSpeedInputBlur = useCallback(() => {
+    speedInputFocusedRef.current = false;
+    const range = getTempoSpeedRange();
+    const minSpeed = range.minTempo / trackTempo;
+    const maxSpeed = range.maxTempo / trackTempo;
+    const parsed = parseSpeedInput(speedInputValue, minSpeed, maxSpeed, trackTempo);
+    if (parsed !== null) {
+      handleSpeedSliderChange(parsed, true);
+      setSpeedInputValue(formatSpeedDisplay(parsed));
+    } else {
+      setSpeedInputValue(formatSpeedDisplay(speed));
+    }
+  }, [speedInputValue, speed, getTempoSpeedRange, trackTempo, handleSpeedSliderChange]);
+
+  // Update playback rate when speed changes (e.g. from external prop sync)
   useEffect(() => {
     if (audioSourceRef.current) {
       audioSourceRef.current.playbackRate.value = currentSpeedRef.current;
@@ -881,7 +1288,7 @@ const TrackControls = ({
           
           {mode === 'loop' && (
             <div className="text-xs md:text-sm audafact-text-secondary">
-              Loop: {loopStart.toFixed(2)}s - {loopEnd.toFixed(2)}s
+              Loop: {(loopDragState ?? { start: loopStart, end: loopEnd }).start.toFixed(2)}s - {(loopDragState ?? { start: loopStart, end: loopEnd }).end.toFixed(2)}s
             </div>
           )}
         </div>
@@ -946,7 +1353,17 @@ const TrackControls = ({
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-xs md:text-sm audafact-text-secondary w-10 md:w-12">{Math.round(volume * 100)}%</span>
+            <input
+              type="text"
+              value={volumeInputValue}
+              onChange={(e) => setVolumeInputValue(e.target.value)}
+              onFocus={() => { volumeInputFocusedRef.current = true; }}
+              onBlur={() => handleVolumeInputBlur()}
+              onKeyDown={(e) => e.key === 'Enter' && handleVolumeInputBlur()}
+              disabled={disabled}
+              className="w-10 md:w-12 px-1.5 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan audafact-text-secondary"
+              aria-label="Volume"
+            />
           </div>
         </div>
 
@@ -964,33 +1381,33 @@ const TrackControls = ({
               step={getTempoSpeedRange().stepSize}
               value={speed}
               disabled={disabled}
+              onInput={(e) => {
+                if (disabled) return;
+                const newSpeed = parseFloat((e.target as HTMLInputElement).value);
+                handleSpeedSliderChange(newSpeed, false);
+              }}
               onChange={(e) => {
+                // onChange fires on release in some browsers; ensure recording and final sync
                 if (disabled) return;
                 const newSpeed = parseFloat(e.target.value);
-                setSpeed(newSpeed);
-                currentSpeedRef.current = newSpeed;
-                if (onSpeedChange) onSpeedChange(newSpeed);
-                
-                // Record speed change event
-                if (trackId) {
-                  addRecordingEvent({
-                    type: 'speed_change',
-                    trackId,
-                    data: { 
-                      oldSpeed: speed,
-                      newSpeed,
-                      mode
-                    }
-                  });
-                }
+                handleSpeedSliderChange(newSpeed, true);
               }}
               className={`flex-1 h-1.5 md:h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
                 disabled ? 'cursor-not-allowed opacity-50' : ''
               }`}
             />
-            <span className="text-xs md:text-sm text-gray-600 w-14 md:w-16">
-              {getCurrentEffectiveTempo()} BPM
-            </span>
+            <input
+              type="text"
+              value={speedInputValue}
+              onChange={(e) => setSpeedInputValue(e.target.value)}
+              onFocus={() => { speedInputFocusedRef.current = true; }}
+              onBlur={() => handleSpeedInputBlur()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSpeedInputBlur()}
+              disabled={disabled}
+              className="w-14 md:w-16 px-1.5 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan audafact-text-secondary"
+              aria-label="Playback speed"
+              title={`${getCurrentEffectiveTempo()} BPM`}
+            />
           </div>
         </div>
       </div>
@@ -1034,27 +1451,43 @@ const TrackControls = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium audafact-heading">
-                    Low Pass Filter: {(lowpassFreq || 20000) >= 1000 
-                      ? `${((lowpassFreq || 20000) / 1000).toFixed(1)}kHz` 
-                      : `${(lowpassFreq || 20000)}Hz`}
+                    Low Pass Filter: {formatFreqDisplay(lowpassFreq || 20000)}
                   </label>
                 </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="20000"
-                  step="1"
-                  value={lowpassFreq || 20000}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    if (disabled) return;
-                    const freq = parseInt(e.target.value);
-                    handleLowpassFreqChange(freq);
-                  }}
-                  className={`w-full h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
-                    disabled ? 'cursor-not-allowed opacity-50' : ''
-                  }`}
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={freqToSlider(lowpassFreq || 20000)}
+                    disabled={disabled}
+                    onInput={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat((e.target as HTMLInputElement).value));
+                      handleLowpassFreqChange(freq);
+                    }}
+                    onChange={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat(e.target.value));
+                      handleLowpassFreqChange(freq);
+                    }}
+                    className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
+                      disabled ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    value={lowpassInputValue}
+                    onChange={(e) => setLowpassInputValue(e.target.value)}
+                    onFocus={() => { lowpassInputFocusedRef.current = true; }}
+                    onBlur={() => handleLowpassInputBlur()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLowpassInputBlur()}
+                    disabled={disabled}
+                    className="w-16 px-2 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan"
+                    aria-label="Low pass frequency"
+                  />
+                </div>
                 <div className="flex justify-between text-xs audafact-text-secondary">
                   <span>20Hz</span>
                   <span>20kHz</span>
@@ -1064,27 +1497,43 @@ const TrackControls = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium audafact-heading">
-                    High Pass Filter: {(highpassFreq || 20) >= 1000 
-                      ? `${((highpassFreq || 20) / 1000).toFixed(1)}kHz` 
-                      : `${(highpassFreq || 20)}Hz`}
+                    High Pass Filter: {formatFreqDisplay(highpassFreq || 20)}
                   </label>
                 </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="20000"
-                  step="1"
-                  value={highpassFreq || 20}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    if (disabled) return;
-                    const freq = parseInt(e.target.value);
-                    handleHighpassFreqChange(freq);
-                  }}
-                  className={`w-full h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
-                    disabled ? 'cursor-not-allowed opacity-50' : ''
-                  }`}
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={freqToSlider(highpassFreq || 20)}
+                    disabled={disabled}
+                    onInput={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat((e.target as HTMLInputElement).value));
+                      handleHighpassFreqChange(freq);
+                    }}
+                    onChange={(e) => {
+                      if (disabled) return;
+                      const freq = sliderToFreq(parseFloat(e.target.value));
+                      handleHighpassFreqChange(freq);
+                    }}
+                    className={`flex-1 h-2 bg-audafact-surface-2 rounded-lg appearance-none cursor-pointer slider ${
+                      disabled ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  />
+                  <input
+                    type="text"
+                    value={highpassInputValue}
+                    onChange={(e) => setHighpassInputValue(e.target.value)}
+                    onFocus={() => { highpassInputFocusedRef.current = true; }}
+                    onBlur={() => handleHighpassInputBlur()}
+                    onKeyDown={(e) => e.key === 'Enter' && handleHighpassInputBlur()}
+                    disabled={disabled}
+                    className="w-16 px-2 py-0.5 text-xs bg-audafact-surface-2 border border-audafact-divider rounded text-audafact-text-primary focus:outline-none focus:border-audafact-accent-cyan"
+                    aria-label="High pass frequency"
+                  />
+                </div>
                 <div className="flex justify-between text-xs audafact-text-secondary">
                   <span>20Hz</span>
                   <span>20kHz</span>
@@ -1101,42 +1550,74 @@ const TrackControls = ({
           <h4 className="text-xs font-medium mb-2 audafact-text-secondary">Cue Points</h4>
           {/* First row: 1-5 (indexes 0-4) */}
           <div className="grid grid-cols-5 gap-0.5 md:gap-1 mb-1">
-            {cuePoints.slice(0, 5).map((_, index) => (
-              <button
-                key={`cue-top-${index}`}
-                onClick={() => !disabled && playCuePoint(index)}
-                disabled={disabled}
-                className={`h-7 md:h-8 text-[10px] md:text-xs py-0.5 md:py-1 px-1 rounded-sm md:rounded transition-colors duration-200 ${
-                  disabled
-                    ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
-                    : activeCueIndex === index
-                      ? 'bg-audafact-alert-red text-audafact-text-primary'
-                      : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
-                }`}
-              >
-                {index + 1}
-              </button>
-            ))}
+            {cuePoints.slice(0, 5).map((_, index) => {
+              const currentTimestamp = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+              const isHold = chopTriggerStyle === 'hold';
+              // One-Shot: invalid as trigger if this node is at or past the next node (coerce to number for JSON/string values)
+              const currNum = Number(cuePoints[index]);
+              const nextNum = index < cuePoints.length - 1 ? Number(cuePoints[index + 1]) : NaN;
+              const isOneShotInvalidTrigger = chopTriggerStyle === 'one-shot' && !Number.isNaN(nextNum) && currNum >= nextNum;
+              return (
+                <button
+                  key={`cue-top-${index}`}
+                  type="button"
+                  onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
+                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  disabled={disabled}
+                  title={isOneShotInvalidTrigger ? 'Invalid One-Shot start (past next node)' : undefined}
+                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
+                    disabled
+                      ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
+                      : isOneShotInvalidTrigger
+                        ? 'bg-audafact-surface-2 text-audafact-text-secondary opacity-50 cursor-default'
+                        : activeCueIndex === index
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
+                  }`}
+                >
+                  <span className="font-medium">{index + 1}</span>
+                  <span className="text-[8px] md:text-[9px] opacity-75 leading-tight">
+                    {formatCueTimestamp(currentTimestamp)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
           {/* Second row: 6-0 (indexes 5-9, label 10th as 0) */}
           <div className="grid grid-cols-5 gap-0.5 md:gap-1">
             {cuePoints.slice(5, 10).map((_, idx) => {
               const index = idx + 5;
               const label = index === 9 ? '0' : String(index + 1);
+              const currentTimestamp = getCurrentCueTimestamp(cuePoints, cueDragState, index);
+              const isHold = chopTriggerStyle === 'hold';
+              // One-Shot: invalid as trigger if this node is at or past the next node (coerce to number for JSON/string values)
+              const currNum = Number(cuePoints[index]);
+              const nextNum = index < cuePoints.length - 1 ? Number(cuePoints[index + 1]) : NaN;
+              const isOneShotInvalidTrigger = chopTriggerStyle === 'one-shot' && !Number.isNaN(nextNum) && currNum >= nextNum;
               return (
                 <button
                   key={`cue-bottom-${index}`}
-                  onClick={() => !disabled && playCuePoint(index)}
+                  type="button"
+                  onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
+                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   disabled={disabled}
-                  className={`h-7 md:h-8 text-[10px] md:text-xs py-0.5 md:py-1 px-1 rounded-sm md:rounded transition-colors duration-200 ${
+                  title={isOneShotInvalidTrigger ? 'Invalid One-Shot start (past next node)' : undefined}
+                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
                     disabled
                       ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
-                      : activeCueIndex === index
-                        ? 'bg-audafact-alert-red text-audafact-text-primary'
-                        : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
+                      : isOneShotInvalidTrigger
+                        ? 'bg-audafact-surface-2 text-audafact-text-secondary opacity-50 cursor-default'
+                        : activeCueIndex === index
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-2 hover:bg-audafact-divider text-audafact-text-secondary hover:text-audafact-text-primary'
                   }`}
                 >
-                  {label}
+                  <span className="font-medium">{label}</span>
+                  <span className="text-[8px] md:text-[9px] opacity-75 leading-tight">
+                    {formatCueTimestamp(currentTimestamp)}
+                  </span>
                 </button>
               );
             })}

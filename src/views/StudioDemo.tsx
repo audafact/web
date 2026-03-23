@@ -581,6 +581,7 @@ const StudioDemo = () => {
                 onPlayheadChange={handleTimeChange}
                 onScrollStateChange={() => {}} // Not needed in demo
                 isGuestMode={false}
+                onCueDragStateChange={() => {}} // Not needed in demo
               />
             </div>
 
@@ -620,6 +621,8 @@ const StudioDemo = () => {
                 trackId={track.id}
                 seekFunctionRef={{ current: null }}
                 recordingDestination={null}
+                cueDragState={null}
+                chopTriggerStyle="cue"
               />
 
               {track.mode === 'cue' && (

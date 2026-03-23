@@ -1,0 +1,39 @@
+name: Monthly Restore Drill Reminder
+
+on:
+  schedule:
+    # First of each month at 9 AM UTC
+    - cron: "0 9 1 * *"
+  workflow_dispatch:
+
+jobs:
+  create-reminder:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Create drill reminder issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const assignee = process.env.MONTHLY_DRILL_ASSIGNEE;
+            const body = [
+              `**Follow [docs/BACKUP_RESTORE_PLAYBOOK.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/develop/docs/BACKUP_RESTORE_PLAYBOOK.md)**`,
+              '',
+              '* [ ] Pick recent backup from R2',
+              '* [ ] Restore to staging: `./scripts/restore-from-r2.sh <filename>`',
+              '* [ ] Run app against staging, smoke test',
+              '* [ ] Verify row counts (library_tracks, track_rotations)',
+              '* [ ] Close this issue when done',
+            ].join('\n');
+            const { data } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📋 Monthly restore drill - ${new Date().toISOString().slice(0, 7)}`,
+              body,
+              ...(assignee && { assignees: [assignee.trim()] }),
+            });
+            core.notice(`Created issue #${data.number}: ${data.title}${assignee ? ` (assigned to @${assignee})` : ''}`);
+        env:
+          MONTHLY_DRILL_ASSIGNEE: ${{ vars.MONTHLY_DRILL_ASSIGNEE }}

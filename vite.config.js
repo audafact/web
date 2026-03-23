@@ -69,6 +69,7 @@ export default defineConfig(({ mode }) => {
       "price_live_early_adopter",
     VITE_APP_ENV: env.VITE_APP_ENV || envConfig.name.toLowerCase(),
     VITE_DOMAIN: env.VITE_DOMAIN || envConfig.domain,
+    VITE_HOST_EXPERIENCE: env.VITE_HOST_EXPERIENCE || "",
     VITE_CORS_ORIGINS:
       env.VITE_CORS_ORIGINS || JSON.stringify(envConfig.corsOrigins),
   };
@@ -130,10 +131,11 @@ export default defineConfig(({ mode }) => {
       hmr: {
         overlay: false,
       },
-      // Proxy for staging API to bypass CORS
+      // Proxy for local development API
       proxy: {
         "/api/staging": {
-          target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+          // target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+          target: "http://localhost:8787", // Use proxy for local dev
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/staging/, "/api"),
           configure: (proxy, options) => {

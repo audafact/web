@@ -30,7 +30,7 @@ const HelpButton: React.FC<HelpButtonProps> = ({
   };
 
   return (
-    <div className={`fixed bottom-6 right-6 z-40 ${className}`}>
+    <div className={`fixed bottom-6 right-6 z-[70] ${className}`}>
       {/* Help Menu */}
       {isOpen && (
         <div className="absolute bottom-16 right-0 bg-audafact-surface-1 border border-audafact-divider rounded-lg shadow-xl p-2 min-w-48">
@@ -42,7 +42,7 @@ const HelpButton: React.FC<HelpButtonProps> = ({
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Start Tutorial
+              Interactive tour
             </button>
           )}
           <button

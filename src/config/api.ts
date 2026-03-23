@@ -1,16 +1,33 @@
 // API Configuration
+const getBaseUrl = () => {
+  // Check for explicit environment variable first
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  // For local development, always use proxy
+  const mode = import.meta.env.MODE;
+
+  if (mode === "development") {
+    return "http://localhost:5173/api/staging";
+  }
+
+  if (mode === "staging") {
+    return "http://localhost:5173/api/staging";
+  }
+
+  return "https://audafact-api.david-g-cortinas.workers.dev/api";
+};
+
 export const API_CONFIG = {
   // Base URL for the API service
-  BASE_URL:
-    import.meta.env.VITE_API_BASE_URL ||
-    (import.meta.env.MODE === "staging"
-      ? "http://localhost:5173/api/staging" // Use proxy for staging
-      : "https://audafact-api.david-g-cortinas.workers.dev"),
+  BASE_URL: getBaseUrl(),
 
-  // Endpoints
+  // Endpoints (relative to BASE_URL)
   ENDPOINTS: {
-    SIGN_UPLOAD: "/api/sign-upload",
-    ANALYTICS: "/api/analytics",
+    SIGN_UPLOAD: "/sign-upload",
+    ANALYTICS: "/analytics",
+    TRIGGER_ANALYSIS: "/trigger-analysis",
   },
 
   // Timeouts

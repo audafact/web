@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserAccess } from '../hooks/useUserAccess';
 import { createCheckoutSession } from '../services/stripeService';
+import { redeemInviteCode } from '../services/inviteService';
 import { Check, Star, Crown, User } from 'lucide-react';
 
 const isLive = import.meta.env.VITE_STRIPE_MODE === 'live';
@@ -43,7 +44,7 @@ const plans: PricingPlan[] = [
       '2 recordings',
       'MP3 export',
       'Multiple sources + catalog',
-      'Cue trigger style',
+      'All trigger styles (Cue, Hold, One-Shot)',
     ],
     priceId: '',
   },
@@ -71,7 +72,6 @@ const plans: PricingPlan[] = [
     features: [
       'Unlimited uploads, sessions & recordings',
       'WAV export for your DAW',
-      'Hold & One-Shot trigger styles',
       'Full performance + production control',
     ],
     priceId: proMonthlyPriceId,
@@ -96,6 +96,10 @@ export const Pricing: React.FC = () => {
   const { user } = useAuth();
   const { accessTier, loading: accessLoading } = useUserAccess();
   const [loading, setLoading] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState('');
+  const [isRedeemingCode, setIsRedeemingCode] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const handleSubscribe = async (plan: PricingPlan) => {
     if (!user) {
@@ -143,6 +147,36 @@ export const Pricing: React.FC = () => {
 
   const currentPlan = getCurrentPlan();
 
+  const handleRedeemCode = async () => {
+    if (!user) {
+      window.location.href = '/auth?redirect=pricing';
+      return;
+    }
+
+    const code = inviteCode.trim();
+    if (!code) {
+      setInviteError('Enter an invite code.');
+      setInviteMessage(null);
+      return;
+    }
+
+    setIsRedeemingCode(true);
+    setInviteError(null);
+    setInviteMessage(null);
+
+    const result = await redeemInviteCode(code);
+    if (!result.success) {
+      setInviteError(result.message);
+      setIsRedeemingCode(false);
+      return;
+    }
+
+    setInviteMessage(result.message);
+    setInviteCode('');
+    setIsRedeemingCode(false);
+    window.location.href = '/studio';
+  };
+
   if (accessLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -163,7 +197,7 @@ export const Pricing: React.FC = () => {
             </div>
             <h1 className="text-3xl font-bold audafact-heading mb-4">You&apos;re on Pro</h1>
             <p className="text-lg audafact-text-secondary mb-8">
-              Full performance + production control — WAV export, all trigger styles, unlimited creation.
+              Full performance + production control — WAV export, unlimited creation.
             </p>
             <a href="/studio" className="audafact-button-primary">
               Go to Studio
@@ -197,6 +231,34 @@ export const Pricing: React.FC = () => {
         <div className="max-w-2xl mx-auto mb-10 audafact-card-enhanced p-4 text-center audafact-text-secondary text-sm">
           You&apos;re on <strong className="text-audafact-text-primary">Starter</strong>. Upgrade to Pro for WAV
           export, Hold &amp; One-Shot modes, and unlimited everything.
+        </div>
+      )}
+
+      {(accessTier === 'free' || accessTier === 'starter') && (
+        <div className="max-w-2xl mx-auto mb-10 audafact-card-enhanced p-4">
+          <p className="text-sm audafact-text-secondary mb-3">
+            Have an early creator invite code?
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+              placeholder="Enter code"
+              className="flex-1 px-3 py-2 rounded-md bg-audafact-surface-2 border border-audafact-divider text-audafact-text-primary"
+              disabled={isRedeemingCode}
+            />
+            <button
+              type="button"
+              onClick={handleRedeemCode}
+              disabled={isRedeemingCode}
+              className="audafact-button-secondary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRedeemingCode ? 'Redeeming...' : 'Redeem code'}
+            </button>
+          </div>
+          {inviteError && <p className="mt-2 text-sm text-red-400">{inviteError}</p>}
+          {inviteMessage && <p className="mt-2 text-sm text-audafact-accent-green">{inviteMessage}</p>}
         </div>
       )}
 

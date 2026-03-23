@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePostSignupActions } from '../hooks/usePostSignupActions';
 import { trackEvent } from '../services/analyticsService';
 import { GoogleSignInButton } from '../auth/GoogleSignInButton';
+import { SIGNUP_MODAL_CONFIGS } from '../config/signupModalConfigs';
 
 const INTENT_EXPIRY_HOURS = 24;
 
@@ -109,20 +110,30 @@ const SignupModal: React.FC<SignupModalProps> = ({
         return 'Download your tracks';
       case 'custom_cue_points':
         return 'Set custom cue points';
+      case 'add_second_source':
+        return 'multiple tracks';
+      case 'trigger_styles':
+        return 'Hold and One-Shot trigger styles';
       default:
         return 'Access premium features';
     }
   };
+
+  const triggerConfig = trigger ? SIGNUP_MODAL_CONFIGS[trigger] : undefined;
+  const modalTitle = triggerConfig?.title ?? `Unlock ${getTriggerMessage()}`;
+  const modalMessage =
+    triggerConfig?.message ??
+    'Sign up to access all features and start creating amazing music';
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose}>
       <div className="p-6">
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold audafact-heading mb-2">
-            Unlock {getTriggerMessage()}
+            {modalTitle}
           </h2>
           <p className="audafact-text-secondary">
-            Sign up to access all features and start creating amazing music
+            {modalMessage}
           </p>
         </div>
 
