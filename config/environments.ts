@@ -47,7 +47,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
   staging: {
     name: "Staging",
     domain: "staging.audafact.com",
-    apiUrl: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+    apiUrl: "https://audafact-api-staging.david-g-cortinas.workers.dev/api",
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: [
       "https://staging.audafact.com",
@@ -65,7 +65,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
   preview: {
     name: "Preview",
     domain: "${branch}.audafact-web-prod.pages.dev",
-    apiUrl: "https://audafact-api.david-g-cortinas.workers.dev",
+    apiUrl: "https://audafact-api.david-g-cortinas.workers.dev/api",
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: ["https://${branch}.audafact-web-prod.pages.dev"],
     stripeMode: "test",
@@ -80,7 +80,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
   production: {
     name: "Production",
     domain: "audafact.com",
-    apiUrl: "https://audafact-api.david-g-cortinas.workers.dev",
+    apiUrl: "https://audafact-api.david-g-cortinas.workers.dev/api",
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: [
       "https://audafact.com",

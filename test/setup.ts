@@ -112,15 +112,16 @@ vi.mock("../src/config", () => ({
 // Mock API config with buildApiUrl function
 vi.mock("../src/config/api", () => ({
   API_CONFIG: {
-    BASE_URL: "https://audafact-api.david-g-cortinas.workers.dev",
+    BASE_URL: "https://audafact-api.david-g-cortinas.workers.dev/api",
     ENDPOINTS: {
-      SIGN_UPLOAD: "/api/sign-upload",
-      ANALYTICS: "/api/analytics",
+      SIGN_UPLOAD: "/sign-upload",
+      ANALYTICS: "/analytics",
+      TRIGGER_ANALYSIS: "/trigger-analysis",
     },
   },
   buildApiUrl: vi.fn(
     (endpoint: string) =>
-      `https://audafact-api.david-g-cortinas.workers.dev${endpoint}`
+      `https://audafact-api.david-g-cortinas.workers.dev/api${endpoint}`
   ),
 }));
 

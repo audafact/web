@@ -6,7 +6,7 @@ export const debugAnalyticsWorker = async () => {
   console.log("🔍 Debugging Analytics Worker...\n");
 
   try {
-    const { API_CONFIG } = await import("../config/api");
+    const { API_CONFIG, buildApiUrl } = await import("../config/api");
 
     // Test with a simple analytics event
     const testEvent = {
@@ -30,7 +30,7 @@ export const debugAnalyticsWorker = async () => {
 
     console.log("📤 Sending test event to worker:", testEvent);
 
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/analytics`, {
+    const response = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.ANALYTICS), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

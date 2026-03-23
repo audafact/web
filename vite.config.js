@@ -10,9 +10,37 @@ export default defineConfig(({ mode }) => {
   // Get environment configuration
   const envConfig = getEnvironmentConfig();
 
+  const appEnv =
+    env.VITE_APP_ENV ||
+    process.env.VITE_APP_ENV ||
+    envConfig.name?.toLowerCase() ||
+    "";
+
+  let resolvedApiUrl = env.VITE_API_BASE_URL || envConfig.apiUrl;
+  // Never ship localhost API base in production builds (Pages / .env mistakes)
+  if (
+    appEnv === "production" &&
+    resolvedApiUrl &&
+    (resolvedApiUrl.includes("localhost") ||
+      resolvedApiUrl.includes("127.0.0.1"))
+  ) {
+    resolvedApiUrl = envConfig.apiUrl;
+  }
+  // Worker hosts use /api/* — match runtime normalizeApiBaseUrl in src/config/api.ts
+  if (
+    resolvedApiUrl &&
+    resolvedApiUrl.includes(".workers.dev") &&
+    !resolvedApiUrl.includes("/api/staging")
+  ) {
+    const t = resolvedApiUrl.replace(/\/$/, "");
+    if (!t.endsWith("/api")) {
+      resolvedApiUrl = `${t}/api`;
+    }
+  }
+
   // Generate environment variables for Vite
   const viteEnvVars = {
-    VITE_API_BASE_URL: env.VITE_API_BASE_URL || envConfig.apiUrl,
+    VITE_API_BASE_URL: resolvedApiUrl,
     VITE_TURNSTILE_SITE_KEY:
       env.VITE_TURNSTILE_SITE_KEY || envConfig.turnstileSiteKey,
     VITE_SUPABASE_URL: env.VITE_SUPABASE_URL || envConfig.supabaseUrl,
