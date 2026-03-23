@@ -44,7 +44,7 @@ export default defineConfig({
     ),
     "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify("mock-anon-key"),
     "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
-      "https://audafact-api.david-g-cortinas.workers.dev"
+      "https://audafact-api.david-g-cortinas.workers.dev/api"
     ),
   },
 });
