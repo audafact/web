@@ -5,7 +5,8 @@
   "turnstileSiteKey": "0x4AAAAAABpJ3cypikhi7CPU",
   "corsOrigins": [
     "https://audafact.com",
-    "https://www.audafact.com"
+    "https://www.audafact.com",
+    "https://app.audafact.com"
   ],
   "stripeMode": "live",
   "supabaseUrl": "https://julxtxaspzhwbylnqkkj.supabase.co",

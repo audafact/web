@@ -5,6 +5,9 @@ const MARKETING_EXPERIENCE = "marketing";
 
 const normalizeHost = (rawHost: string): string => rawHost.trim().toLowerCase();
 
+const withPort = (host: string, port?: string): string =>
+  port ? `${host}:${port}` : host;
+
 const isAppHost = (host: string): boolean => {
   if (!host) return false;
 
@@ -46,4 +49,28 @@ export const getHostExperience = (): HostExperience => {
   }
 
   return resolveHostExperience();
+};
+
+const getAppHostname = (hostname: string): string => {
+  const host = normalizeHost(hostname);
+
+  if (host.startsWith("app.")) return host;
+  if (host === "localhost" || host === "127.0.0.1") return "app.localhost";
+  if (host === "audafact.com" || host === "www.audafact.com") {
+    return "app.audafact.com";
+  }
+  if (host.endsWith(".audafact.com")) return `app.${host}`;
+
+  return `app.${host}`;
+};
+
+/** Absolute URL for the app experience root on the paired app host (same protocol/port). */
+export const getAppEntryUrl = (
+  hostname = window.location.hostname,
+  protocol = window.location.protocol,
+  port = window.location.port
+): string => {
+  const targetHost = getAppHostname(hostname);
+  const hostWithPort = withPort(targetHost, port);
+  return `${protocol}//${hostWithPort}/`;
 };

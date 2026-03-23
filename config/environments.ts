@@ -49,7 +49,10 @@ export const environments: Record<Environment, EnvironmentConfig> = {
     domain: "staging.audafact.com",
     apiUrl: "https://audafact-api-staging.david-g-cortinas.workers.dev",
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
-    corsOrigins: ["https://staging.audafact.com"],
+    corsOrigins: [
+      "https://staging.audafact.com",
+      "https://app.staging.audafact.com",
+    ],
     stripeMode: "test",
     supabaseUrl: "https://catkuwhosrurkpmzsteh.supabase.co",
     supabaseAnonKey:
@@ -79,7 +82,11 @@ export const environments: Record<Environment, EnvironmentConfig> = {
     domain: "audafact.com",
     apiUrl: "https://audafact-api.david-g-cortinas.workers.dev",
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
-    corsOrigins: ["https://audafact.com", "https://www.audafact.com"],
+    corsOrigins: [
+      "https://audafact.com",
+      "https://www.audafact.com",
+      "https://app.audafact.com",
+    ],
     stripeMode: "live",
     supabaseUrl: "https://julxtxaspzhwbylnqkkj.supabase.co",
     supabaseAnonKey:
