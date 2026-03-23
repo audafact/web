@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { appRoutes } from "../../src/routes";
 import {
+  getAppEntryUrl,
   getHostExperience,
   resolveHostExperience,
 } from "../../src/routing/hostRouting";
@@ -41,6 +42,15 @@ describe("host routing classifier", () => {
 
     (import.meta.env as any).VITE_HOST_EXPERIENCE = "marketing";
     expect(getHostExperience()).toBe("marketing");
+  });
+
+  it("builds app entry URL for marketing and staging hosts", () => {
+    expect(getAppEntryUrl("audafact.com", "https:", "")).toBe(
+      "https://app.audafact.com/"
+    );
+    expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
+      "https://app.staging.audafact.com/"
+    );
   });
 });
 
