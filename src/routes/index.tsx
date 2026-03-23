@@ -1,12 +1,12 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { TapTempoProvider } from '../context/TapTempoContext';
 import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
 import { AuthVerification } from '../auth/AuthVerification';
 import { CheckEmailPage } from '../auth/CheckEmailPage';
-import { getHostExperience } from '../routing/hostRouting';
+import { getAppEntryUrl, getHostExperience } from '../routing/hostRouting';
 
 // Lazy load views for better performance
 const Home = lazy(() => import('../views/Home'));
@@ -47,7 +47,24 @@ const RootRouteResolver = () => {
   );
 };
 
-const LegacyStudioRedirect = () => <Navigate to="/" replace />;
+const LegacyStudioRedirect = () => {
+  const experience = getHostExperience();
+
+  useEffect(() => {
+    if (experience !== 'marketing') return;
+
+    const targetUrl = getAppEntryUrl();
+    if (window.location.href !== targetUrl) {
+      window.location.replace(targetUrl);
+    }
+  }, [experience]);
+
+  if (experience === 'app') {
+    return <Navigate to="/" replace />;
+  }
+
+  return <LoadingSpinner />;
+};
 
 export const appRoutes = [
   {

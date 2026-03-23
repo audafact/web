@@ -37,7 +37,7 @@ jobs:
           VITE_APP_ENV: staging
 
       - name: Deploy to Cloudflare Pages (Staging)
-        run: wrangler pages deploy dist --project-name=audafact-web-staging
+        run: wrangler pages deploy dist --project-name=audafact-web-staging --branch develop
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
