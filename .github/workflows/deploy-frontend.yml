@@ -33,7 +33,7 @@ jobs:
           VITE_APP_ENV: production
 
       - name: Deploy to Cloudflare Pages
-        run: wrangler pages deploy dist --project-name=audafact-web-prod
+        run: wrangler pages deploy dist --project-name=audafact-web-prod --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
