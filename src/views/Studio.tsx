@@ -8,6 +8,7 @@ import { useGuest } from '../context/GuestContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
+import { useUserAccess } from '../hooks/useUserAccess';
 import { createOnboardingSteps, createQuickOnboardingSteps } from '../config/onboardingConfig';
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
@@ -91,10 +92,12 @@ const Studio = () => {
   const { modalState, closeSignupModal, showSignupModal: openSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { user, tier, libraryTracks, loading: userLoading } = useUser();
+  const { accessTier, proAccessSource } = useUserAccess();
   const { isTapTempoActive } = useTapTempo();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [showEarlyCreatorModal, setShowEarlyCreatorModal] = useState<boolean>(false);
   const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
@@ -171,6 +174,24 @@ const Studio = () => {
       window.history.replaceState({}, '', newUrl.toString());
     }
   }, [isVerified, user, isGuestMode]);
+
+  useEffect(() => {
+    if (!user || authLoading || userLoading) return;
+    if (accessTier !== 'pro') return;
+    if (proAccessSource !== 'founder_manual' && proAccessSource !== 'invite_code') return;
+
+    const storageKey = `early_creator_modal_seen_${user.id}`;
+    if (localStorage.getItem(storageKey) === 'true') return;
+
+    setShowEarlyCreatorModal(true);
+  }, [user, authLoading, userLoading, accessTier, proAccessSource]);
+
+  const closeEarlyCreatorModal = () => {
+    if (user) {
+      localStorage.setItem(`early_creator_modal_seen_${user.id}`, 'true');
+    }
+    setShowEarlyCreatorModal(false);
+  };
 
   // Verification handlers
   const handleStartDemo = async () => {
@@ -4664,6 +4685,33 @@ const Studio = () => {
         })}
         </div>
       </div>
+
+      {/* Signup Modal */}
+      {showEarlyCreatorModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-xl audafact-card-enhanced p-6">
+            <h2 className="text-2xl font-bold audafact-heading mb-3">
+              You&apos;ve been given Pro access as an early creator
+            </h2>
+            <p className="audafact-text-secondary mb-4">
+              You&apos;re part of a small group helping shape where Audafact goes next.
+            </p>
+            <div className="rounded-lg bg-audafact-surface-2 p-4 mb-6">
+              <p className="text-sm font-semibold audafact-heading mb-2">Try one of these now:</p>
+              <ul className="text-sm audafact-text-secondary space-y-1">
+                <li>- Chop one library track and test trigger styles</li>
+                <li>- Record a short performance and export it</li>
+                <li>- Share one piece of honest feedback after your session</li>
+              </ul>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" className="audafact-button-primary" onClick={closeEarlyCreatorModal}>
+                Let&apos;s create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Signup Modal */}
       <SignupModal

@@ -72,6 +72,8 @@ serve(async (req) => {
             subscription_id: subscription.id,
             plan_interval: planInterval,
             price_id: priceId,
+            pro_access_source: null,
+            pro_expires_at: null,
           })
           .eq('id', supabaseUserId)
           .select('id, access_tier')
@@ -101,6 +103,8 @@ serve(async (req) => {
             subscription_id: null,
             plan_interval: null,
             price_id: null,
+            pro_access_source: null,
+            pro_expires_at: null,
           })
           .eq('subscription_id', subscription.id)
 
@@ -134,6 +138,8 @@ serve(async (req) => {
             plan_interval: planInterval,
             price_id: priceId,
             access_tier,
+            pro_access_source: null,
+            pro_expires_at: null,
           })
           .eq('subscription_id', subscription.id)
 
