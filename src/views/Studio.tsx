@@ -2171,6 +2171,39 @@ const Studio = () => {
       return { ...prev, [trackId]: { start, end } };
     });
   };
+
+  // Handle cue point drag state updates for real-time timestamp display
+  const handleCueDragStateChange = (trackId: string, index: number, time: number | null) => {
+    setCueDragStates(prev => {
+      const newState = { ...prev };
+      const trackState = newState[trackId] ? { ...newState[trackId] } : {};
+
+      if (time === null) {
+        // Remove drag state when drag ends
+        delete trackState[index];
+        if (Object.keys(trackState).length === 0) {
+          delete newState[trackId];
+        } else {
+          newState[trackId] = trackState;
+        }
+      } else {
+        // Update drag state with current position (new object so React/effects detect the change)
+        newState[trackId] = { ...trackState, [index]: time };
+      }
+
+      return newState;
+    });
+  };
+
+  const handleLoopDragStateChange = (trackId: string, start: number | null, end: number | null) => {
+    setLoopDragStates(prev => {
+      if (start === null || end === null) {
+        const { [trackId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [trackId]: { start, end } };
+    });
+  };
   
   const handleModeChange = (trackId: string, mode: 'preview' | 'loop' | 'cue') => {
     if (!tracks) return;

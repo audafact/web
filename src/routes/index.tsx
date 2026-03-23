@@ -119,10 +119,20 @@ export const appRoutes = [
         element: <Navigate to="/account" replace />,
       },
       {
-        path: 'privacy',
+        path: 'stash',
+        element: (
+          <TapTempoProvider>
+            <Suspense fallback={<LoadingSpinner />}>
+              <Studio />
+            </Suspense>
+          </TapTempoProvider>
+        ),
+      },
+      {
+        path: 'checkout-result',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
-            <Privacy />
+            <CheckoutResult />
           </Suspense>
         ),
       },
