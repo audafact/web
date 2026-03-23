@@ -30,6 +30,7 @@ import Tooltip from '../components/Tooltip';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
+import { useAnalytics } from '../hooks/useAnalytics';
 import { LibraryService } from '../services/libraryService';
 import type { SuggestionReference } from '../services/sampleSuggestionService';
 import { signFile } from '../lib/api';
@@ -92,6 +93,7 @@ const Studio = () => {
   const { modalState, closeSignupModal, showSignupModal: openSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { user, tier, libraryTracks, loading: userLoading } = useUser();
+  const { trackEvent } = useAnalytics();
   const { accessTier, proAccessSource } = useUserAccess();
   const { isTapTempoActive } = useTapTempo();
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -107,6 +109,11 @@ const Studio = () => {
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
+  // Creative metrics: sampler_opened on Studio mount (Studio only, excludes /demo)
+  useEffect(() => {
+    trackEvent('sampler_opened', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- fire once on mount
+
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';
   
@@ -116,6 +123,10 @@ const Studio = () => {
   // Ref to prevent multiple track loads
   const hasLoadedTrack = useRef(false);
   const isRestoringRef = useRef(false);
+  /** Creative metrics: emit sampler_ready only once per session when first track is playable */
+  const hasEmittedSamplerReady = useRef(false);
+  /** Debounced parameter_changed tracking (500ms) - key: `${trackId}-${parameterType}` */
+  const parameterChangeTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // Ref to hold latest studio state for save (avoids stale closures in beforeunload/debounced save)
   const studioStateForSaveRef = useRef({
@@ -957,6 +968,13 @@ const Studio = () => {
           setSelectedCueTrackId(newTrack.id);
           setIsTrackLoading(false);
           
+          // Creative metrics: sampler_ready + track_loaded (first track)
+          if (!hasEmittedSamplerReady.current) {
+            trackEvent('sampler_ready', { trackId: currentGuestTrack.id, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+            hasEmittedSamplerReady.current = true;
+          }
+          trackEvent('track_loaded', { trackId: currentGuestTrack.id, trackIndex: 0, source: 'guest', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+          
           // Track demo event
           trackGuestEvent('session_started', { 
             trackId: currentGuestTrack.id,
@@ -1057,6 +1075,13 @@ const Studio = () => {
         setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
         
+        // Creative metrics: sampler_ready + track_loaded (first track from library)
+        if (!hasEmittedSamplerReady.current) {
+          trackEvent('sampler_ready', { trackId, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+          hasEmittedSamplerReady.current = true;
+        }
+        trackEvent('track_loaded', { trackId, trackIndex: 0, source: 'library', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+        
         // Reset retry count on successful load
         setTrackLoadRetryCount(0);
         setIsTrackLoading(false);
@@ -1079,7 +1104,7 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, availableAssets, user, trackGuestEvent]);
+    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
@@ -1714,6 +1739,12 @@ const Studio = () => {
       // Track loading is complete (placeholder cleared when waveform is ready)
       setIsTrackLoading(false);
       
+      // Creative metrics: sampler_ready (if first) + track_loaded
+      if (!hasEmittedSamplerReady.current) {
+        trackEvent('sampler_ready', { trackId, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+        hasEmittedSamplerReady.current = true;
+      }
+      trackEvent('track_loaded', { trackId, trackIndex: safeIndex, source: 'library', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
     
     } catch (error) {
       console.error('Error loading track by index:', error);
@@ -1831,8 +1862,17 @@ const Studio = () => {
       });
       
       // Add new track to the beginning of the array (top of stack)
+      const isFirstTrack = tracks.length === 0;
       setTracks([newTrack, ...updatedExistingTracks]);
       addingTrackIdRef.current = trackId; // Defer clearing placeholder until waveform is ready
+      
+      // Creative metrics: sampler_ready (if first) + track_loaded + track_added
+      if (isFirstTrack && !hasEmittedSamplerReady.current) {
+        trackEvent('sampler_ready', { trackId, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+        hasEmittedSamplerReady.current = true;
+      }
+      trackEvent('track_loaded', { trackId, trackIndex: 0, source: 'library', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+      trackEvent('track_added', { trackId, trackIndex: 0, mode: 'cue', source: 'library', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
       
       // Initialize states for the new track
       setShowMeasures(prev => ({ ...prev, [trackId]: false }));
@@ -2071,6 +2111,8 @@ const Studio = () => {
         return updated;
       })
     );
+    // Creative metrics: loop_created
+    trackEvent('loop_created', { trackId, start, end, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
   };
   
   const handleCuePointChange = (trackId: string, index: number, time: number) => {
@@ -2093,6 +2135,8 @@ const Studio = () => {
         return { ...track, cuePoints: newCuePoints };
       })
     );
+    // Creative metrics: cue_added
+    trackEvent('cue_added', { trackId, cueIndex: index, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
   };
 
   // Handle cue point drag state updates for real-time timestamp display
@@ -2576,19 +2620,40 @@ const Studio = () => {
     }));
   };
 
+  // Creative metrics: debounced parameter_changed (500ms)
+  const trackParameterChangeDebounced = useCallback(
+    (trackId: string, parameterType: string) => {
+      const key = `${trackId}-${parameterType}`;
+      const existing = parameterChangeTimeoutsRef.current[key];
+      if (existing) clearTimeout(existing);
+      parameterChangeTimeoutsRef.current[key] = setTimeout(() => {
+        trackEvent('parameter_changed', {
+          trackId,
+          parameterType,
+          userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
+        });
+        delete parameterChangeTimeoutsRef.current[key];
+      }, 500);
+    },
+    [trackEvent, tier]
+  );
+
   // Handle volume changes
   const handleVolumeChange = (trackId: string, newVolume: number) => {
     setVolume(prev => ({ ...prev, [trackId]: newVolume }));
     setLastUsedVolume(newVolume);
+    trackParameterChangeDebounced(trackId, 'volume');
   };
 
   // Handle filter changes
   const handleLowpassFreqChange = (trackId: string, freq: number) => {
     setLowpassFreqs(prev => ({ ...prev, [trackId]: freq }));
+    trackParameterChangeDebounced(trackId, 'lowpass');
   };
 
   const handleHighpassFreqChange = (trackId: string, freq: number) => {
     setHighpassFreqs(prev => ({ ...prev, [trackId]: freq }));
+    trackParameterChangeDebounced(trackId, 'highpass');
   };
 
   const handleFilterEnabledChange = (trackId: string, enabled: boolean) => {
@@ -2727,6 +2792,13 @@ const Studio = () => {
         setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
         setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
 
+        // Creative metrics: sampler_ready + track_loaded (guest upload replaces)
+        if (!hasEmittedSamplerReady.current) {
+          trackEvent('sampler_ready', { trackId, userTier: 'guest' });
+          hasEmittedSamplerReady.current = true;
+        }
+        trackEvent('track_loaded', { trackId, trackIndex: 0, source: 'upload', userTier: 'guest' });
+
         addingTrackIdRef.current = trackId; // Defer clearing placeholder until waveform is ready
         return;
       }
@@ -2749,6 +2821,7 @@ const Studio = () => {
       };
 
       // Add the track to the beginning of the tracks array
+      const isFirstTrack = tracks.length === 0;
       setTracks(prev => {
         const updatedTracks = [newTrack, ...prev];
         
@@ -2760,6 +2833,14 @@ const Studio = () => {
         return updatedTracks;
       });
       addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
+
+      // Creative metrics: sampler_ready (if first) + track_loaded + track_added
+      if (isFirstTrack && !hasEmittedSamplerReady.current) {
+        trackEvent('sampler_ready', { trackId: newTrack.id, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+        hasEmittedSamplerReady.current = true;
+      }
+      trackEvent('track_loaded', { trackId: newTrack.id, trackIndex: 0, source: 'upload', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+      trackEvent('track_added', { trackId: newTrack.id, trackIndex: 0, mode: trackType, source: 'upload', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
 
       // Initialize default values for the new track
       setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));
@@ -2853,6 +2934,7 @@ const Studio = () => {
       };
 
       // Add the track to the beginning of the tracks array
+      const isFirstTrack = tracks.length === 0;
       setTracks(prev => {
         const updatedTracks = [newTrack, ...prev];
         
@@ -2864,6 +2946,14 @@ const Studio = () => {
         return updatedTracks;
       });
       addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
+
+      // Creative metrics: sampler_ready (if first) + track_loaded + track_added
+      if (isFirstTrack && !hasEmittedSamplerReady.current) {
+        trackEvent('sampler_ready', { trackId: newTrack.id, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+        hasEmittedSamplerReady.current = true;
+      }
+      trackEvent('track_loaded', { trackId: newTrack.id, trackIndex: 0, source: 'library', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+      trackEvent('track_added', { trackId: newTrack.id, trackIndex: 0, mode: trackType, source: 'library', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
 
       // Initialize default values for the new track
       setPlaybackTimes(prev => ({ ...prev, [newTrack.id]: 0 }));

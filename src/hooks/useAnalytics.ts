@@ -131,17 +131,20 @@ export const useAnalytics = () => {
           });
           break;
         case "recording_started":
-          trackEventWithTier("recording_started", {
-            userTier,
-          });
+          trackEventWithTier("recording_started", { userTier });
+          trackEventWithTier("record_started", { userTier });
           break;
         case "recording_stopped":
-          trackEventWithTier("recording_stopped", {
-            userTier,
-          });
+          trackEventWithTier("recording_stopped", { userTier });
+          trackEventWithTier("record_stopped", { userTier });
           break;
         case "downloaded":
           trackEventWithTier("recording_downloaded", {
+            fileName: data.fileName,
+            format: data.format,
+            userTier,
+          });
+          trackEventWithTier("audio_exported", {
             fileName: data.fileName,
             format: data.format,
             userTier,

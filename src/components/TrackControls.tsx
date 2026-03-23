@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
+import { useAnalytics } from '../hooks/useAnalytics';
+import { useUser } from '../hooks/useUser';
 
 // Utility function to format cue point timestamps
 const formatCueTimestamp = (seconds: number): string => {
@@ -173,6 +175,8 @@ const TrackControls = ({
   chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
   const { addRecordingEvent } = useRecording();
+  const { trackEvent } = useAnalytics();
+  const { tier } = useUser();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
   
@@ -1145,6 +1149,7 @@ const TrackControls = ({
             chopTriggerStyle: style
           }
         });
+        trackEvent('cue_triggered', { cueIndex: index, trackId, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
       }
       
       sourceNode.onended = () => {
