@@ -12,6 +12,8 @@ export interface Measure {
 export interface User {
   id: string;
   access_tier: "free" | "starter" | "pro" | "enterprise";
+  pro_access_source?: "founder_manual" | "invite_code" | null;
+  pro_expires_at?: string | null;
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
