@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout from '../components/Layout';
 import { TapTempoProvider } from '../context/TapTempoContext';
@@ -6,7 +6,7 @@ import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
 import { AuthVerification } from '../auth/AuthVerification';
 import { CheckEmailPage } from '../auth/CheckEmailPage';
-import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { getHostExperience } from '../routing/hostRouting';
 
 // Lazy load views for better performance
 const Home = lazy(() => import('../views/Home'));
@@ -27,28 +27,40 @@ const LoadingSpinner = () => (
   </div>
 );
 
-export const router = createBrowserRouter([
+const RootRouteResolver = () => {
+  const experience = getHostExperience();
+
+  if (experience === 'app') {
+    return (
+      <TapTempoProvider>
+        <Suspense fallback={<LoadingSpinner />}>
+          <Studio />
+        </Suspense>
+      </TapTempoProvider>
+    );
+  }
+
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <Home />
+    </Suspense>
+  );
+};
+
+const LegacyStudioRedirect = () => <Navigate to="/" replace />;
+
+export const appRoutes = [
   {
     path: '/',
     element: <Layout />,
     children: [
       {
         index: true,
-        element: (
-          <Suspense fallback={<LoadingSpinner />}>
-            <Home />
-          </Suspense>
-        ),
+        element: <RootRouteResolver />,
       },
       {
         path: 'studio',
-        element: (
-          <TapTempoProvider>
-            <Suspense fallback={<LoadingSpinner />}>
-              <Studio />
-            </Suspense>
-          </TapTempoProvider>
-        ),
+        element: <LegacyStudioRedirect />,
       },
       {
         path: 'pricing',
@@ -56,6 +68,16 @@ export const router = createBrowserRouter([
           <Suspense fallback={<LoadingSpinner />}>
             <Pricing />
           </Suspense>
+        ),
+      },
+      {
+        path: 'stash',
+        element: (
+          <TapTempoProvider>
+            <Suspense fallback={<LoadingSpinner />}>
+              <Studio />
+            </Suspense>
+          </TapTempoProvider>
         ),
       },
       {
@@ -67,12 +89,16 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'profile',
+        path: 'account',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <Profile />
           </Suspense>
         ),
+      },
+      {
+        path: 'profile',
+        element: <Navigate to="/account" replace />,
       },
       {
         path: 'privacy',
@@ -208,4 +234,6 @@ export const router = createBrowserRouter([
       </Suspense>
     ),
   },
-]); 
+];
+
+export const router = createBrowserRouter(appRoutes);

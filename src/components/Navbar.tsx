@@ -107,7 +107,7 @@ const Navbar = () => {
               user ? (
                 <div className="flex items-center space-x-2 md:space-x-4">
                   <Link
-                    to="/profile"
+                    to="/account"
                     className="hidden sm:inline text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200 text-sm"
                   >
                     Profile
@@ -195,7 +195,7 @@ const Navbar = () => {
             user ? (
               <div className="pt-2 mt-2 border-t border-audafact-divider">
                 <Link
-                  to="/profile"
+                  to="/account"
                   onClick={() => setIsMobileMenuOpen(false)}
                   className="block px-2 py-2 rounded-lg text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2 transition-colors duration-200"
                 >

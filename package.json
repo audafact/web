@@ -6,6 +6,8 @@
   "scripts": {
     "postinstall": "node scripts/copy-lame.js",
     "dev": "vite",
+    "dev:app": "VITE_HOST_EXPERIENCE=app vite",
+    "dev:marketing": "VITE_HOST_EXPERIENCE=marketing vite",
     "dev:staging": "VITE_APP_ENV=staging vite",
     "dev:preview": "VITE_APP_ENV=preview vite",
     "dev:production": "VITE_APP_ENV=production vite",
