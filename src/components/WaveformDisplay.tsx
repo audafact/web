@@ -6,6 +6,16 @@ import GridLines from './GridLines';
 import { TimeSignature } from '../types/music';
 import { showSignupModal } from '../hooks/useSignupModal';
 
+const PINCH_ZOOM_CONFIG = {
+  enabled: true,
+  mode: 'discrete' as 'discrete' | 'continuous',
+  throttleMs: 70,
+  maxDeltaPerTick: 0.35,
+  discreteThreshold: 70,
+  discreteCooldownMs: 120,
+};
+const WAVEFORM_DEBUG_LOGS = false;
+
 interface WaveformDisplayProps {
   audioFile: File;
   mode: 'preview' | 'loop' | 'cue';
@@ -20,7 +30,7 @@ interface WaveformDisplayProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
-  /** Optional: for smooth continuous zoom (e.g. trackpad pinch). Currently disabled due to loop-region ghost bug; see docs/BUGS.md. */
+  /** Optional: smooth pinch zoom callback (staged via PINCH_ZOOM_CONFIG in this component). */
   onZoomChange?: (level: number) => void;
   trackId?: string;
   // Measure display props
@@ -122,6 +132,8 @@ const WaveformDisplay = ({
   const zoomLevelRef = useRef<number>(zoomLevel);
   const zoomRenderedHandlerRef = useRef<(() => void) | null>(null);
   const widthSyncTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const widthSyncGenerationRef = useRef<number>(0);
+  const regionOpSeqRef = useRef<number>(0);
   
   // Track previous values to detect changes
   const prevLoopStartRef = useRef<number>(loopStart);
@@ -153,6 +165,24 @@ const WaveformDisplay = ({
   const lastSentLoopEndRef = useRef<number | undefined>(undefined);
   const onReadyRef = useRef(onReady);
   const onReadyCalledRef = useRef(false);
+  const pinchLastStepAtRef = useRef<number>(0);
+
+  const debugLog = useCallback((label: string, details?: unknown) => {
+    if (!WAVEFORM_DEBUG_LOGS) return;
+    if (details !== undefined) {
+      console.debug(`[WaveformDisplay:${trackId || 'default'}] ${label}`, details);
+      return;
+    }
+    console.debug(`[WaveformDisplay:${trackId || 'default'}] ${label}`);
+  }, [trackId]);
+
+  const beginRegionOp = useCallback((reason: string) => {
+    const token = ++regionOpSeqRef.current;
+    debugLog('region-op begin', { token, reason, mode: modeRef.current, zoom: zoomLevelRef.current });
+    return token;
+  }, [debugLog]);
+
+  const isRegionOpCurrent = useCallback((token: number) => token === regionOpSeqRef.current, []);
 
   useEffect(() => {
     onLoopPointsChangeRef.current = onLoopPointsChange;
@@ -331,6 +361,7 @@ const WaveformDisplay = ({
   // Sync container width to WaveSurfer's wrapper width when zoomed in
   // This prevents scrolling past the end of the waveform
   useEffect(() => {
+    const widthSyncGeneration = ++widthSyncGenerationRef.current;
     if (!wavesurfer || !isReady || !containerRef.current) return;
     
     // Only sync width when zoomed in (zoomLevel > 1)
@@ -406,8 +437,11 @@ const WaveformDisplay = ({
       if (renderer && typeof renderer.on === 'function') {
         // Listen to the 'rendered' event - sync width once after render completes
         const handleRendered = () => {
+          if (widthSyncGeneration !== widthSyncGenerationRef.current) return;
+          debugLog('rendered(width-sync)', { generation: widthSyncGeneration, mode: modeRef.current, regions: currentRegionsRef.current.length });
           // Single delay to ensure wrapper width is fully updated (especially after zoom)
           const timeoutId = setTimeout(() => {
+            if (widthSyncGeneration !== widthSyncGenerationRef.current) return;
             syncContainerWidth();
             widthSyncTimeoutsRef.current = widthSyncTimeoutsRef.current.filter((id) => id !== timeoutId);
           }, 200);
@@ -418,6 +452,7 @@ const WaveformDisplay = ({
           // could still fire with mode==='loop'; we must not refresh in cue mode.
           const region = currentRegionsRef.current[0];
           if (
+            widthSyncGeneration === widthSyncGenerationRef.current &&
             modeRef.current === 'loop' &&
             currentRegionsRef.current.length === 1 &&
             region?.element &&
@@ -435,6 +470,7 @@ const WaveformDisplay = ({
         // Initial sync if waveform is already loaded
         if (wavesurfer.getDuration() > 0) {
           const timeoutId = setTimeout(() => {
+            if (widthSyncGeneration !== widthSyncGenerationRef.current) return;
             syncContainerWidth();
             widthSyncTimeoutsRef.current = widthSyncTimeoutsRef.current.filter((id) => id !== timeoutId);
           }, 200);
@@ -442,6 +478,7 @@ const WaveformDisplay = ({
         }
         
         return () => {
+          widthSyncGenerationRef.current++;
           widthSyncTimeoutsRef.current.forEach((id) => clearTimeout(id));
           widthSyncTimeoutsRef.current = [];
           if (renderer && typeof renderer.un === 'function') {
@@ -456,6 +493,7 @@ const WaveformDisplay = ({
     // Fallback: periodic sync if renderer events aren't available
     if (wavesurfer.getDuration() > 0) {
       const timeoutId = setTimeout(() => {
+        if (widthSyncGeneration !== widthSyncGenerationRef.current) return;
         syncContainerWidth();
         widthSyncTimeoutsRef.current = widthSyncTimeoutsRef.current.filter((id) => id !== timeoutId);
       }, 200);
@@ -465,11 +503,12 @@ const WaveformDisplay = ({
     const intervalId = setInterval(syncContainerWidth, 1000);
     
     return () => {
+      widthSyncGenerationRef.current++;
       widthSyncTimeoutsRef.current.forEach((id) => clearTimeout(id));
       widthSyncTimeoutsRef.current = [];
       clearInterval(intervalId);
     };
-  }, [wavesurfer, isReady, zoomLevel, mode, calculateMinPxPerSec]);
+  }, [wavesurfer, isReady, zoomLevel, mode, calculateMinPxPerSec, debugLog]);
 
   // Auto-scroll to follow playhead during playback with center-lock behavior
   useEffect(() => {
@@ -557,8 +596,10 @@ const WaveformDisplay = ({
   }, [wavesurfer, isReady, zoomLevel, calculateMinPxPerSec]);
 
   // Function to clear all regions
-  const clearRegions = useCallback(async () => {
-    
+  const clearRegions = useCallback(async (token?: number) => {
+    if (token !== undefined && !isRegionOpCurrent(token)) return;
+    debugLog('clearRegions start', { token, mode: modeRef.current, count: currentRegionsRef.current.length });
+
     // First, clear tracked regions
     if (regionsPluginRef.current && currentRegionsRef.current.length > 0) {
       currentRegionsRef.current.forEach(region => {
@@ -631,14 +672,19 @@ const WaveformDisplay = ({
     }
     
     // Force a small delay to ensure DOM updates are complete
-    return new Promise(resolve => setTimeout(resolve, 5));
-  }, [trackId, isPlaying]);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    if (token !== undefined && !isRegionOpCurrent(token)) return;
+    debugLog('clearRegions done', { token });
+  }, [trackId, isPlaying, isRegionOpCurrent, debugLog]);
 
   // Function to create regions based on mode
-  const createRegions = useCallback(async () => {
+  const createRegions = useCallback(async (token?: number) => {
+    if (token !== undefined && !isRegionOpCurrent(token)) return;
+    debugLog('createRegions start', { token, mode: modeRef.current });
     if (!wavesurfer || !isReady || !regionsPluginRef.current) return;
 
-    await clearRegions();
+    await clearRegions(token);
+    if (token !== undefined && !isRegionOpCurrent(token)) return;
 
     if (mode === 'loop') {
       const duration = wavesurfer.getDuration();
@@ -696,7 +742,7 @@ const WaveformDisplay = ({
         if (now - lastLoopTrackUpdateRef.current >= 600) {
           const prevStart = lastSentLoopStartRef.current;
           const prevEnd = lastSentLoopEndRef.current;
-          const meaningfulChange = prevStart === undefined || Math.abs(start - prevStart) > 0.02 || Math.abs(end - prevEnd) > 0.02;
+          const meaningfulChange = prevStart === undefined || prevEnd === undefined || Math.abs(start - prevStart) > 0.02 || Math.abs(end - prevEnd) > 0.02;
           if (meaningfulChange) {
             lastLoopTrackUpdateRef.current = now;
             lastSentLoopStartRef.current = start;
@@ -732,6 +778,7 @@ const WaveformDisplay = ({
         });
       });
 
+      if (token !== undefined && !isRegionOpCurrent(token)) return;
       currentRegionsRef.current = [region];
     } else if (mode === 'cue') {
       const duration = wavesurfer.getDuration();
@@ -849,9 +896,11 @@ const WaveformDisplay = ({
         return region;
       });
 
+      if (token !== undefined && !isRegionOpCurrent(token)) return;
       currentRegionsRef.current = newRegions;
     }
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isGuestMode, chopTriggerStyle]);
+    debugLog('createRegions done', { token, mode: modeRef.current, count: currentRegionsRef.current.length });
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isGuestMode, chopTriggerStyle, clearRegions, isRegionOpCurrent, debugLog]);
 
   // Improved function to add thumb element to a region
   // When isInvalidOneShotTrigger is true (One-Shot mode, node at or past next), style thumb grey
@@ -1028,10 +1077,13 @@ const WaveformDisplay = ({
       
       const modeChanged = prevModeRef.current !== mode;
       if (modeChanged) {
+        const token = beginRegionOp('mode-change');
         // Clear regions immediately when mode changes
-        await clearRegions();
+        await clearRegions(token);
+        if (!isRegionOpCurrent(token)) return;
         // Create new regions after clearing is complete
-        await createRegions();
+        await createRegions(token);
+        if (!isRegionOpCurrent(token)) return;
         
         // Update mode ref immediately
         prevModeRef.current = mode;
@@ -1039,12 +1091,13 @@ const WaveformDisplay = ({
     };
     
     handleModeChange();
-  }, [mode, wavesurfer, isReady, createRegions, clearRegions]);
+  }, [mode, wavesurfer, isReady, createRegions, clearRegions, beginRegionOp, isRegionOpCurrent]);
 
   // Recreate regions when relevant parameters change (but not mode changes)
   useEffect(() => {
     const handleParameterChange = async () => {
       if (!wavesurfer || !isReady || !initialSetupDoneRef.current) return;
+      debugLog('parameter-effect run', { mode, zoom: zoomLevelRef.current });
       
       // Only update if mode hasn't changed (mode changes are handled separately)
       const modeChanged = prevModeRef.current !== mode;
@@ -1123,19 +1176,21 @@ const WaveformDisplay = ({
       const needsUpdate = loopChanged || cuePointsChanged || triggerStyleChanged;
       
       if (needsUpdate) {
+        const token = beginRegionOp('parameter-change');
         // Sync refs with latest props so createRegions uses current cue points for invalid-one-shot logic
         prevLoopStartRef.current = loopStart;
         prevLoopEndRef.current = loopEnd;
         prevCuePointsRef.current = [...cuePoints];
         currentCuePointsRef.current = [...cuePoints];
         prevChopTriggerStyleRef.current = chopTriggerStyle;
-        await clearRegions();
-        await createRegions();
+        await clearRegions(token);
+        if (!isRegionOpCurrent(token)) return;
+        await createRegions(token);
       }
     };
     
     handleParameterChange();
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, chopTriggerStyle, createRegions, clearRegions]);
+  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, chopTriggerStyle, createRegions, clearRegions, beginRegionOp, isRegionOpCurrent, debugLog]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
@@ -1149,7 +1204,9 @@ const WaveformDisplay = ({
               ? scrollContainer.clientWidth / wavesurfer.getDuration()
               : calculateMinPxPerSec();
           wavesurfer.setOptions({ minPxPerSec });
-          await createRegions();
+          const token = beginRegionOp('initial-setup');
+          await createRegions(token);
+          if (!isRegionOpCurrent(token)) return;
           const initialTime = currentTime || playbackTime || 0;
           setTimeout(() => {
             if (wavesurfer && isReady) {
@@ -1208,7 +1265,7 @@ const WaveformDisplay = ({
     };
 
     setupRegions();
-  }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode, createRegions, calculateMinPxPerSec]);
+  }, [wavesurfer, isReady, zoomLevel, currentTime, playbackTime, loopStart, loopEnd, cuePoints, mode, createRegions, calculateMinPxPerSec, beginRegionOp, isRegionOpCurrent]);
 
   // Effect to handle zoom changes
   useEffect(() => {
@@ -1404,27 +1461,45 @@ const WaveformDisplay = ({
     }
   }, [zoomLevel, wavesurfer, isReady]);
 
-  // Trackpad pinch-to-zoom: listen for wheel events with ctrlKey (pinch gesture)
-  // Uses smooth continuous zoom when onZoomChange provided; otherwise discrete onZoomIn/onZoomOut
-  // Throttles updates to reduce WaveSurfer redraws (each zoom = full canvas redraw).
-  // Pinch zoom disabled: causes loop region ghost in chop mode during zoom.
-  // See docs/BUGS.md - Bug 5. Set to true to re-enable when fixed.
-  const PINCH_ZOOM_ENABLED = false;
+  // Trackpad pinch-to-zoom: staged rollout starts with discrete mode to reduce render churn.
   useEffect(() => {
-    if (!PINCH_ZOOM_ENABLED) return;
+    if (!PINCH_ZOOM_CONFIG.enabled) return;
     const el = scrollContainerRef.current;
     if (!el) return;
-    if (onZoomChange) {
+    const discreteSteps = [1, 2, 4, 8];
+    const applyDiscreteStep = (direction: 'in' | 'out') => {
+      const now = Date.now();
+      if (now - pinchLastStepAtRef.current < PINCH_ZOOM_CONFIG.discreteCooldownMs) return;
+      pinchLastStepAtRef.current = now;
+      const currentZoom = zoomLevelRef.current;
+      const nearestIndex = discreteSteps.reduce((best, step, index) => (
+        Math.abs(step - currentZoom) < Math.abs(discreteSteps[best] - currentZoom) ? index : best
+      ), 0);
+      const nextIndex = direction === 'in'
+        ? Math.min(discreteSteps.length - 1, nearestIndex + 1)
+        : Math.max(0, nearestIndex - 1);
+      const nextZoom = discreteSteps[nextIndex];
+      if (nextZoom === currentZoom) return;
+      debugLog('pinch discrete step', { direction, from: currentZoom, to: nextZoom });
+      if (onZoomChange) {
+        onZoomChange(nextZoom);
+        return;
+      }
+      if (direction === 'in') onZoomIn();
+      else onZoomOut();
+    };
+
+    if (PINCH_ZOOM_CONFIG.mode === 'continuous' && onZoomChange) {
       const PINCH_SENSITIVITY = 0.012;
       let pendingZoom: number | null = null;
       let throttleId: ReturnType<typeof setTimeout> | null = null;
-      const THROTTLE_MS = 50; // ~20fps during pinch, reduces WaveSurfer redraw load
 
       const flushZoom = () => {
         throttleId = null;
         if (pendingZoom !== null) {
           const z = pendingZoom;
           pendingZoom = null;
+          debugLog('pinch continuous flush', { to: z });
           if (z !== zoomLevelRef.current) onZoomChange(z);
         }
       };
@@ -1434,9 +1509,12 @@ const WaveformDisplay = ({
         e.preventDefault();
         const current = pendingZoom ?? zoomLevelRef.current;
         const factor = Math.exp(-PINCH_SENSITIVITY * e.deltaY);
-        pendingZoom = Math.max(1, Math.min(8, current * factor));
+        const unclamped = Math.max(1, Math.min(8, current * factor));
+        const maxDelta = PINCH_ZOOM_CONFIG.maxDeltaPerTick;
+        const bounded = Math.max(current - maxDelta, Math.min(current + maxDelta, unclamped));
+        pendingZoom = Math.max(1, Math.min(8, bounded));
         if (throttleId === null) {
-          throttleId = setTimeout(flushZoom, THROTTLE_MS);
+          throttleId = setTimeout(flushZoom, PINCH_ZOOM_CONFIG.throttleMs);
         }
       };
 
@@ -1446,25 +1524,23 @@ const WaveformDisplay = ({
         if (throttleId !== null) clearTimeout(throttleId);
       };
     }
-    if (!onZoomIn || !onZoomOut) return;
-    // Discrete zoom fallback
+    if (!onZoomIn && !onZoomOut && !onZoomChange) return;
     let accumulatedDelta = 0;
-    const PINCH_THRESHOLD = 50;
     const handleWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
       accumulatedDelta += e.deltaY;
-      if (Math.abs(accumulatedDelta) >= PINCH_THRESHOLD) {
-        const steps = Math.trunc(accumulatedDelta / PINCH_THRESHOLD);
-        accumulatedDelta = accumulatedDelta % PINCH_THRESHOLD;
+      if (Math.abs(accumulatedDelta) >= PINCH_ZOOM_CONFIG.discreteThreshold) {
+        const steps = Math.trunc(accumulatedDelta / PINCH_ZOOM_CONFIG.discreteThreshold);
+        accumulatedDelta = accumulatedDelta % PINCH_ZOOM_CONFIG.discreteThreshold;
         for (let i = 0; i < Math.abs(steps); i++) {
-          steps > 0 ? onZoomOut() : onZoomIn();
+          steps > 0 ? applyDiscreteStep('out') : applyDiscreteStep('in');
         }
       }
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
-  }, [onZoomIn, onZoomOut, onZoomChange]);
+  }, [onZoomIn, onZoomOut, onZoomChange, debugLog]);
 
   // Effect to handle scroll events and communicate scroll state
   useEffect(() => {
