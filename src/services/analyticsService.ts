@@ -78,6 +78,23 @@ export interface TrackingEvents {
   recording_stopped: { userTier: string };
   recording_downloaded: { fileName?: string; format: string; userTier: string };
 
+  // Creative Metrics (Studio only - excludes /demo)
+  sampler_opened: { userTier: string };
+  session_started: { userTier: string };
+  sampler_ready: { trackId?: string; loadTime?: number; userTier: string };
+  track_loaded: { trackId: string; trackIndex?: number; source?: string; userTier: string };
+  first_creative_action: { action: string; timeSinceReadyMs: number; userTier: string };
+  cue_added: { trackId: string; cueIndex: number; userTier: string };
+  loop_created: { trackId: string; start: number; end: number; userTier: string };
+  track_added: { trackId: string; trackIndex: number; mode?: string; source?: string; userTier: string };
+  parameter_changed: { trackId: string; parameterType: string; userTier: string };
+  record_started: { userTier: string };
+  record_stopped: { userTier: string };
+  cue_triggered: { cueIndex: number; trackId: string; userTier: string };
+  audio_exported: { fileName?: string; format: string; userTier: string };
+  user_returned: { returnSource?: string; userTier: string };
+  creative_action_after_return: { action: string; userTier: string };
+
   // Performance metrics
   demo_load_time: { loadTime: number; userTier: string };
   feature_gate_response_time: {
@@ -132,6 +149,26 @@ export const FUNNEL_STAGES: FunnelStage[] = [
   { name: "Upgrade Completed", event: "upgrade_completed", required: true },
 ];
 
+/** Creative actions that count toward creation metrics (excludes cue_triggered, play/pause) */
+export const CREATIVE_EVENTS = new Set<string>([
+  "cue_added",
+  "loop_created",
+  "track_added",
+  "parameter_changed",
+  "record_started",
+]);
+
+/** Interaction events (tracked but not counted toward creation metrics) */
+export const INTERACTION_EVENTS = new Set<string>(["cue_triggered"]);
+
+/** Creative funnel stages for sampler flow */
+export const CREATIVE_FUNNEL_STAGES = [
+  { name: "Sampler Opened", event: "sampler_opened" },
+  { name: "Track Loaded", event: "track_loaded" },
+  { name: "Sampler Ready", event: "sampler_ready" },
+  { name: "First Creative Action", event: "first_creative_action" },
+] as const;
+
 export class AnalyticsService {
   private static instance: AnalyticsService;
   private events: AnalyticsEvent[] = [];
@@ -142,6 +179,10 @@ export class AnalyticsService {
   private retryQueue: AnalyticsEvent[] = [];
   private userProgress: Map<string, Set<string>> = new Map();
   private performanceMetrics: Map<string, number[]> = new Map();
+  /** For TTFC: timestamp when sampler_ready fired this session */
+  private samplerReadyTimestamp: number | null = null;
+  /** Whether we've emitted first_creative_action this session */
+  private hasEmittedFirstCreativeAction = false;
 
   private constructor() {
     this.sessionId = this.generateSessionId();
@@ -209,11 +250,48 @@ export class AnalyticsService {
     event: K,
     properties: TrackingEvents[K]
   ) {
+    const now = Date.now();
+
+    // Creative metrics: capture sampler_ready for TTFC
+    if (event === "sampler_ready") {
+      this.samplerReadyTimestamp = now;
+    }
+
+    // Creative metrics: emit first_creative_action on first creative action this session
+    if (
+      CREATIVE_EVENTS.has(event as string) &&
+      !this.hasEmittedFirstCreativeAction &&
+      this.samplerReadyTimestamp !== null
+    ) {
+      const timeSinceReadyMs = now - this.samplerReadyTimestamp;
+      this.hasEmittedFirstCreativeAction = true;
+      const firstActionData: AnalyticsEvent = {
+        event: "first_creative_action",
+        userId: this.userId,
+        sessionId: this.sessionId,
+        timestamp: now,
+        properties: {
+          action: event,
+          timeSinceReadyMs,
+          userTier: (properties as any).userTier ?? this.userTier,
+        },
+        userTier: this.userTier as "guest" | "free" | "pro",
+        version: "1.0.0",
+        platform: "web",
+      };
+      this.events.push(firstActionData);
+      if (this.isOnline) {
+        this.sendEvent(firstActionData);
+      } else {
+        this.storeForRetry(firstActionData);
+      }
+    }
+
     const eventData: AnalyticsEvent = {
       event,
       userId: this.userId,
       sessionId: this.sessionId,
-      timestamp: Date.now(),
+      timestamp: now,
       properties,
       userTier: this.userTier as "guest" | "free" | "pro",
       version: "1.0.0",

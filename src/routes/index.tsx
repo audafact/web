@@ -18,6 +18,7 @@ const Profile = lazy(() => import('../views/Profile').then(module => ({ default:
 const Privacy = lazy(() => import('../views/Privacy').then(module => ({ default: module.Privacy })));
 const Terms = lazy(() => import('../views/Terms'));
 const Contact = lazy(() => import('../views/Contact'));
+const AnalyticsPage = lazy(() => import('../views/AnalyticsPage'));
 const NotFound = lazy(() => import('../views/NotFound'));
 
 // Loading component for lazy routes
@@ -146,6 +147,14 @@ export const appRoutes = [
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <StudioDemo />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'admin/analytics',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <AnalyticsPage />
           </Suspense>
         ),
       },

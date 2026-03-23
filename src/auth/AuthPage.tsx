@@ -1,15 +1,18 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AuthForm } from './AuthForm';
 import { PasswordReset } from './PasswordReset';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
 export const AuthPage = () => {
+  const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<AuthMode>('signin');
 
   const handleAuthSuccess = () => {
-    // Redirect to home page or dashboard
-    window.location.href = '/';
+    const redirect = searchParams.get('redirect');
+    const target = redirect && redirect.startsWith('/') ? redirect : '/';
+    window.location.href = target;
   };
 
   return (

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { DatabaseService } from '../services/databaseService';
+import { useAnalytics } from '../hooks/useAnalytics';
 import { getNumericLimitsForDbTier } from '../config/tierConfig';
 import { Recording, Session } from '../types/music';
 import { StorageService } from '../services/storageService';
@@ -97,6 +98,7 @@ const RecordingContextInstance = createContext<RecordingContextValue | null>(nul
 
 export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const { trackStudioAction } = useAnalytics();
   
   // Performance recording state
   const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
@@ -431,14 +433,17 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       // Start recording
       mediaRecorder.start();
+      trackStudioAction('recording_started', {});
     } catch (error) {
       console.error('Failed to start performance recording:', error);
       alert('Failed to start recording. Please check microphone permissions.');
     }
-  }, [currentPerformance]);
+  }, [currentPerformance, trackStudioAction]);
 
   const stopPerformanceRecording = useCallback(() => {
     if (!currentPerformance || !mediaRecorderRef.current) return;
+    
+    trackStudioAction('recording_stopped', {});
     
     try {
       // Stop the MediaRecorder
@@ -456,7 +461,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (error) {
       console.error('Error stopping performance recording:', error);
     }
-  }, [currentPerformance]);
+  }, [currentPerformance, trackStudioAction]);
 
   const addRecordingEvent = useCallback((event: Omit<RecordingEvent, 'timestamp'>) => {
     if (!isRecordingPerformance || !currentPerformance) {
@@ -599,6 +604,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             s.id === sessionId ? { ...s, id: dbSession.id, session_name: dbSession.session_name } : s
           ));
           setPendingSession({ sessionId: dbSession.id });
+          trackStudioAction('saved', { sessionName: sessionName, isModified: true });
           window.dispatchEvent(new CustomEvent('sessionSaved', {
             detail: { userId: user.id, sessionCount: currentSessionCount + 1 }
           }));
@@ -613,7 +619,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setSavedSessions(prev => prev.filter(s => s.id !== sessionId));
       }
     }
-  }, [user]);
+  }, [user, trackStudioAction]);
 
   // Management functions
   const clearAll = useCallback(() => {
@@ -654,6 +660,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
       downloadBlob(blobToDownload, filename);
+      trackStudioAction('downloaded', { fileName: filename, format });
 
       // Persist custom filename to DB when recording was saved
       if (performance.databaseId && user?.id) {
@@ -663,7 +670,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (error) {
       console.error('Export failed:', error);
     }
-  }, [performances, user?.id, refreshSavedRecordings]);
+  }, [performances, user?.id, refreshSavedRecordings, trackStudioAction]);
 
   const exportByFileKey = useCallback(async (fileKey: string, filename: string, format: 'mp3' | 'wav', recordingId?: string) => {
     try {
@@ -687,6 +694,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
       downloadBlob(blobToDownload, filename);
+      trackStudioAction('downloaded', { fileName: filename, format });
 
       if (recordingId && user?.id) {
         await DatabaseService.updateRecordingOriginalName(recordingId, user.id, filename);
@@ -696,7 +704,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error('Export by fileKey failed:', error);
       throw error;
     }
-  }, [user?.id, refreshSavedRecordings]);
+  }, [user?.id, refreshSavedRecordings, trackStudioAction]);
 
   const savePerformanceName = useCallback(async (performanceId: string, filename: string) => {
     const performance = performances.find(p => p.id === performanceId);
