@@ -20,7 +20,7 @@ interface WaveformDisplayProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
-  /** Optional: for smooth continuous zoom (e.g. trackpad pinch). When set, pinch uses this instead of discrete onZoomIn/onZoomOut. */
+  /** Optional: for smooth continuous zoom (e.g. trackpad pinch). Currently disabled due to loop-region ghost bug; see docs/BUGS.md. */
   onZoomChange?: (level: number) => void;
   trackId?: string;
   // Measure display props
@@ -121,12 +121,16 @@ const WaveformDisplay = ({
   const zoomChangeRetryTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const zoomLevelRef = useRef<number>(zoomLevel);
   const zoomRenderedHandlerRef = useRef<(() => void) | null>(null);
+  const widthSyncTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   
   // Track previous values to detect changes
   const prevLoopStartRef = useRef<number>(loopStart);
   const prevLoopEndRef = useRef<number>(loopEnd);
   const prevCuePointsRef = useRef<number[]>(cuePoints);
   const prevModeRef = useRef<string>(mode);
+  /** Latest mode for comparing with effect closures (debug + stale-handler checks). */
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const prevChopTriggerStyleRef = useRef<string | undefined>(chopTriggerStyle);
   const prevPlaybackTimeRef = useRef<number>(playbackTime);
   
@@ -355,6 +359,7 @@ const WaveformDisplay = ({
 
     const syncContainerWidth = () => {
       if (!containerRef.current || !wavesurfer) return;
+      if (zoomLevelRef.current <= 1) return;
       
       try {
         const renderer = (wavesurfer as any).renderer;
@@ -402,17 +407,26 @@ const WaveformDisplay = ({
         // Listen to the 'rendered' event - sync width once after render completes
         const handleRendered = () => {
           // Single delay to ensure wrapper width is fully updated (especially after zoom)
-          setTimeout(syncContainerWidth, 200);
+          const timeoutId = setTimeout(() => {
+            syncContainerWidth();
+            widthSyncTimeoutsRef.current = widthSyncTimeoutsRef.current.filter((id) => id !== timeoutId);
+          }, 200);
+          widthSyncTimeoutsRef.current.push(timeoutId);
           // Refresh loop region position after zoom - forces DOM/handles to re-sync
-          // without recreating (which was causing duplicate regions)
-          if (mode === 'loop' && currentRegionsRef.current.length === 1) {
-            const region = currentRegionsRef.current[0];
-            if (region?.element) {
-              const duration = wavesurfer.getDuration();
-              const start = Math.max(0, Math.min(region.start, duration - 0.05));
-              const end = Math.max(start + 0.1, Math.min(region.end, duration));
-              region.setOptions({ start, end });
-            }
+          // without recreating (which was causing duplicate regions).
+          // Use modeRef to avoid stale closure: after loop→cue switch, an old handler
+          // could still fire with mode==='loop'; we must not refresh in cue mode.
+          const region = currentRegionsRef.current[0];
+          if (
+            modeRef.current === 'loop' &&
+            currentRegionsRef.current.length === 1 &&
+            region?.element &&
+            region?.id?.includes?.('loop-region')
+          ) {
+            const duration = wavesurfer.getDuration();
+            const start = Math.max(0, Math.min(region.start, duration - 0.05));
+            const end = Math.max(start + 0.1, Math.min(region.end, duration));
+            region.setOptions({ start, end });
           }
         };
         
@@ -420,10 +434,16 @@ const WaveformDisplay = ({
         
         // Initial sync if waveform is already loaded
         if (wavesurfer.getDuration() > 0) {
-          setTimeout(syncContainerWidth, 200);
+          const timeoutId = setTimeout(() => {
+            syncContainerWidth();
+            widthSyncTimeoutsRef.current = widthSyncTimeoutsRef.current.filter((id) => id !== timeoutId);
+          }, 200);
+          widthSyncTimeoutsRef.current.push(timeoutId);
         }
         
         return () => {
+          widthSyncTimeoutsRef.current.forEach((id) => clearTimeout(id));
+          widthSyncTimeoutsRef.current = [];
           if (renderer && typeof renderer.un === 'function') {
             renderer.un('rendered', handleRendered);
           }
@@ -435,12 +455,18 @@ const WaveformDisplay = ({
     
     // Fallback: periodic sync if renderer events aren't available
     if (wavesurfer.getDuration() > 0) {
-      setTimeout(syncContainerWidth, 200);
+      const timeoutId = setTimeout(() => {
+        syncContainerWidth();
+        widthSyncTimeoutsRef.current = widthSyncTimeoutsRef.current.filter((id) => id !== timeoutId);
+      }, 200);
+      widthSyncTimeoutsRef.current.push(timeoutId);
     }
     
     const intervalId = setInterval(syncContainerWidth, 1000);
     
     return () => {
+      widthSyncTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      widthSyncTimeoutsRef.current = [];
       clearInterval(intervalId);
     };
   }, [wavesurfer, isReady, zoomLevel, mode, calculateMinPxPerSec]);
@@ -1249,14 +1275,14 @@ const WaveformDisplay = ({
     };
 
     const applyOneX = () => {
-      if (zoomLevelRef.current > 1 || !containerRef.current || !wavesurfer) return;
-      const scrollContainer = containerRef.current.parentElement;
+      const scrollContainer = containerRef.current?.parentElement;
       const widthSource = scrollContainer?.clientWidth && scrollContainer.clientWidth > 0
         ? scrollContainer
         : scrollContainer?.parentElement;
       const width = widthSource?.clientWidth ?? (widthSource as Element)?.getBoundingClientRect?.()?.width;
+      const duration = wavesurfer?.getDuration?.() ?? 0;
+      if (zoomLevelRef.current > 1 || !containerRef.current || !wavesurfer) return;
       if (!width || width <= 0) return;
-      const duration = wavesurfer.getDuration();
       if (duration <= 0) return;
       applyZoom(width / duration, false);
     };
@@ -1381,7 +1407,11 @@ const WaveformDisplay = ({
   // Trackpad pinch-to-zoom: listen for wheel events with ctrlKey (pinch gesture)
   // Uses smooth continuous zoom when onZoomChange provided; otherwise discrete onZoomIn/onZoomOut
   // Throttles updates to reduce WaveSurfer redraws (each zoom = full canvas redraw).
+  // Pinch zoom disabled: causes loop region ghost in chop mode during zoom.
+  // See docs/BUGS.md - Bug 5. Set to true to re-enable when fixed.
+  const PINCH_ZOOM_ENABLED = false;
   useEffect(() => {
+    if (!PINCH_ZOOM_ENABLED) return;
     const el = scrollContainerRef.current;
     if (!el) return;
     if (onZoomChange) {
