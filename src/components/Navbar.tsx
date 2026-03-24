@@ -3,12 +3,19 @@ import { useAuth } from '../context/AuthContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useState } from 'react';
 import { PerformanceDashboard } from './PerformanceDashboard';
+import { getHostExperience } from '../routing/hostRouting';
 
 const Navbar = () => {
   const { user, loading, signOut } = useAuth();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const location = useLocation();
-  const isStudioPage = location.pathname === '/studio';
+  const hostExperience = getHostExperience();
+  const isAppExperience = hostExperience === 'app';
+  const isStudioPage =
+    location.pathname.startsWith('/studio') ||
+    location.pathname.startsWith('/stash') ||
+    (isAppExperience && location.pathname === '/');
+  const isHomePage = !isAppExperience && location.pathname === '/';
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -57,7 +64,7 @@ const Navbar = () => {
               <Link 
                 to="/" 
                 className={`font-medium transition-colors duration-200 ${
-                  location.pathname === '/' 
+                  isHomePage
                     ? 'text-audafact-accent-cyan' 
                     : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                 }`}
@@ -68,7 +75,7 @@ const Navbar = () => {
             <Link 
               to="/studio" 
               className={`font-medium transition-colors duration-200 ${
-                location.pathname === '/studio' 
+                isStudioPage
                   ? 'text-audafact-accent-cyan' 
                   : 'text-audafact-text-secondary hover:text-audafact-text-primary'
               }`}
@@ -171,7 +178,7 @@ const Navbar = () => {
             to="/studio"
             onClick={() => setIsMobileMenuOpen(false)}
             className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
-              location.pathname === '/studio'
+              isStudioPage
                 ? 'text-audafact-accent-cyan bg-audafact-surface-2'
                 : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
             }`}
