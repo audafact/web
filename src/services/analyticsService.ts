@@ -183,13 +183,30 @@ export class AnalyticsService {
   private samplerReadyTimestamp: number | null = null;
   /** Whether we've emitted first_creative_action this session */
   private hasEmittedFirstCreativeAction = false;
+  private readonly trackingEnabled: boolean;
 
   private constructor() {
+    this.trackingEnabled = this.shouldEnableTracking();
     this.sessionId = this.generateSessionId();
     this.setupOnlineOfflineHandling();
     this.setupGlobalErrorHandling();
     this.loadRetryQueue();
     this.trackPageLoadTime();
+  }
+
+  /**
+   * Production-only analytics by default.
+   * - Enabled in production builds.
+   * - Enabled in test runs so service tests can validate behavior.
+   * - Can be explicitly enabled in non-prod via VITE_ENABLE_ANALYTICS=true.
+   */
+  private shouldEnableTracking(): boolean {
+    const envOverride =
+      String(import.meta.env.VITE_ENABLE_ANALYTICS || "").toLowerCase() ===
+      "true";
+    const isProductionMode = import.meta.env.MODE === "production";
+    const isTestMode = Boolean(import.meta.env.VITEST);
+    return envOverride || isProductionMode || isTestMode;
   }
 
   static getInstance(): AnalyticsService {
@@ -250,6 +267,10 @@ export class AnalyticsService {
     event: K,
     properties: TrackingEvents[K]
   ) {
+    if (!this.trackingEnabled) {
+      return;
+    }
+
     const now = Date.now();
 
     // Creative metrics: capture sampler_ready for TTFC
