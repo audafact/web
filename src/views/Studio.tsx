@@ -2171,16 +2171,6 @@ const Studio = () => {
       return { ...prev, [trackId]: { start, end } };
     });
   };
-
-  const handleLoopDragStateChange = (trackId: string, start: number | null, end: number | null) => {
-    setLoopDragStates(prev => {
-      if (start === null || end === null) {
-        const { [trackId]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [trackId]: { start, end } };
-    });
-  };
   
   const handleModeChange = (trackId: string, mode: 'preview' | 'loop' | 'cue') => {
     if (!tracks) return;
