@@ -4,6 +4,7 @@
 .env
 .env.ingest
 .env.prod
+.env.local
 assets/
 scripts/archive/
 parts/
