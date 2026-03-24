@@ -4,9 +4,10 @@
 import { supabase } from "@/services/supabase";
 
 export const API_BASE =
-  import.meta.env.MODE === "staging"
-    ? "http://localhost:5173/api/staging" // Use proxy for staging
-    : "https://audafact-api.david-g-cortinas.workers.dev";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV
+    ? "http://localhost:5173/api/staging" // Use proxy for local dev
+    : "https://audafact-api.david-g-cortinas.workers.dev");
 
 const signFileRetryDelay = 2000;
 /** Signed URLs from Worker are valid 90s; cache for 75s to avoid using expired URLs */
