@@ -13,7 +13,7 @@ export async function deleteByKey(key: string): Promise<{ ok: true }> {
     ...(await authHeader()),
     "content-type": "application/json",
   };
-  const r = await fetch(`${API_BASE}/api/delete-file`, {
+  const r = await fetch(`${API_BASE}/delete-file`, {
     method: "POST",
     headers,
     body: JSON.stringify({ key }),

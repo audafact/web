@@ -25,7 +25,7 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
   if (!token) throw new Error("Not signed in");
 
   const r = await fetch(
-    `${API_BASE}/api/sign-file?key=${encodeURIComponent(key)}`,
+    `${API_BASE}/sign-file?key=${encodeURIComponent(key)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }
