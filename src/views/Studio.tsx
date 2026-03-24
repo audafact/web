@@ -407,6 +407,8 @@ const Studio = () => {
   
   // Track navigation state
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
+  const randomQueueRef = useRef<number[]>([]);
+  const historyStackRef = useRef<number[]>([]);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
@@ -1568,20 +1570,65 @@ const Studio = () => {
   };
 
   // Track navigation functions
+  const refillRandomQueue = useCallback((assetsLength: number, excludeIndex: number) => {
+    if (assetsLength <= 0) {
+      randomQueueRef.current = [];
+      return;
+    }
+    const queue = Array.from({ length: assetsLength }, (_, i) => i).filter(i => i !== excludeIndex);
+    for (let i = queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [queue[i], queue[j]] = [queue[j], queue[i]];
+    }
+    randomQueueRef.current = queue;
+  }, []);
+
+  const getRandomNextIndex = useCallback((assetsLength: number, currentIndex: number): number | null => {
+    if (assetsLength <= 0) return null;
+    if (assetsLength === 1) return currentIndex;
+
+    if (randomQueueRef.current.length === 0) {
+      refillRandomQueue(assetsLength, currentIndex);
+    }
+
+    const nextIndex = randomQueueRef.current.shift();
+    if (typeof nextIndex === 'number') return nextIndex;
+
+    // Safety fallback if queue and asset list get out of sync
+    refillRandomQueue(assetsLength, currentIndex);
+    return randomQueueRef.current.shift() ?? null;
+  }, [refillRandomQueue]);
+
+  useEffect(() => {
+    const assetsLength = (availableAssets || []).length;
+    if (assetsLength <= 1) {
+      randomQueueRef.current = [];
+      historyStackRef.current = [];
+      return;
+    }
+
+    randomQueueRef.current = randomQueueRef.current.filter(index => index >= 0 && index < assetsLength);
+    historyStackRef.current = historyStackRef.current.filter(index => index >= 0 && index < assetsLength);
+  }, [availableAssets]);
+
   const handleNextTrack = useCallback(async () => {
     if (isTrackLoading || isGuestLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
-         if (isGuestMode) {
-       // In demo mode, load next bundled track
-       loadRandomGuestTrack();
-            } else {
-          // Normal mode - cycle through available assets
-          const assets = availableAssets || [];
-          const nextIndex = (currentTrackIndex + 1) % assets.length;
-          await loadTrackByIndex(nextIndex, true); // true = only update first track
-        }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets]);
+    if (isGuestMode) {
+      // In demo mode, load next bundled track
+      loadRandomGuestTrack();
+    } else {
+      const assetsLength = (availableAssets || []).length;
+      const nextIndex = getRandomNextIndex(assetsLength, currentTrackIndex);
+      if (nextIndex === null) return;
+
+      if (assetsLength > 1) {
+        historyStackRef.current.push(currentTrackIndex);
+      }
+      await loadTrackByIndex(nextIndex, true); // true = only update first track
+    }
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex]);
 
   const handlePreviousTrack = useCallback(async () => {
     if (isTrackLoading || isGuestLoading) return; // Disable during loading
@@ -1591,12 +1638,18 @@ const Studio = () => {
       // In demo mode, load next bundled track (since we don't have previous bundled track concept)
       loadRandomGuestTrack();
     } else {
-      // Normal mode - cycle through available assets
-      const assets = availableAssets || [];
-      const prevIndex = currentTrackIndex === 0 ? assets.length - 1 : currentTrackIndex - 1;
+      const assetsLength = (availableAssets || []).length;
+      if (assetsLength <= 0) return;
+
+      const prevFromHistory = historyStackRef.current.pop();
+      const prevIndex = typeof prevFromHistory === 'number'
+        ? prevFromHistory
+        : getRandomNextIndex(assetsLength, currentTrackIndex);
+      if (prevIndex === null) return;
+
       await loadTrackByIndex(prevIndex, true); // true = only update first track
     }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex]);
 
   const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
     const assets = availableAssets || [];
