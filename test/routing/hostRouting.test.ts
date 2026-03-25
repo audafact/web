@@ -51,17 +51,19 @@ describe("host routing classifier", () => {
     expect(getAppEntryUrl("audafact.com", "https:", "")).toBe(
       "https://app.audafact.com/"
     );
-    (import.meta.env as any).VITE_APP_ENV = "development";
-    expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
-      "https://app.staging.audafact.com/"
-    );
-  });
-
-  it("uses same-host /stash for staging audafact domain when build is staging", () => {
-    (import.meta.env as any).VITE_APP_ENV = "staging";
     expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
       "https://staging.audafact.com/stash"
     );
+  });
+
+  it("uses same-host /stash for staging Pages host", () => {
+    expect(
+      getAppEntryUrl(
+        "develop.audafact-web-staging.pages.dev",
+        "https:",
+        ""
+      )
+    ).toBe("https://develop.audafact-web-staging.pages.dev/stash");
   });
 });
 

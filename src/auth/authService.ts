@@ -24,6 +24,12 @@ function getAuthRedirectUrl(): string {
   return `${window.location.origin}/auth/callback`;
 }
 
+function getOAuthRedirectUrl(): string {
+  // Always use current origin for OAuth callbacks.
+  // This avoids stale env/site-url redirects (e.g. localhost) on hosted environments.
+  return `${window.location.origin}/auth/callback`;
+}
+
 export const authService = {
   // Sign up with email and password
   async signUp(
@@ -183,7 +189,7 @@ export const authService = {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: getAuthRedirectUrl(),
+          redirectTo: getOAuthRedirectUrl(),
         },
       });
 
