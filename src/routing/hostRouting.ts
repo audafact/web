@@ -72,11 +72,11 @@ export const getAppEntryUrl = (
 ): string => {
   const host = normalizeHost(hostname);
 
-  // Staging custom domain is often a single Cloudflare hostname (no app.staging DNS).
-  // Keep the sampler on the same host under /stash instead of app.staging.audafact.com.
+  // Staging hosts can run as a single hostname (without app.<host> DNS).
+  // Route /studio to same-host /stash in those environments.
   if (
-    import.meta.env.VITE_APP_ENV === "staging" &&
-    host === "staging.audafact.com"
+    host === "staging.audafact.com" ||
+    host.endsWith(".audafact-web-staging.pages.dev")
   ) {
     const hostWithPort = withPort(host, port);
     return `${protocol}//${hostWithPort}/stash`;
