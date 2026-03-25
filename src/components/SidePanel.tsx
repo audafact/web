@@ -273,7 +273,12 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const { savedSessions, performances, exportSession, exportPerformance, exportByFileKey, savePerformanceName, updateRecordingName, deleteSession, renameSession, deletePerformance, pendingExport, clearPendingExport, pendingSession, clearPendingSession, discardPerformance, savedRecordings, deleteSavedRecording } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
-  const { tier, libraryTracks: userLibraryTracks, loading: userLoading } = useUser();
+  const {
+    tier,
+    libraryTracks: userLibraryTracks,
+    loading: userLoading,
+    libraryCatalogBanner,
+  } = useUser();
   const { guestTracks, isLoading: guestTracksLoading } = useGuest();
 
   const guestLibraryTracks = useMemo<LibraryTrack[]>(() => {
@@ -1371,8 +1376,34 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           className="w-full px-3 py-2 bg-audafact-surface-2 border border-audafact-divider rounded-lg text-audafact-text-primary placeholder-audafact-text-secondary focus:outline-none focus:border-audafact-accent-cyan"
                         />
                         
-                        <div className="text-sm audafact-text-secondary bg-audafact-surface-2 border border-audafact-accent-cyan/30 p-3 rounded-lg">
-                          <strong className="text-audafact-text-primary">Add tracks:</strong> Drag any track into the studio, or use the + button. Use the Add button in the bar above or swipe down to add more. Guest users can preview but need to sign up to add tracks.
+                        <div className="text-sm audafact-text-secondary bg-audafact-surface-2 border border-audafact-accent-cyan/30 p-3 rounded-lg space-y-2">
+                          <p className="text-audafact-text-primary/95">{libraryCatalogBanner}</p>
+                          {tier.id === 'guest' ? (
+                            <div
+                              role="status"
+                              className="space-y-2 rounded-lg border-2 border-audafact-accent-cyan bg-audafact-accent-cyan/15 px-3 py-2.5 text-sm font-semibold text-audafact-text-primary shadow-sm ring-1 ring-audafact-accent-cyan/20"
+                            >
+                              <p className="text-audafact-text-primary/95">
+                                Preview some of the copyright free samples available to flip below.
+                              </p>
+                              <p className="leading-normal text-audafact-text-primary">
+                                <button
+                                  type="button"
+                                  onClick={() => showSignupModal('add_library_track')}
+                                  className="relative top-[-1px] m-0 inline-block cursor-pointer border-0 bg-transparent p-0 text-left align-middle text-sm font-semibold italic leading-normal text-audafact-accent-cyan underline decoration-2 underline-offset-2 hover:text-audafact-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-audafact-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-audafact-surface-2"
+                                >
+                                  Create a free account
+                                </button>{' '}
+                                to dig into more samples and discover hidden gems.
+                              </p>
+                            </div>
+                          ) : (
+                            <p>
+                              <strong className="text-audafact-text-primary">Add tracks:</strong> Drag any track into
+                              the studio, or use the + button. Use the Add button in the bar above or swipe down to add
+                              more.
+                            </p>
+                          )}
                         </div>
                         
                         {/* Enhanced Library Tracks */}
