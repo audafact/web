@@ -7,6 +7,14 @@ export interface AuthResponse {
   error?: string;
 }
 
+function getAuthRedirectUrl(): string {
+  const configured = import.meta.env.VITE_AUTH_REDIRECT_URL;
+  if (configured && configured.trim().length > 0) {
+    return configured.trim();
+  }
+  return `${window.location.origin}/auth/callback`;
+}
+
 export const authService = {
   // Sign up with email and password
   async signUp(
@@ -19,7 +27,7 @@ export const authService = {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: getAuthRedirectUrl(),
           ...(captchaToken ? { captchaToken } : {}),
         },
       });
@@ -107,7 +115,7 @@ export const authService = {
   ): Promise<AuthResponse> {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: getAuthRedirectUrl(),
         ...(captchaToken ? { captchaToken } : {}),
       });
 
@@ -166,7 +174,7 @@ export const authService = {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: getAuthRedirectUrl(),
         },
       });
 

@@ -4,9 +4,10 @@
 import { supabase } from "@/services/supabase";
 
 export const API_BASE =
-  import.meta.env.MODE === "staging"
-    ? "http://localhost:5173/api/staging" // Use proxy for staging
-    : "https://audafact-api.david-g-cortinas.workers.dev";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV || import.meta.env.MODE === "staging"
+    ? "http://localhost:5173/api/staging"
+    : "https://audafact-api.david-g-cortinas.workers.dev");
 
 const signFileRetryDelay = 2000;
 /** Signed URLs from Worker are valid 90s; cache for 75s to avoid using expired URLs */
@@ -24,7 +25,7 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
   if (!token) throw new Error("Not signed in");
 
   const r = await fetch(
-    `${API_BASE}/api/sign-file?key=${encodeURIComponent(key)}`,
+    `${API_BASE}/sign-file?key=${encodeURIComponent(key)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }

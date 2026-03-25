@@ -168,13 +168,18 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api\/staging/, "/api"),
           configure: (proxy, options) => {
             proxy.on("proxyReq", (proxyReq, req, res) => {
-              // Add CORS headers to the proxy request
-              proxyReq.setHeader("Origin", "http://localhost:5173");
+              // Forward caller origin so backend CORS checks match the real browser origin.
+              const requestOrigin = req.headers.origin;
+              if (requestOrigin) {
+                proxyReq.setHeader("Origin", requestOrigin);
+              }
             });
             proxy.on("proxyRes", (proxyRes, req, res) => {
-              // Add CORS headers to the response
-              proxyRes.headers["Access-Control-Allow-Origin"] =
-                "http://localhost:5173";
+              // Echo caller origin to support localhost and app.localhost dev hosts.
+              const requestOrigin = req.headers.origin;
+              if (requestOrigin) {
+                proxyRes.headers["Access-Control-Allow-Origin"] = requestOrigin;
+              }
               proxyRes.headers["Access-Control-Allow-Methods"] =
                 "GET,POST,OPTIONS";
               proxyRes.headers["Access-Control-Allow-Headers"] =

@@ -73,6 +73,28 @@ export const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({
     }
   }, [isVisible]);
 
+  const transformPerformanceData = (events: Array<{ metric: string; value: number }>): PerformanceMetrics => {
+    const result: PerformanceMetrics = {
+      demoLoadTime: 0,
+      featureGateResponse: 0,
+      audioLoadTime: 0,
+      averageResponseTime: 0,
+    };
+    if (!Array.isArray(events) || events.length === 0) return result;
+    const byMetric: Record<string, number[]> = {};
+    for (const e of events) {
+      const key = e.metric?.replace(/^[^_]+_/, '') || e.metric;
+      if (!byMetric[key]) byMetric[key] = [];
+      byMetric[key].push(e.value);
+    }
+    result.demoLoadTime = byMetric.demoLoadTime?.slice(-1)[0] ?? 0;
+    result.featureGateResponse = byMetric.featureGateResponseTime?.slice(-1)[0] ?? byMetric.featureGateResponse?.slice(-1)[0] ?? 0;
+    result.audioLoadTime = byMetric.audioLoadTime?.slice(-1)[0] ?? 0;
+    const allValues = events.map((e) => e.value).filter((v) => typeof v === 'number');
+    result.averageResponseTime = allValues.length ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
+    return result;
+  };
+
   const fetchData = async () => {
     try {
       // Get analytics data
@@ -81,8 +103,12 @@ export const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({
       const errors = analytics.getErrors();
       const health = analytics.getHealthStatus();
 
-      setHealthStatus(health);
-      setPerformanceMetrics(performanceData);
+      setHealthStatus({
+        status: health.isOnline ? 'online' : 'offline',
+        pendingEvents: health.pendingEvents ?? 0,
+        errorRate: health.errorRate ?? 0,
+      });
+      setPerformanceMetrics(transformPerformanceData(performanceData));
       setRecentErrors(errors);
 
       // Get cost data
@@ -100,12 +126,12 @@ export const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({
     }
   };
 
-  const formatCurrency = (amount: number): string => {
-    return `$${amount.toFixed(4)}`;
+  const formatCurrency = (amount: number | undefined): string => {
+    return amount != null && typeof amount === 'number' ? `$${amount.toFixed(4)}` : '—';
   };
 
-  const formatTime = (ms: number): string => {
-    return `${ms.toFixed(2)}ms`;
+  const formatTime = (ms: number | undefined): string => {
+    return ms != null && typeof ms === 'number' ? `${ms.toFixed(2)}ms` : '—';
   };
 
   const getStatusIcon = (status: string): string => {
@@ -161,7 +187,7 @@ export const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-600">
-                  {healthStatus.errorRate.toFixed(1)}%
+                  {(healthStatus.errorRate ?? 0).toFixed(1)}%
                 </div>
                 <div className="text-sm text-gray-600">Error Rate</div>
               </div>
