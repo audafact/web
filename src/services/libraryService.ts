@@ -182,10 +182,15 @@ export class LibraryService {
    */
   static pickPlayableKey(
     track: LibraryTrack,
-    userTier: "guest" | "free" | "pro"
+    userTier: "guest" | "free" | "starter" | "pro"
   ): string {
     // Guest users don't have database tracks, so this function is mainly for free/pro users
-    if ((userTier === "guest" || userTier === "free") && track.previewKey) {
+    if (
+      (userTier === "guest" ||
+        userTier === "free" ||
+        userTier === "starter") &&
+      track.previewKey
+    ) {
       return track.previewKey;
     }
     return track.fileKey;
@@ -195,7 +200,7 @@ export class LibraryService {
 /** Export the helper function for backward compatibility */
 export function pickPlayableKey(
   t: LibraryTrack,
-  userTier: "guest" | "free" | "pro"
+  userTier: "guest" | "free" | "starter" | "pro"
 ): string {
   return LibraryService.pickPlayableKey(t, userTier);
 }

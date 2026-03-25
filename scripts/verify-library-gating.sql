@@ -1,0 +1,23 @@
+-- Manual verification after applying tiered library migration.
+-- Run against your Supabase DB (replace user UUIDs with real test accounts).
+--
+-- 1) Metadata sanity: every row has family_id
+-- SELECT count(*) AS missing_family FROM public.library_tracks WHERE family_id IS NULL OR family_id = '';
+--
+-- 2) Catalog size (update expectation if you add/remove seeds)
+-- SELECT count(*) AS active_tracks FROM public.library_tracks WHERE is_active = true;
+--
+-- 3) Free-tier simulation: family spread (expect <= 15 rows, at most one row per family_id for free)
+-- WITH t AS (SELECT * FROM get_user_tracks('00000000-0000-0000-0000-000000000001'::uuid))
+-- SELECT count(*) FROM t;  -- run with a real free user id
+--
+-- 4) Starter: <= 35 rows; count rows per family_id should be <= 2
+-- WITH t AS (SELECT * FROM get_user_tracks('00000000-0000-0000-0000-000000000002'::uuid))
+-- SELECT family_id, count(*) FROM public.library_tracks lt
+-- WHERE lt.file_key IN (SELECT file_key FROM t) GROUP BY family_id HAVING count(*) > 2;
+--
+-- 5) Pro: row count matches active tracks for pro test user
+-- SELECT (SELECT count(*) FROM get_user_tracks('...pro user...')) AS rpc_count,
+--        (SELECT count(*) FROM library_tracks WHERE is_active) AS active_count;
+
+SELECT 'verify-library-gating.sql loaded — see comments for runnable checks.' AS note;

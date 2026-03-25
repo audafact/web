@@ -11,6 +11,8 @@ import {
   STARTER_LIMITS,
   PRO_FEATURES,
   PRO_LIMITS,
+  getLibraryCatalogBannerText,
+  LIBRARY_TIER_VISIBLE_CAPS,
 } from "../config/tierConfig";
 import {
   LibraryService,
@@ -123,10 +125,24 @@ export const useUser = () => {
     };
   }, [user, accessTier]);
 
+  const libraryCatalogBanner = useMemo(
+    () =>
+      getLibraryCatalogBannerText({
+        tierId: tier.id,
+        tierName: tier.name,
+        visibleCount:
+          tier.id === "guest"
+            ? LIBRARY_TIER_VISIBLE_CAPS.guest
+            : libraryTracks.length,
+      }),
+    [tier.id, tier.name, libraryTracks.length]
+  );
+
   return {
     user,
     tier,
     libraryTracks,
+    libraryCatalogBanner,
     isGuest: tier.id === "guest",
     isFree: tier.id === "free",
     isStarter: tier.id === "starter",

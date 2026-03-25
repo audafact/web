@@ -6,7 +6,7 @@ import { usePreviewFromProvider } from "../audio/usePreviewFromProvider";
 import { signFile } from "../lib/api";
 import { pickPlayableKey } from "@/services/libraryService";
 
-type Tier = "guest" | "free" | "pro";
+type Tier = "guest" | "free" | "starter" | "pro";
 
 // ---- Decoded buffer LRU cache (process memory) ----
 type BufEntry = { buffer: AudioBuffer; ts: number };
@@ -51,6 +51,7 @@ export const usePreviewAudio = () => {
 
   const tierName: Tier = useMemo(() => {
     if (tier?.id === "pro") return "pro";
+    if (tier?.id === "starter") return "starter";
     if (tier?.id === "free") return "free";
     return "guest";
   }, [tier?.id]);

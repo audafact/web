@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 import { UserTier, FeatureGateConfig } from '../types/music';
-import { getNumericLimitsForDbTier } from '../config/tierConfig';
+import {
+  getNumericLimitsForDbTier,
+  getLibraryVisibleCapForAppTier,
+} from '../config/tierConfig';
 
 export interface AccessLimits {
   maxUploads: number;
@@ -85,8 +88,15 @@ export class AccessService {
    * Get the number of library tracks to show to a user based on their tier
    */
   static getLibraryTracksToShow(accessTier: string, totalTracks: number): number {
-    const limits = this.getLimitsForTier(accessTier);
-    return accessTier === 'pro' ? totalTracks : Math.min(limits.maxLibraryTracks, totalTracks);
+    const t = (accessTier || 'free').toLowerCase();
+    const appTier =
+      t === 'enterprise' || t === 'pro'
+        ? 'pro'
+        : t === 'starter'
+          ? 'starter'
+          : 'free';
+    const cap = getLibraryVisibleCapForAppTier(appTier);
+    return Math.min(cap, totalTracks);
   }
 
   /**
@@ -151,7 +161,7 @@ export class AccessService {
       case 'record':
         return "Upgrade to unlock unlimited sessions and more recordings.";
       case 'add_library_track':
-        return "Add this sample by creating a free account.";
+        return "Add samples from the catalog to your studio. Create a free account to start, then upgrade for more tracks and Pro-only cuts.";
       case 'download':
         return "Export your flip to finish your idea — upgrade for full export options.";
       case 'download_mp3':
