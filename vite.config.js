@@ -39,6 +39,18 @@ export default defineConfig(({ mode }) => {
   }
 
   // Generate environment variables for Vite
+  // Never bake localhost callbacks into staging/production (breaks OAuth if .env / CI leaks dev URLs).
+  let authRedirectUrl =
+    env.VITE_AUTH_REDIRECT_URL || process.env.VITE_AUTH_REDIRECT_URL || "";
+  if (
+    (appEnv === "staging" || appEnv === "production") &&
+    authRedirectUrl &&
+    (authRedirectUrl.includes("localhost") ||
+      authRedirectUrl.includes("127.0.0.1"))
+  ) {
+    authRedirectUrl = "";
+  }
+
   const viteEnvVars = {
     VITE_API_BASE_URL: resolvedApiUrl,
     VITE_TURNSTILE_SITE_KEY:
@@ -100,6 +112,7 @@ export default defineConfig(({ mode }) => {
     VITE_HOST_EXPERIENCE: env.VITE_HOST_EXPERIENCE || "",
     VITE_CORS_ORIGINS:
       env.VITE_CORS_ORIGINS || JSON.stringify(envConfig.corsOrigins),
+    VITE_AUTH_REDIRECT_URL: authRedirectUrl,
   };
 
   return {

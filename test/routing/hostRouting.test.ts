@@ -8,15 +8,18 @@ import {
 
 describe("host routing classifier", () => {
   const originalOverride = import.meta.env.VITE_HOST_EXPERIENCE;
+  const originalAppEnv = (import.meta.env as any).VITE_APP_ENV;
   const originalHostname = window.location.hostname;
 
   beforeEach(() => {
     (import.meta.env as any).VITE_HOST_EXPERIENCE = "";
+    (import.meta.env as any).VITE_APP_ENV = originalAppEnv;
     (window.location as any).hostname = "test.example.com";
   });
 
   afterEach(() => {
     (import.meta.env as any).VITE_HOST_EXPERIENCE = originalOverride;
+    (import.meta.env as any).VITE_APP_ENV = originalAppEnv;
     (window.location as any).hostname = originalHostname;
   });
 
@@ -48,8 +51,16 @@ describe("host routing classifier", () => {
     expect(getAppEntryUrl("audafact.com", "https:", "")).toBe(
       "https://app.audafact.com/"
     );
+    (import.meta.env as any).VITE_APP_ENV = "development";
     expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
       "https://app.staging.audafact.com/"
+    );
+  });
+
+  it("uses same-host /stash for staging audafact domain when build is staging", () => {
+    (import.meta.env as any).VITE_APP_ENV = "staging";
+    expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
+      "https://staging.audafact.com/stash"
     );
   });
 });

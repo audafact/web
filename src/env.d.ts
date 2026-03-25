@@ -25,6 +25,8 @@ interface ImportMetaEnv {
   readonly VITE_EMAILJS_TEMPLATE_ID: string;
   readonly VITE_EMAILJS_PUBLIC_KEY: string;
   readonly VITE_HOST_EXPERIENCE?: "app" | "marketing";
+  /** Optional; if unset, OAuth uses `window.location.origin`/auth/callback */
+  readonly VITE_AUTH_REDIRECT_URL?: string;
   readonly MODE: string;
   readonly PROD: boolean;
 }

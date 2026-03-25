@@ -8,9 +8,18 @@ export interface AuthResponse {
 }
 
 function getAuthRedirectUrl(): string {
-  const configured = import.meta.env.VITE_AUTH_REDIRECT_URL;
-  if (configured && configured.trim().length > 0) {
-    return configured.trim();
+  const configured = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim() ?? "";
+  if (configured.length > 0) {
+    const isLocal =
+      configured.includes("localhost") || configured.includes("127.0.0.1");
+    if (
+      isLocal &&
+      (import.meta.env.VITE_APP_ENV === "staging" ||
+        import.meta.env.VITE_APP_ENV === "production")
+    ) {
+      return `${window.location.origin}/auth/callback`;
+    }
+    return configured;
   }
   return `${window.location.origin}/auth/callback`;
 }
