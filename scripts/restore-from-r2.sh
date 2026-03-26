@@ -88,12 +88,10 @@ RESTORE_SCHEMA=""
 RESTORE_EXCLUDE=""
 if echo "$TARGET_DB_URL" | grep -qE '\.(supabase\.co|pooler\.supabase\.com)'; then
   RESTORE_SCHEMA="-n public"
-  # Exclude handle_new_user: it is used by trigger on auth.users (managed). Staging has it from migrations.
-  RESTORE_EXCLUDE="--exclude-function=public.handle_new_user()"
   print_status "Supabase Cloud detected: restoring public schema only (auth/storage/realtime are managed)"
 fi
 
-# Prefer pg_restore from postgresql@17 (dumps use format 1.16)
+# Prefer pg_restore from postgresql@17 (dumps use format 1.16; --exclude-function needs PG 17+)
 PG_RESTORE="pg_restore"
 for candidate in /opt/homebrew/opt/postgresql@17/bin/pg_restore /usr/local/opt/postgresql@17/bin/pg_restore; do
   if [ -x "$candidate" ]; then
@@ -102,8 +100,17 @@ for candidate in /opt/homebrew/opt/postgresql@17/bin/pg_restore /usr/local/opt/p
   fi
 done
 
-# Allow partial restore: do not exit on errors (auth FKs, etc.) so app tables still restore
-$PG_RESTORE \
+# Exclude handle_new_user when supported; older pg_restore treats unknown flags as fatal and restores nothing.
+if [ -n "$RESTORE_SCHEMA" ] && "$PG_RESTORE" --help 2>&1 | grep -q "exclude-function"; then
+  RESTORE_EXCLUDE="--exclude-function=public.handle_new_user()"
+  print_status "Excluding public.handle_new_user() (use PostgreSQL 17+ client if this is missing)"
+else
+  print_warning "pg_restore has no --exclude-function; handle_new_user may log errors — restore should continue."
+fi
+
+set +e
+# Allow partial restore: do not exit on errors (auth FKs, handle_new_user, etc.)
+"$PG_RESTORE" \
   --dbname="$TARGET_DB_URL" \
   --clean \
   --if-exists \
@@ -111,12 +118,17 @@ $PG_RESTORE \
   --no-acl \
   $RESTORE_SCHEMA \
   $RESTORE_EXCLUDE \
-  "$DUMP_PATH" 2>&1 | tee /tmp/restore.log || true
+  "$DUMP_PATH" 2>&1 | tee /tmp/restore.log
+RESTORE_STATUS=${PIPESTATUS[0]}
+set -e
 
-if grep -q "error:" /tmp/restore.log 2>/dev/null; then
-  print_warning "Restore completed with errors (see above). Check /tmp/restore.log. Public schema data may be restored."
+if [ "$RESTORE_STATUS" -ne 0 ] ||
+  grep -qiE "unrecognized option:|fatal:" /tmp/restore.log 2>/dev/null; then
+  print_warning "Restore problem (exit $RESTORE_STATUS). See /tmp/restore.log. Install postgresql@17 and re-run if you saw 'unrecognized option'."
+elif grep -qi "^pg_restore:.*error" /tmp/restore.log 2>/dev/null; then
+  print_warning "Restore finished with some object errors (common on Supabase). Check /tmp/restore.log."
 else
-  print_success "Restore completed without errors."
+  print_success "Restore finished (exit 0). Review /tmp/restore.log for details."
 fi
 
 rm -f "$DUMP_PATH"

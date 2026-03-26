@@ -1,13 +1,40 @@
 // web/src/lib/api.ts
 // sign-file rate limits: free=100/hour, pro=1000/hour. All track loads and library
 // previews share "preview" quota. Caching + coalescing reduce redundant requests.
+import {
+  STAGING_WORKER_API_BASE,
+  isProductionWorkerApiUrl,
+  normalizeApiBaseUrl,
+} from "@/config/api";
 import { supabase } from "@/services/supabase";
 
-export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV || import.meta.env.MODE === "staging"
-    ? "http://localhost:5173/api/staging"
-    : "https://audafact-api.david-g-cortinas.workers.dev");
+function computeApiBase(): string {
+  if (import.meta.env.DEV) {
+    return "http://localhost:5173/api/staging";
+  }
+
+  const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
+  let envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (
+    import.meta.env.PROD &&
+    envUrl &&
+    (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))
+  ) {
+    envUrl = undefined;
+  }
+  if (appEnv === "staging" && envUrl && isProductionWorkerApiUrl(envUrl)) {
+    envUrl = undefined;
+  }
+  if (envUrl) {
+    return normalizeApiBaseUrl(envUrl);
+  }
+  if (appEnv === "staging") {
+    return STAGING_WORKER_API_BASE;
+  }
+  return "https://audafact-api.david-g-cortinas.workers.dev/api";
+}
+
+export const API_BASE = computeApiBase();
 
 const signFileRetryDelay = 2000;
 /** Signed URLs from Worker are valid 90s; cache for 75s to avoid using expired URLs */
