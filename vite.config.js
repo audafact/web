@@ -26,12 +26,21 @@ export default defineConfig(({ mode }) => {
     "";
 
   let resolvedApiUrl = env.VITE_API_BASE_URL || envConfig.apiUrl;
-  // Never ship localhost API base in production builds (Pages / .env mistakes)
+  // Never bake localhost API base for deployed envs (local .env / Pages env mistakes)
   if (
-    appEnv === "production" &&
+    appEnv !== "development" &&
     resolvedApiUrl &&
     (resolvedApiUrl.includes("localhost") ||
       resolvedApiUrl.includes("127.0.0.1"))
+  ) {
+    resolvedApiUrl = envConfig.apiUrl;
+  }
+  // Cloudflare Pages often sets one VITE_API_BASE_URL for all preview envs → prod worker + staging host = CORS failure
+  if (
+    appEnv === "staging" &&
+    resolvedApiUrl &&
+    resolvedApiUrl.includes("audafact-api.david-g-cortinas.workers.dev") &&
+    !resolvedApiUrl.includes("audafact-api-staging")
   ) {
     resolvedApiUrl = envConfig.apiUrl;
   }
