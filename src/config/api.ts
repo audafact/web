@@ -27,6 +27,21 @@ export function normalizeApiBaseUrl(raw: string): string {
   return base;
 }
 
+/**
+ * True when the page is served from a staging web host.
+ * Cloudflare Pages often builds with NODE_ENV=production and no VITE_APP_ENV=staging;
+ * host detection is the reliable signal for which worker to call.
+ */
+export function isStagingBrowserHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname.toLowerCase();
+  return (
+    h === "app.staging.audafact.com" ||
+    h === "staging.audafact.com" ||
+    h.endsWith(".audafact-web-staging.pages.dev")
+  );
+}
+
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
   const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
@@ -37,6 +52,13 @@ const getBaseUrl = () => {
     (fromEnv.includes("localhost") || fromEnv.includes("127.0.0.1"))
   ) {
     fromEnv = undefined;
+  }
+
+  if (isStagingBrowserHost()) {
+    if (fromEnv && !isProductionWorkerApiUrl(fromEnv)) {
+      return normalizeApiBaseUrl(fromEnv);
+    }
+    return normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
   }
 
   // Pages / CI sometimes set a single VITE_API_BASE_URL to prod; staging origin would hit CORS.

@@ -4,6 +4,7 @@
 import {
   STAGING_WORKER_API_BASE,
   isProductionWorkerApiUrl,
+  isStagingBrowserHost,
   normalizeApiBaseUrl,
 } from "@/config/api";
 import { supabase } from "@/services/supabase";
@@ -22,6 +23,14 @@ function computeApiBase(): string {
   ) {
     envUrl = undefined;
   }
+
+  if (isStagingBrowserHost()) {
+    if (envUrl && !isProductionWorkerApiUrl(envUrl)) {
+      return normalizeApiBaseUrl(envUrl);
+    }
+    return STAGING_WORKER_API_BASE;
+  }
+
   if (appEnv === "staging" && envUrl && isProductionWorkerApiUrl(envUrl)) {
     envUrl = undefined;
   }
