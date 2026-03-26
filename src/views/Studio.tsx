@@ -84,7 +84,8 @@ interface AudioAsset {
 
 const Studio = () => {
   const [searchParams] = useSearchParams();
-  const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
+  const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
+    useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { loading: authLoading } = useAuth();
@@ -4750,6 +4751,7 @@ const Studio = () => {
                 loopDragState={loopDragStates[track.id] || null}
                 cuePoints={track.cuePoints}
                 ensureAudio={ensureAudioBeforeAction}
+                primeIosSessionForWebAudio={primeIosSessionForWebAudio}
                 isSelected={track.id === selectedCueTrackId}
                 onSelect={() => handleTrackSelect(track.id)}
                 onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}

@@ -8,6 +8,28 @@ const normalizeHost = (rawHost: string): string => rawHost.trim().toLowerCase();
 const withPort = (host: string, port?: string): string =>
   port ? `${host}:${port}` : host;
 
+/** Literal IPv4 hostname (no port). */
+const isIPv4Host = (host: string): boolean =>
+  /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
+
+/**
+ * Private / loopback / link-local IPv4 used for LAN dev (Vite over HTTPS to phone).
+ * Avoids `app.${ip}` redirects, which are not real hosts.
+ */
+const isPrivateOrLoopbackIPv4 = (host: string): boolean => {
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const parts = m.slice(1, 5).map(Number);
+  if (parts.some((n) => n > 255)) return false;
+  const [a, b] = parts;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+};
+
 const isAppHost = (host: string): boolean => {
   if (!host) return false;
 
@@ -78,6 +100,11 @@ export const getAppEntryUrl = (
     host === "staging.audafact.com" ||
     host.endsWith(".audafact-web-staging.pages.dev")
   ) {
+    const hostWithPort = withPort(host, port);
+    return `${protocol}//${hostWithPort}/stash`;
+  }
+
+  if (isIPv4Host(host) && isPrivateOrLoopbackIPv4(host)) {
     const hostWithPort = withPort(host, port);
     return `${protocol}//${hostWithPort}/stash`;
   }

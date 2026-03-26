@@ -65,6 +65,12 @@ describe("host routing classifier", () => {
       )
     ).toBe("https://develop.audafact-web-staging.pages.dev/stash");
   });
+
+  it("uses same-host /stash for LAN IPv4 dev (no app.192.168… redirect)", () => {
+    expect(getAppEntryUrl("192.168.1.157", "https:", "5173")).toBe(
+      "https://192.168.1.157:5173/stash"
+    );
+  });
 });
 
 describe("router host-aware/canonical routes", () => {

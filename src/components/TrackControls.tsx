@@ -99,6 +99,8 @@ interface TrackControlsProps {
   loopEnd: number;
   cuePoints: number[];
   ensureAudio: (callback: () => void) => Promise<void>;
+  /** iOS: HTMLAudio warm-up before WebAudio (see AudioContext). Optional reason string is for debug logs. */
+  primeIosSessionForWebAudio?: (reason?: string) => Promise<void>;
   isSelected?: boolean;
   onSelect?: () => void;
   onPlaybackTimeChange?: (time: number) => void;
@@ -149,7 +151,8 @@ const TrackControls = ({
   loopEnd, 
   loopDragState = null,
   cuePoints, 
-  ensureAudio, 
+  ensureAudio,
+  primeIosSessionForWebAudio,
   isSelected = false,
   onSelect,
   onPlaybackTimeChange,
@@ -960,6 +963,7 @@ const TrackControls = ({
           });
         }
       } else {
+        await primeIosSessionForWebAudio?.('trackcontrols:toggle-play');
         // Start playback - create audio chain manually to ensure current volume and speed are applied
         const audioChain = createAudioChainWithCurrentSettings();
         if (!audioChain) return;
@@ -1074,7 +1078,8 @@ const TrackControls = ({
 
     try {
       await ensureAudio(() => {});
-      
+      await primeIosSessionForWebAudio?.('trackcontrols:play-cue-point');
+
       // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {
         audioSourceRef.current.stop();
