@@ -3,8 +3,18 @@
 const PRODUCTION_WORKER_API_BASE =
   "https://audafact-api.david-g-cortinas.workers.dev/api";
 
+export const STAGING_WORKER_API_BASE =
+  "https://audafact-api-staging.david-g-cortinas.workers.dev/api";
+
+/** True when URL targets prod API worker (not audafact-api-staging). */
+export function isProductionWorkerApiUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  if (u.includes("audafact-api-staging")) return false;
+  return u.includes("audafact-api.david-g-cortinas.workers.dev");
+}
+
 /** Ensure direct Worker URLs include /api; keep Vite dev proxy base unchanged. */
-function normalizeApiBaseUrl(raw: string): string {
+export function normalizeApiBaseUrl(raw: string): string {
   const base = raw.replace(/\/$/, "");
   // Local dev proxy: /api/staging → worker /api (see vite.config.js)
   if (base.includes("/api/staging")) {
@@ -19,6 +29,7 @@ function normalizeApiBaseUrl(raw: string): string {
 
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
 
   if (
     import.meta.env.PROD &&
@@ -28,14 +39,28 @@ const getBaseUrl = () => {
     fromEnv = undefined;
   }
 
+  // Pages / CI sometimes set a single VITE_API_BASE_URL to prod; staging origin would hit CORS.
+  if (appEnv === "staging" && fromEnv && isProductionWorkerApiUrl(fromEnv)) {
+    fromEnv = undefined;
+  }
+
   if (fromEnv) {
     return normalizeApiBaseUrl(fromEnv);
   }
 
   const mode = import.meta.env.MODE;
 
-  if (mode === "development" || mode === "staging") {
+  // Only the Vite dev server may use the proxy; never localhost in PROD builds
+  // (including vite build --mode staging, where MODE is staging but PROD is true).
+  if (
+    !import.meta.env.PROD &&
+    (mode === "development" || mode === "staging")
+  ) {
     return "http://localhost:5173/api/staging";
+  }
+
+  if (appEnv === "staging") {
+    return normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
   }
 
   return PRODUCTION_WORKER_API_BASE;
