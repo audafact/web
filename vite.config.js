@@ -176,47 +176,58 @@ export default defineConfig(({ mode }) => {
       // Optimize chunk size
       chunkSizeWarningLimit: 1000,
     },
-    // Optimize dev server
-    server: {
-      host: "0.0.0.0",
-      https: {
-        key: fs.readFileSync("./certs/dev-key.pem"),
-        cert: fs.readFileSync("./certs/dev-cert.pem"),
-      },
-      hmr: { overlay: false },
-      // Proxy for local development API
-      proxy: {
-        "/api/staging": {
-          // target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
-          target: "http://localhost:8787", // Use proxy for local dev
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/staging/, "/api"),
-          configure: (proxy, options) => {
-            proxy.on("proxyReq", (proxyReq, req, res) => {
-              // Forward caller origin so backend CORS checks match the real browser origin.
-              const requestOrigin = req.headers.origin;
-              if (requestOrigin) {
-                proxyReq.setHeader("Origin", requestOrigin);
-              }
-            });
-            proxy.on("proxyRes", (proxyRes, req, res) => {
-              // Echo caller origin to support localhost and app.localhost dev hosts.
-              const requestOrigin = req.headers.origin;
-              if (requestOrigin) {
-                proxyRes.headers["Access-Control-Allow-Origin"] = requestOrigin;
-              }
-              proxyRes.headers["Access-Control-Allow-Methods"] =
-                "GET,POST,OPTIONS";
-              proxyRes.headers["Access-Control-Allow-Headers"] =
-                "authorization,content-type,range";
-              proxyRes.headers["Access-Control-Expose-Headers"] =
-                "etag,content-range,accept-ranges,x-ratelimit-limit,x-ratelimit-remaining,x-ratelimit-reset";
-              proxyRes.headers["Vary"] = "Origin";
-            });
+    // Dev-only TLS: optional so `vite build` (CI) loads config without certs present.
+    ...(function devServerConfig() {
+      const devKey = path.join(process.cwd(), "certs", "dev-key.pem");
+      const devCert = path.join(process.cwd(), "certs", "dev-cert.pem");
+      const https =
+        fs.existsSync(devKey) && fs.existsSync(devCert)
+          ? {
+              key: fs.readFileSync(devKey),
+              cert: fs.readFileSync(devCert),
+            }
+          : undefined;
+      return {
+        server: {
+          host: "0.0.0.0",
+          ...(https ? { https } : {}),
+          hmr: { overlay: false },
+          // Proxy for local development API
+          proxy: {
+            "/api/staging": {
+              // target: "https://audafact-api-staging.david-g-cortinas.workers.dev",
+              target: "http://localhost:8787", // Use proxy for local dev
+              changeOrigin: true,
+              rewrite: (path) => path.replace(/^\/api\/staging/, "/api"),
+              configure: (proxy, options) => {
+                proxy.on("proxyReq", (proxyReq, req, res) => {
+                  // Forward caller origin so backend CORS checks match the real browser origin.
+                  const requestOrigin = req.headers.origin;
+                  if (requestOrigin) {
+                    proxyReq.setHeader("Origin", requestOrigin);
+                  }
+                });
+                proxy.on("proxyRes", (proxyRes, req, res) => {
+                  // Echo caller origin to support localhost and app.localhost dev hosts.
+                  const requestOrigin = req.headers.origin;
+                  if (requestOrigin) {
+                    proxyRes.headers["Access-Control-Allow-Origin"] =
+                      requestOrigin;
+                  }
+                  proxyRes.headers["Access-Control-Allow-Methods"] =
+                    "GET,POST,OPTIONS";
+                  proxyRes.headers["Access-Control-Allow-Headers"] =
+                    "authorization,content-type,range";
+                  proxyRes.headers["Access-Control-Expose-Headers"] =
+                    "etag,content-range,accept-ranges,x-ratelimit-limit,x-ratelimit-remaining,x-ratelimit-reset";
+                  proxyRes.headers["Vary"] = "Origin";
+                });
+              },
+            },
           },
         },
-      },
-    },
+      };
+    })(),
     // Optimize dependencies
     optimizeDeps: {
       include: ["react", "react-dom", "react-router-dom", "lucide-react"],
