@@ -36,8 +36,8 @@ export function isStagingBrowserHost(): boolean {
   if (typeof window === "undefined") return false;
   const h = window.location.hostname.toLowerCase();
   return (
-    h === "app.staging.audafact.com" ||
     h === "staging.audafact.com" ||
+    h.endsWith(".staging.audafact.com") ||
     h.endsWith(".audafact-web-staging.pages.dev")
   );
 }
@@ -88,28 +88,30 @@ const getBaseUrl = () => {
   return PRODUCTION_WORKER_API_BASE;
 };
 
-export const API_CONFIG = {
-  // Base URL for the API service
-  BASE_URL: getBaseUrl(),
-
-  // Endpoints (relative to BASE_URL)
-  ENDPOINTS: {
-    SIGN_UPLOAD: "/sign-upload",
-    ANALYTICS: "/analytics",
-    ANALYTICS_CREATIVE_METRICS: "/analytics/creative-metrics",
-    ANALYTICS_FUNNEL: "/analytics/funnel",
-    ANALYTICS_EARLY_WARNINGS: "/analytics/early-warnings",
-    TRIGGER_ANALYSIS: "/trigger-analysis",
-  },
-
-  // Timeouts
-  TIMEOUTS: {
-    UPLOAD: 30000, // 30 seconds for upload operations
-    REQUEST: 10000, // 10 seconds for general requests
-  },
+const API_ENDPOINTS = {
+  SIGN_UPLOAD: "/sign-upload",
+  ANALYTICS: "/analytics",
+  ANALYTICS_CREATIVE_METRICS: "/analytics/creative-metrics",
+  ANALYTICS_FUNNEL: "/analytics/funnel",
+  ANALYTICS_EARLY_WARNINGS: "/analytics/early-warnings",
+  TRIGGER_ANALYSIS: "/trigger-analysis",
 } as const;
+
+const API_TIMEOUTS = {
+  UPLOAD: 30000,
+  REQUEST: 10000,
+} as const;
+
+/** Resolve worker API base at read time so browser hostname / env always match the live page. */
+export const API_CONFIG = {
+  get BASE_URL(): string {
+    return getBaseUrl();
+  },
+  ENDPOINTS: API_ENDPOINTS,
+  TIMEOUTS: API_TIMEOUTS,
+};
 
 // Helper function to build full API URLs
 export const buildApiUrl = (endpoint: string): string => {
-  return `${API_CONFIG.BASE_URL}${endpoint}`;
+  return `${getBaseUrl()}${endpoint}`;
 };

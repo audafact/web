@@ -129,21 +129,32 @@ export function getEnvironment(): Environment {
     return envOverride;
   }
 
-  // Check for Vite mode
+  // Cloudflare Pages sets CF_PAGES / CF_PAGES_BRANCH during build (Git-connected projects).
+  // Do NOT trust NODE_ENV alone: `vite build` sets NODE_ENV=production for all environments,
+  // which previously forced production worker + prod Supabase into staging bundles.
+  if (process.env.CF_PAGES === "1") {
+    const b = (process.env.CF_PAGES_BRANCH || "").toLowerCase();
+    if (b === "main") return "production";
+    if (b === "develop" || b === "staging") return "staging";
+    return "preview";
+  }
+
+  try {
+    const branch = getCurrentBranch().toLowerCase();
+    if (branch === "main") return "production";
+    if (branch === "develop" || branch === "staging") return "staging";
+    if (branch && branch !== "head" && branch !== "development") {
+      return "preview";
+    }
+  } catch {
+    // fall through
+  }
+
   const mode = process.env.NODE_ENV || process.env.MODE;
   if (mode === "staging") return "staging";
   if (mode === "production") return "production";
 
-  // Auto-detect based on Git branch (if available)
-  try {
-    const branch = getCurrentBranch();
-    if (branch === "main") return "production";
-    if (branch === "develop") return "staging";
-    return "preview"; // feature branches
-  } catch (error) {
-    // Fallback to development if Git detection fails
-    return "development";
-  }
+  return "development";
 }
 
 /**

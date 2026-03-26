@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { signFile } from "../../src/lib/api";
+import {
+  signFile,
+  getApiBase,
+  resetSignFileStateForTests,
+} from "../../src/lib/api";
 
 // Note: fetch and Supabase are already mocked globally in setup.ts
 
 describe("Worker API Integration", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    resetSignFileStateForTests();
 
     // Explicitly setup Supabase mock for each test
     const { supabase } = await import("../../src/services/supabase");
@@ -30,7 +35,7 @@ describe("Worker API Integration", () => {
 
       expect(result).toBe("https://media.audafact.com/signed-url-123");
       expect(global.fetch).toHaveBeenCalledWith(
-        "https://audafact-api.david-g-cortinas.workers.dev/api/sign-file?key=library%2Foriginals%2Ftest-track.mp3",
+        `${getApiBase()}/sign-file?key=library%2Foriginals%2Ftest-track.mp3`,
         {
           headers: { Authorization: "Bearer test-token" },
         }
