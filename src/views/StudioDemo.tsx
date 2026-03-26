@@ -27,7 +27,7 @@ interface Track {
 // Use the same track as GuestContext for consistency
 
 const StudioDemo = () => {
-  const { audioContext, initializeAudio } = useAudioContext();
+  const { audioContext, initializeAudio, primeIosSessionForWebAudio } = useAudioContext();
   const { currentGuestTrack, loadRandomGuestTrack } = useGuest();
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -600,6 +600,7 @@ const StudioDemo = () => {
                   }
                   callback();
                 }}
+                primeIosSessionForWebAudio={primeIosSessionForWebAudio}
                 isSelected={true}
                 onSelect={() => {}}
                 onPlaybackTimeChange={handleTimeChange}

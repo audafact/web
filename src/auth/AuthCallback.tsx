@@ -11,6 +11,18 @@ export const AuthCallback = () => {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
+        // PKCE (OAuth) returns ?code=... on the callback URL, not a hash.
+        const oauthCode = searchParams.get('code');
+        if (oauthCode) {
+          const { data: exchanged, error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(oauthCode);
+          if (!exchangeError && exchanged.session?.user) {
+            navigate('/studio', { replace: true });
+            return;
+          }
+          // If the client already auto-exchanged, or the code was consumed, fall through.
+        }
+
         // Check if we have authentication data in the hash
         if (window.location.hash && window.location.hash.includes('access_token')) {
           // Parse the hash to extract the access token

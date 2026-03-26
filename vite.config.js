@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
@@ -6,6 +7,14 @@ import { getEnvironmentConfig } from "./config/environments.js";
 export default defineConfig(({ mode }) => {
   // Load environment variables
   const env = loadEnv(mode, process.cwd(), "");
+
+  // loadEnv() does not populate process.env. Branch-based detection in
+  // getEnvironmentConfig() reads process.env.VITE_APP_ENV; without this,
+  // being on `main` while .env sets VITE_APP_ENV=development still picks
+  // production fallbacks (and confuses local tooling).
+  if (env.VITE_APP_ENV) {
+    process.env.VITE_APP_ENV = env.VITE_APP_ENV;
+  }
 
   // Get environment configuration
   const envConfig = getEnvironmentConfig();
@@ -127,7 +136,7 @@ export default defineConfig(({ mode }) => {
       Object.entries(viteEnvVars).map(([key, value]) => [
         `import.meta.env.${key}`,
         JSON.stringify(value),
-      ])
+      ]),
     ),
     build: {
       sourcemap: true,
@@ -169,9 +178,12 @@ export default defineConfig(({ mode }) => {
     },
     // Optimize dev server
     server: {
-      hmr: {
-        overlay: false,
+      host: "0.0.0.0",
+      https: {
+        key: fs.readFileSync("./certs/dev-key.pem"),
+        cert: fs.readFileSync("./certs/dev-cert.pem"),
       },
+      hmr: { overlay: false },
       // Proxy for local development API
       proxy: {
         "/api/staging": {
