@@ -32,7 +32,8 @@ function warnIosAudio(reason: string, payload?: Record<string, unknown>) {
   console.warn('[Audafact iOS audio]', reason, { t: new Date().toISOString(), ...payload });
 }
 
-function isIOSWebAudioTarget(): boolean {
+/** Exported for TrackControls: iOS may report `AudioContext` as `running` before WebAudio is routed to the speaker. */
+export function isIOSWebAudioTarget(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
   return (

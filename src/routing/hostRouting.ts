@@ -88,6 +88,9 @@ const getAppHostname = (hostname: string): string => {
   if (host === "audafact.com" || host === "www.audafact.com") {
     return "app.audafact.com";
   }
+  if (host === "www.staging.audafact.com") {
+    return "app.staging.audafact.com";
+  }
   if (host.endsWith(".audafact.com")) return `app.${host}`;
 
   return `app.${host}`;
@@ -101,15 +104,13 @@ export const getAppEntryUrl = (
 ): string => {
   const host = normalizeHost(hostname);
 
-  // Staging hosts can run as a single hostname (without app.<host> DNS).
-  // Route /studio to same-host /stash in those environments.
-  if (
-    host === "staging.audafact.com" ||
-    host.endsWith(".audafact-web-staging.pages.dev")
-  ) {
+  // Cloudflare staging preview (*.pages.dev): no shared registrable domain with app.staging — stay same-host.
+  if (host.endsWith(".audafact-web-staging.pages.dev")) {
     const hostWithPort = withPort(host, port);
     return `${protocol}//${hostWithPort}/stash`;
   }
+
+  // Custom-domain staging (staging / www.staging *.audafact.com): same split as production → app.staging host.
 
   if (isIPv4Host(host) && isPrivateOrLoopbackIPv4(host)) {
     const hostWithPort = withPort(host, port);
@@ -124,4 +125,39 @@ export const getAppEntryUrl = (
   const targetHost = getAppHostname(hostname);
   const hostWithPort = withPort(targetHost, port);
   return `${protocol}//${hostWithPort}/`;
+};
+
+const appendSearch = (url: string, search: string | undefined): string => {
+  if (!search?.trim()) return url;
+  const s = search.trim();
+  const q = s.startsWith("?") ? s.slice(1) : s;
+  return url.includes("?") ? `${url}&${q}` : `${url}?${q}`;
+};
+
+/**
+ * After OAuth / email confirmation, send the user to the canonical studio entry
+ * for the current environment (avoids /studio → app.localhost in dev).
+ */
+export const getPostAuthStudioUrl = (search?: string): string => {
+  const hostname =
+    typeof window !== "undefined" ? window.location.hostname : "";
+  const protocol =
+    typeof window !== "undefined" ? window.location.protocol : "https:";
+  const port = typeof window !== "undefined" ? window.location.port : "";
+
+  const host = normalizeHost(hostname);
+  const experience = getHostExperience();
+
+  if (
+    import.meta.env.DEV &&
+    (host === "localhost" || host === "127.0.0.1")
+  ) {
+    const origin = `${protocol}//${withPort(host, port)}`;
+    if (experience === "app") {
+      return appendSearch(`${origin}/`, search);
+    }
+    return appendSearch(`${origin}/stash`, search);
+  }
+
+  return appendSearch(getAppEntryUrl(hostname, protocol, port), search);
 };

@@ -7,7 +7,15 @@ export interface AuthResponse {
   error?: string;
 }
 
-function getAuthRedirectUrl(): string {
+function isStagingPagesPreviewHost(hostname: string): boolean {
+  return hostname
+    .trim()
+    .toLowerCase()
+    .endsWith(".audafact-web-staging.pages.dev");
+}
+
+/** OAuth / email / password-reset callback URL (Supabase `redirectTo` / `emailRedirectTo`). */
+export function getAuthRedirectUrl(): string {
   // LAN / *.local dev: never use a .env callback that points at localhost or prod —
   // Supabase must redirect back to the same host the user signed in from.
   if (import.meta.env.DEV) {
@@ -27,6 +35,19 @@ function getAuthRedirectUrl(): string {
     }
     return configured;
   }
+
+  // Staging custom domain: complete OAuth on app host so PKCE + session cookies (.staging.audafact.com) align with studio.
+  // Pages preview hostnames cannot share cookies with app.staging — keep callback on current origin.
+  if (import.meta.env.VITE_APP_ENV === "staging") {
+    const host =
+      typeof window !== "undefined"
+        ? window.location.hostname.trim().toLowerCase()
+        : "";
+    if (host && !isStagingPagesPreviewHost(host)) {
+      return "https://app.staging.audafact.com/auth/callback";
+    }
+  }
+
   return `${window.location.origin}/auth/callback`;
 }
 

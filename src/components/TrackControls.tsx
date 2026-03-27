@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
+import { isIOSWebAudioTarget } from '../context/AudioContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { useUser } from '../hooks/useUser';
@@ -247,6 +248,30 @@ const TrackControls = ({
   // Track if current source is looping - avoids stale currentTime in updatePlaybackTime closure
   const isSourceLoopingRef = useRef<boolean>(false);
   const playCuePointRef = useRef<(index: number) => void>(() => {});
+  /**
+   * iOS: `AudioContext` can be `running` (e.g. after early resume) while WebAudio still
+   * has no speaker route until HTMLMediaElement.play runs in a user gesture. Track prime
+   * per context so we do not skip warm-up when state is already "running".
+   */
+  const iosStudioWebAudioPrimedRef = useRef(false);
+
+  useEffect(() => {
+    iosStudioWebAudioPrimedRef.current = false;
+  }, [audioContext]);
+
+  const ensureIosPrimeForStudioPlayback = useCallback(
+    async (reason: string) => {
+      if (!primeIosSessionForWebAudio || !audioContext) return;
+      if (!isIOSWebAudioTarget()) return;
+      const needsPrime =
+        !iosStudioWebAudioPrimedRef.current ||
+        audioContext.state !== 'running';
+      if (!needsPrime) return;
+      await primeIosSessionForWebAudio(reason);
+      iosStudioWebAudioPrimedRef.current = true;
+    },
+    [audioContext, primeIosSessionForWebAudio],
+  );
 
   // Sync internal filter state with external props
   useEffect(() => {
@@ -963,10 +988,7 @@ const TrackControls = ({
           });
         }
       } else {
-        // iOS prime plays silent HTMLAudio + ~90ms wait; only needed when context isn't running yet.
-        if (audioContext.state !== 'running') {
-          await primeIosSessionForWebAudio?.('trackcontrols:toggle-play');
-        }
+        await ensureIosPrimeForStudioPlayback('trackcontrols:toggle-play');
         // Start playback - create audio chain manually to ensure current volume and speed are applied
         const audioChain = createAudioChainWithCurrentSettings();
         if (!audioChain) return;
@@ -1081,10 +1103,7 @@ const TrackControls = ({
 
     try {
       await ensureAudio(() => {});
-      // iOS: primeIosSessionForWebAudio waits on HTMLAudio + fixed timeout; initializeAudio/resume already primed when running.
-      if (audioContext.state !== 'running') {
-        await primeIosSessionForWebAudio?.('trackcontrols:play-cue-point');
-      }
+      await ensureIosPrimeForStudioPlayback('trackcontrols:play-cue-point');
 
       // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {

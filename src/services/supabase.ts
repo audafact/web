@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import { getSupabaseCookieDomain } from "../routing/supabaseCookieDomain";
 
 // Use environment variables or fallback to development values
 const supabaseUrl =
@@ -11,4 +12,33 @@ if (import.meta.env.PROD && (!supabaseUrl || !supabaseAnonKey)) {
   throw new Error("Missing Supabase environment variables");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+function getBrowserClientOptions(): {
+  cookieOptions?: {
+    domain: string;
+    path: string;
+    sameSite: "lax";
+    secure: boolean;
+  };
+} {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  const domain = getSupabaseCookieDomain(window.location.hostname);
+  if (!domain) {
+    return {};
+  }
+  return {
+    cookieOptions: {
+      domain,
+      path: "/",
+      sameSite: "lax",
+      secure: window.location.protocol === "https:",
+    },
+  };
+}
+
+export const supabase = createBrowserClient(
+  supabaseUrl,
+  supabaseAnonKey,
+  getBrowserClientOptions(),
+);
