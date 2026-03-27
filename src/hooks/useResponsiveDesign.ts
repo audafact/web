@@ -6,7 +6,7 @@ interface BreakpointConfig {
   desktop: number;
 }
 
-const BREAKPOINTS: BreakpointConfig = {
+export const BREAKPOINTS: BreakpointConfig = {
   mobile: 768,
   tablet: 1024,
   desktop: 1200,
