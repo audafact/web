@@ -42,6 +42,24 @@ export function isStagingBrowserHost(): boolean {
   );
 }
 
+/** Dev server proxy path; must match vite.config.js `proxy` key. */
+const DEV_STAGING_PROXY_PREFIX = "/api/staging";
+
+const isLoopbackHostname = (h: string): boolean =>
+  h === "localhost" || h === "127.0.0.1";
+
+/**
+ * When .env pins the API to localhost but the page is opened from LAN or *.local
+ * (phone, another machine), use the current page origin so requests hit the dev machine.
+ */
+const devApiBaseFromBrowserOrigin = (): string | undefined => {
+  if (import.meta.env.PROD || typeof window === "undefined") return undefined;
+  const origin = window.location?.origin;
+  const host = window.location?.hostname;
+  if (!origin || !host || isLoopbackHostname(host)) return undefined;
+  return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
+};
+
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
   const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
@@ -67,6 +85,14 @@ const getBaseUrl = () => {
   }
 
   if (fromEnv) {
+    if (
+      !import.meta.env.PROD &&
+      fromEnv.includes(DEV_STAGING_PROXY_PREFIX) &&
+      /\blocalhost\b|127\.0\.0\.1/.test(fromEnv)
+    ) {
+      const lan = devApiBaseFromBrowserOrigin();
+      if (lan) return lan;
+    }
     return normalizeApiBaseUrl(fromEnv);
   }
 
@@ -78,7 +104,9 @@ const getBaseUrl = () => {
     !import.meta.env.PROD &&
     (mode === "development" || mode === "staging")
   ) {
-    return "http://localhost:5173/api/staging";
+    const lan = devApiBaseFromBrowserOrigin();
+    if (lan) return lan;
+    return `http://localhost:5173${DEV_STAGING_PROXY_PREFIX}`;
   }
 
   if (appEnv === "staging") {

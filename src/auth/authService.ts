@@ -8,6 +8,12 @@ export interface AuthResponse {
 }
 
 function getAuthRedirectUrl(): string {
+  // LAN / *.local dev: never use a .env callback that points at localhost or prod —
+  // Supabase must redirect back to the same host the user signed in from.
+  if (import.meta.env.DEV) {
+    return `${window.location.origin}/auth/callback`;
+  }
+
   const configured = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim() ?? "";
   if (configured.length > 0) {
     const isLocal =
@@ -25,9 +31,7 @@ function getAuthRedirectUrl(): string {
 }
 
 function getOAuthRedirectUrl(): string {
-  // Always use current origin for OAuth callbacks.
-  // This avoids stale env/site-url redirects (e.g. localhost) on hosted environments.
-  return `${window.location.origin}/auth/callback`;
+  return getAuthRedirectUrl();
 }
 
 export const authService = {

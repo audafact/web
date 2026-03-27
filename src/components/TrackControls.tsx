@@ -963,7 +963,10 @@ const TrackControls = ({
           });
         }
       } else {
-        await primeIosSessionForWebAudio?.('trackcontrols:toggle-play');
+        // iOS prime plays silent HTMLAudio + ~90ms wait; only needed when context isn't running yet.
+        if (audioContext.state !== 'running') {
+          await primeIosSessionForWebAudio?.('trackcontrols:toggle-play');
+        }
         // Start playback - create audio chain manually to ensure current volume and speed are applied
         const audioChain = createAudioChainWithCurrentSettings();
         if (!audioChain) return;
@@ -1078,7 +1081,10 @@ const TrackControls = ({
 
     try {
       await ensureAudio(() => {});
-      await primeIosSessionForWebAudio?.('trackcontrols:play-cue-point');
+      // iOS: primeIosSessionForWebAudio waits on HTMLAudio + fixed timeout; initializeAudio/resume already primed when running.
+      if (audioContext.state !== 'running') {
+        await primeIosSessionForWebAudio?.('trackcontrols:play-cue-point');
+      }
 
       // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {
@@ -1097,21 +1103,16 @@ const TrackControls = ({
         highpassFilterRef.current.disconnect();
         highpassFilterRef.current = null;
       }
-      
-      setActiveCueIndex(index);
+
       activeCueIndexRef.current = index;
       cueStartTimeRef.current = cueTime;
-      setCurrentTime(cueTime);
-      if (onPlaybackTimeChange) {
-        onPlaybackTimeChange(cueTime);
-      }
-      
+
       const audioChain = createAudioChainWithCurrentSettings();
       if (!audioChain) return;
-      
+
       const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
       const playbackRate = currentSpeedRef.current;
-      
+
       audioSourceRef.current = sourceNode;
       gainNodeRef.current = gainNode;
       lowpassFilterRef.current = lowpassFilter;
@@ -1135,11 +1136,18 @@ const TrackControls = ({
         }
       }
 
+      // React updates after BufferSource.start so touch/press isn't blocked by main-thread work (especially on mobile).
+      setActiveCueIndex(index);
+      setCurrentTime(cueTime);
+      if (onPlaybackTimeChange) {
+        onPlaybackTimeChange(cueTime);
+      }
+
       setIsPlaying(true);
       if (onPlaybackStateChange) {
         onPlaybackStateChange(true);
       }
-      
+
       lastUpdateTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
       
@@ -1574,9 +1582,11 @@ const TrackControls = ({
                   onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
                   onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onContextMenu={(e) => e.preventDefault()}
+                  style={{ WebkitTouchCallout: 'none' }}
                   disabled={disabled}
                   title={isOneShotInvalidTrigger ? 'Invalid One-Shot start (past next node)' : undefined}
-                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
+                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center touch-manipulation select-none ${
                     disabled
                       ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
                       : isOneShotInvalidTrigger
@@ -1612,9 +1622,11 @@ const TrackControls = ({
                   onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
                   onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onContextMenu={(e) => e.preventDefault()}
+                  style={{ WebkitTouchCallout: 'none' }}
                   disabled={disabled}
                   title={isOneShotInvalidTrigger ? 'Invalid One-Shot start (past next node)' : undefined}
-                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center ${
+                  className={`h-12 md:h-14 text-[10px] md:text-xs py-1 md:py-1.5 px-1 rounded-sm md:rounded transition-colors duration-200 flex flex-col items-center justify-center touch-manipulation select-none ${
                     disabled
                       ? 'bg-audafact-surface-2 text-audafact-text-secondary cursor-not-allowed'
                       : isOneShotInvalidTrigger

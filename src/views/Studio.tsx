@@ -36,6 +36,7 @@ import type { SuggestionReference } from '../services/sampleSuggestionService';
 import { signFile } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
+import { BREAKPOINTS } from '../hooks/useResponsiveDesign';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
 
@@ -86,7 +87,7 @@ const Studio = () => {
   const [searchParams] = useSearchParams();
   const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
     useAudioContext();
-  const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
+  const { isOpen: isSidePanelOpen, toggleSidePanel, closeSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
@@ -114,6 +115,13 @@ const Studio = () => {
   useEffect(() => {
     trackEvent('sampler_opened', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- fire once on mount
+
+  // Mobile: start with side panel closed so the sampler has full width; desktop keeps provider default (open).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < BREAKPOINTS.mobile) {
+      closeSidePanel();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- studio entry only, match initial mobile viewport
 
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';

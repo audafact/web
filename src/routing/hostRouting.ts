@@ -30,6 +30,13 @@ const isPrivateOrLoopbackIPv4 = (host: string): boolean => {
   return false;
 };
 
+/**
+ * Bonjour / mDNS names like `hostname.local` only resolve for that single label.
+ * `app.hostname.local` usually does not exist, so `/studio` must not redirect there on phones.
+ */
+const isBonjourLocalMarketingHost = (host: string): boolean =>
+  host.endsWith(".local") && !host.startsWith("app.");
+
 const isAppHost = (host: string): boolean => {
   if (!host) return false;
 
@@ -105,6 +112,11 @@ export const getAppEntryUrl = (
   }
 
   if (isIPv4Host(host) && isPrivateOrLoopbackIPv4(host)) {
+    const hostWithPort = withPort(host, port);
+    return `${protocol}//${hostWithPort}/stash`;
+  }
+
+  if (isBonjourLocalMarketingHost(host)) {
     const hostWithPort = withPort(host, port);
     return `${protocol}//${hostWithPort}/stash`;
   }
