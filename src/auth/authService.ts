@@ -7,7 +7,8 @@ export interface AuthResponse {
   error?: string;
 }
 
-function getAuthRedirectUrl(): string {
+/** OAuth / email / password-reset callback URL (Supabase `redirectTo` / `emailRedirectTo`). */
+export function getAuthRedirectUrl(): string {
   // LAN / *.local dev: never use a .env callback that points at localhost or prod —
   // Supabase must redirect back to the same host the user signed in from.
   if (import.meta.env.DEV) {

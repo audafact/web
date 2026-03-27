@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { getPostAuthStudioUrl } from '../routing/hostRouting';
 
 export const AuthCallback = () => {
   const [loading, setLoading] = useState(true);
@@ -17,7 +18,7 @@ export const AuthCallback = () => {
           const { data: exchanged, error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(oauthCode);
           if (!exchangeError && exchanged.session?.user) {
-            navigate('/studio', { replace: true });
+            window.location.replace(getPostAuthStudioUrl());
             return;
           }
           // If the client already auto-exchanged, or the code was consumed, fall through.
@@ -53,12 +54,14 @@ export const AuthCallback = () => {
               
               // If this is a signup type OR if email was verified very recently (within 2 minutes)
               if (type === 'signup' || (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 2 * 60 * 1000)) {
-                navigate('/studio?verified=true&type=signup', { replace: true });
+                window.location.replace(
+                  getPostAuthStudioUrl('?verified=true&type=signup'),
+                );
                 return;
               }
               
               // Otherwise, go directly to studio
-              navigate('/studio', { replace: true });
+              window.location.replace(getPostAuthStudioUrl());
               return;
             }
           }
@@ -77,7 +80,7 @@ export const AuthCallback = () => {
         }
 
         if (session?.user) {
-          navigate('/studio', { replace: true });
+          window.location.replace(getPostAuthStudioUrl());
         } else {
           // Check for error parameters in URL
           const errorParam = searchParams.get('error');
