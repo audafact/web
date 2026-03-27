@@ -3,6 +3,7 @@ import { appRoutes } from "../../src/routes";
 import {
   getAppEntryUrl,
   getHostExperience,
+  getPostAuthStudioUrl,
   resolveHostExperience,
 } from "../../src/routing/hostRouting";
 
@@ -54,6 +55,9 @@ describe("host routing classifier", () => {
     expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
       "https://staging.audafact.com/stash"
     );
+    expect(getAppEntryUrl("www.staging.audafact.com", "https:", "")).toBe(
+      "https://www.staging.audafact.com/stash"
+    );
   });
 
   it("uses same-host /stash for staging Pages host", () => {
@@ -76,6 +80,54 @@ describe("host routing classifier", () => {
     expect(
       getAppEntryUrl("davids-macbook-pro-2.local", "https:", "5173")
     ).toBe("https://davids-macbook-pro-2.local:5173/stash");
+  });
+});
+
+describe("getPostAuthStudioUrl", () => {
+  const originalHostname = window.location.hostname;
+  const originalProtocol = window.location.protocol;
+  const originalPort = (window.location as { port?: string }).port ?? "";
+  const originalOverride = import.meta.env.VITE_HOST_EXPERIENCE;
+
+  afterEach(() => {
+    (window.location as any).hostname = originalHostname;
+    (window.location as any).protocol = originalProtocol;
+    (window.location as any).port = originalPort;
+    (import.meta.env as any).VITE_HOST_EXPERIENCE = originalOverride;
+  });
+
+  it("uses app entry and appends search for production marketing", () => {
+    (window.location as any).hostname = "www.audafact.com";
+    (window.location as any).protocol = "https:";
+    (window.location as any).port = "";
+    (import.meta.env as any).VITE_HOST_EXPERIENCE = "";
+    expect(getPostAuthStudioUrl("verified=1")).toBe(
+      "https://app.audafact.com/?verified=1"
+    );
+  });
+
+  it("uses localhost /stash in dev marketing", () => {
+    if (!import.meta.env.DEV) {
+      expect(true).toBe(true);
+      return;
+    }
+    (window.location as any).hostname = "localhost";
+    (window.location as any).protocol = "http:";
+    (window.location as any).port = "5173";
+    (import.meta.env as any).VITE_HOST_EXPERIENCE = "";
+    expect(getPostAuthStudioUrl()).toBe("http://localhost:5173/stash");
+  });
+
+  it("uses localhost root in dev app experience", () => {
+    if (!import.meta.env.DEV) {
+      expect(true).toBe(true);
+      return;
+    }
+    (window.location as any).hostname = "localhost";
+    (window.location as any).protocol = "http:";
+    (window.location as any).port = "5173";
+    (import.meta.env as any).VITE_HOST_EXPERIENCE = "app";
+    expect(getPostAuthStudioUrl("tier=pro")).toBe("http://localhost:5173/?tier=pro");
   });
 });
 

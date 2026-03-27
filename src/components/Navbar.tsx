@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useState } from 'react';
 import { PerformanceDashboard } from './PerformanceDashboard';
-import { getHostExperience } from '../routing/hostRouting';
+import { getAppEntryUrl, getHostExperience } from '../routing/hostRouting';
 
 const Navbar = () => {
   const { user, loading, signOut } = useAuth();
@@ -72,16 +72,29 @@ const Navbar = () => {
                 Home
               </Link>
             )}
-            <Link 
-              to="/studio" 
-              className={`font-medium transition-colors duration-200 ${
-                isStudioPage
-                  ? 'text-audafact-accent-cyan' 
-                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-              }`}
-            >
-              Studio
-            </Link>
+            {isAppExperience ? (
+              <Link
+                to="/studio"
+                className={`font-medium transition-colors duration-200 ${
+                  isStudioPage
+                    ? 'text-audafact-accent-cyan'
+                    : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                }`}
+              >
+                Studio
+              </Link>
+            ) : (
+              <a
+                href={getAppEntryUrl()}
+                className={`font-medium transition-colors duration-200 ${
+                  isStudioPage
+                    ? 'text-audafact-accent-cyan'
+                    : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                }`}
+              >
+                Studio
+              </a>
+            )}
             <Link 
               to="/pricing" 
               className={`font-medium transition-colors duration-200 ${
@@ -174,17 +187,31 @@ const Navbar = () => {
               Home
             </Link>
           )}
-          <Link
-            to="/studio"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
-              isStudioPage
-                ? 'text-audafact-accent-cyan bg-audafact-surface-2'
-                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
-            }`}
-          >
-            Studio
-          </Link>
+          {isAppExperience ? (
+            <Link
+              to="/studio"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                isStudioPage
+                  ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                  : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+              }`}
+            >
+              Studio
+            </Link>
+          ) : (
+            <a
+              href={getAppEntryUrl()}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                isStudioPage
+                  ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                  : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+              }`}
+            >
+              Studio
+            </a>
+          )}
           <Link
             to="/pricing"
             onClick={() => setIsMobileMenuOpen(false)}

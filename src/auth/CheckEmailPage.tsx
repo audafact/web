@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { getAuthRedirectUrl } from './authService';
 
 export const CheckEmailPage = () => {
   const [resending, setResending] = useState(false);
@@ -25,7 +26,7 @@ export const CheckEmailPage = () => {
         type: 'signup',
         email: email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getAuthRedirectUrl(),
         }
       });
 
