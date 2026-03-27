@@ -104,16 +104,13 @@ export const getAppEntryUrl = (
 ): string => {
   const host = normalizeHost(hostname);
 
-  // Staging hosts can run as a single hostname (without app.<host> DNS).
-  // Route /studio to same-host /stash in those environments.
-  if (
-    host === "staging.audafact.com" ||
-    host === "www.staging.audafact.com" ||
-    host.endsWith(".audafact-web-staging.pages.dev")
-  ) {
+  // Cloudflare staging preview (*.pages.dev): no shared registrable domain with app.staging — stay same-host.
+  if (host.endsWith(".audafact-web-staging.pages.dev")) {
     const hostWithPort = withPort(host, port);
     return `${protocol}//${hostWithPort}/stash`;
   }
+
+  // Custom-domain staging (staging / www.staging *.audafact.com): same split as production → app.staging host.
 
   if (isIPv4Host(host) && isPrivateOrLoopbackIPv4(host)) {
     const hostWithPort = withPort(host, port);
