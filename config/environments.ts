@@ -51,6 +51,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: [
       "https://staging.audafact.com",
+      "https://www.staging.audafact.com",
       "https://app.staging.audafact.com",
     ],
     stripeMode: "test",

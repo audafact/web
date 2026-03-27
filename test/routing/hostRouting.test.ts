@@ -53,10 +53,10 @@ describe("host routing classifier", () => {
       "https://app.audafact.com/"
     );
     expect(getAppEntryUrl("staging.audafact.com", "https:", "")).toBe(
-      "https://staging.audafact.com/stash"
+      "https://app.staging.audafact.com/"
     );
     expect(getAppEntryUrl("www.staging.audafact.com", "https:", "")).toBe(
-      "https://www.staging.audafact.com/stash"
+      "https://app.staging.audafact.com/"
     );
   });
 
