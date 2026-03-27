@@ -1,4 +1,4 @@
-import { signFile, API_BASE, authHeader } from "@/lib/api";
+import { signFile, getApiBase, authHeader } from "@/lib/api";
 
 /** Get a short-lived signed GET URL for playback/download (uses shared cache) */
 export async function getSignedUrl(key: string): Promise<string> {
@@ -13,7 +13,7 @@ export async function deleteByKey(key: string): Promise<{ ok: true }> {
     ...(await authHeader()),
     "content-type": "application/json",
   };
-  const r = await fetch(`${API_BASE}/delete-file`, {
+  const r = await fetch(`${getApiBase()}/delete-file`, {
     method: "POST",
     headers,
     body: JSON.stringify({ key }),

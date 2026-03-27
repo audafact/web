@@ -43,7 +43,10 @@ function computeApiBase(): string {
   return "https://audafact-api.david-g-cortinas.workers.dev/api";
 }
 
-export const API_BASE = computeApiBase();
+/** Worker REST base including `/api` — recomputed per call so it matches runtime host. */
+export function getApiBase(): string {
+  return computeApiBase();
+}
 
 const signFileRetryDelay = 2000;
 /** Signed URLs from Worker are valid 90s; cache for 75s to avoid using expired URLs */
@@ -61,7 +64,7 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
   if (!token) throw new Error("Not signed in");
 
   const r = await fetch(
-    `${API_BASE}/sign-file?key=${encodeURIComponent(key)}`,
+    `${getApiBase()}/sign-file?key=${encodeURIComponent(key)}`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }
@@ -76,6 +79,12 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
   if (!r.ok) throw new Error(`sign-file failed: ${r.status}`);
   const { url } = await r.json();
   return url as string;
+}
+
+/** Clears in-memory sign-file caches (use between Vitest cases). */
+export function resetSignFileStateForTests() {
+  signedUrlCache.clear();
+  signFileInFlight.clear();
 }
 
 export async function signFile(key: string, retryCount = 0): Promise<string> {
