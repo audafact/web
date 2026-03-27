@@ -129,5 +129,8 @@ ehthumbs.db/
 *storybook.log
 storybook-static
 
+# Local HTTPS dev (e.g. Vite mkcert) — never commit keys or generated certs
+certs/
+
 # Build output - CI builds and deploys
 dist/

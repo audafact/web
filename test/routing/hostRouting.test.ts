@@ -71,6 +71,12 @@ describe("host routing classifier", () => {
       "https://192.168.1.157:5173/stash"
     );
   });
+
+  it("uses same-host /stash for Bonjour *.local marketing host (app.*.local not in DNS)", () => {
+    expect(
+      getAppEntryUrl("davids-macbook-pro-2.local", "https:", "5173")
+    ).toBe("https://davids-macbook-pro-2.local:5173/stash");
+  });
 });
 
 describe("router host-aware/canonical routes", () => {

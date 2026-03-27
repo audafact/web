@@ -1,51 +1,12 @@
 // web/src/lib/api.ts
 // sign-file rate limits: free=100/hour, pro=1000/hour. All track loads and library
 // previews share "preview" quota. Caching + coalescing reduce redundant requests.
-import {
-  STAGING_WORKER_API_BASE,
-  isProductionWorkerApiUrl,
-  isStagingBrowserHost,
-  normalizeApiBaseUrl,
-} from "@/config/api";
+import { API_CONFIG } from "@/config/api";
 import { supabase } from "@/services/supabase";
-
-function computeApiBase(): string {
-  if (import.meta.env.DEV) {
-    return "http://localhost:5173/api/staging";
-  }
-
-  const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
-  let envUrl = import.meta.env.VITE_API_BASE_URL as string | undefined;
-  if (
-    import.meta.env.PROD &&
-    envUrl &&
-    (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))
-  ) {
-    envUrl = undefined;
-  }
-
-  if (isStagingBrowserHost()) {
-    if (envUrl && !isProductionWorkerApiUrl(envUrl)) {
-      return normalizeApiBaseUrl(envUrl);
-    }
-    return STAGING_WORKER_API_BASE;
-  }
-
-  if (appEnv === "staging" && envUrl && isProductionWorkerApiUrl(envUrl)) {
-    envUrl = undefined;
-  }
-  if (envUrl) {
-    return normalizeApiBaseUrl(envUrl);
-  }
-  if (appEnv === "staging") {
-    return STAGING_WORKER_API_BASE;
-  }
-  return "https://audafact-api.david-g-cortinas.workers.dev/api";
-}
 
 /** Worker REST base including `/api` — recomputed per call so it matches runtime host. */
 export function getApiBase(): string {
-  return computeApiBase();
+  return API_CONFIG.BASE_URL;
 }
 
 const signFileRetryDelay = 2000;

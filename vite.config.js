@@ -196,11 +196,22 @@ export default defineConfig(({ mode }) => {
               cert: fs.readFileSync(devCert),
             }
           : undefined;
+
+      // Phone / LAN: set VITE_DEV_HMR_HOST to the host the device uses (e.g. 192.168.1.66)
+      // so the HMR client does not fall back to wss://localhost (fails on mobile).
+      const devHmrHost = env.VITE_DEV_HMR_HOST?.trim() || "";
+
       return {
         server: {
           host: "0.0.0.0",
           ...(https ? { https } : {}),
-          hmr: { overlay: false },
+          hmr: devHmrHost
+            ? {
+                overlay: false,
+                host: devHmrHost,
+                protocol: https ? "wss" : "ws",
+              }
+            : { overlay: false },
           // Proxy for local development API
           proxy: {
             "/api/staging": {
