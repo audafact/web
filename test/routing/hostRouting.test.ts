@@ -58,6 +58,9 @@ describe("host routing classifier", () => {
     expect(getAppEntryUrl("www.staging.audafact.com", "https:", "")).toBe(
       "https://app.staging.audafact.com/"
     );
+    expect(getAppEntryUrl("www.staging.audafact.com", "https:", "")).toBe(
+      "https://www.staging.audafact.com/stash"
+    );
   });
 
   it("uses same-host /stash for staging Pages host", () => {
