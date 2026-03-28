@@ -28,7 +28,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
   development: {
     name: "Development",
     domain: "localhost:5173",
-    apiUrl: "http://localhost:5173/api/staging", // Use proxy for staging
+    apiUrl: "http://localhost:8787/api", // wrangler dev; avoid Vite proxy for API
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: [
       "http://localhost:5173",

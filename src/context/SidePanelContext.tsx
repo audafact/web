@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { BREAKPOINTS } from '../hooks/useResponsiveDesign';
 
 interface SidePanelContextType {
   isOpen: boolean;
@@ -22,7 +23,10 @@ interface SidePanelProviderProps {
 }
 
 export const SidePanelProvider: React.FC<SidePanelProviderProps> = ({ children }) => {
-  const [isOpen, setIsOpen] = useState(true);
+  // Open by default from `lg` (1024px) up; narrower viewports start collapsed for sampler width.
+  const [isOpen, setIsOpen] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= BREAKPOINTS.tablet
+  );
 
   const toggleSidePanel = () => setIsOpen(!isOpen);
   const openSidePanel = () => setIsOpen(true);

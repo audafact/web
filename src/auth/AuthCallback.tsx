@@ -3,6 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { getPostAuthStudioUrl } from '../routing/hostRouting';
 
+/**
+ * OAuth codes are single-use. React Strict Mode runs effects twice in dev, which
+ * would call exchangeCodeForSession twice and the second POST .../token?grant_type=pkce
+ * returns 400. Share one in-flight promise per code.
+ */
+const pkceExchangeByCode = new Map<
+  string,
+  ReturnType<typeof supabase.auth.exchangeCodeForSession>
+>();
+
 export const AuthCallback = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,8 +61,12 @@ export const AuthCallback = () => {
         // PKCE (OAuth) returns ?code=... on the callback URL, not a hash.
         const oauthCode = searchParams.get('code');
         if (oauthCode) {
-          const { data: exchanged, error: exchangeError } =
-            await supabase.auth.exchangeCodeForSession(oauthCode);
+          let inflight = pkceExchangeByCode.get(oauthCode);
+          if (!inflight) {
+            inflight = supabase.auth.exchangeCodeForSession(oauthCode);
+            pkceExchangeByCode.set(oauthCode, inflight);
+          }
+          const { data: exchanged, error: exchangeError } = await inflight;
           // #region agent log
           fetch(
             '/__agent-debug-log',

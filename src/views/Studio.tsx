@@ -33,7 +33,7 @@ import { useUser } from '../hooks/useUser';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { LibraryService } from '../services/libraryService';
 import type { SuggestionReference } from '../services/sampleSuggestionService';
-import { signFile } from '../lib/api';
+import { fetchLibraryAudioBlob } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
 import { BREAKPOINTS } from '../hooks/useResponsiveDesign';
@@ -44,7 +44,7 @@ import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose'
 interface Track {
   id: string;
   sourceAssetId?: string;  // For restore: library asset id or upload id
-  fileKey?: string;        // For restore: used to fetch audio via signFile (library + user uploads)
+  fileKey?: string;        // For restore: used to fetch audio via Worker stream (library + user uploads)
   file: File;
   buffer: AudioBuffer;
   /** Pre-decoded peaks for WaveSurfer - skips duplicate decode, faster waveform load */
@@ -116,12 +116,12 @@ const Studio = () => {
     trackEvent('sampler_opened', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- fire once on mount
 
-  // Mobile: start with side panel closed so the sampler has full width; desktop keeps provider default (open).
+  // Below `lg` (1024px): ensure side panel closed on studio entry (matches provider initial state).
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < BREAKPOINTS.mobile) {
+    if (typeof window !== 'undefined' && window.innerWidth < BREAKPOINTS.tablet) {
       closeSidePanel();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- studio entry only, match initial mobile viewport
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- studio entry only, match initial viewport
 
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';
@@ -737,9 +737,7 @@ const Studio = () => {
 
           if (!fileKeyToUse) continue;
 
-          const signedUrl = await signFile(fileKeyToUse);
-          const response = await fetch(signedUrl);
-          const blob = await response.blob();
+          const blob = await fetchLibraryAudioBlob(fileKeyToUse);
           const file = new File([blob], savedTrack.fileName, { type: savedTrack.fileType });
           const buffer = await loadAudioBuffer(file, context);
 
@@ -840,7 +838,7 @@ const Studio = () => {
       isRestoringRef.current = false;
     }
     return false;
-  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, signFile, tier.id]);
+  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, fetchLibraryAudioBlob, tier.id]);
 
   const restoreStudioStateFromLocal = useCallback(async (): Promise<boolean> => {
     if (!user || isGuestMode) return false;
@@ -1025,19 +1023,14 @@ const Studio = () => {
           return;
         }
         
-        // Get signed URL from Worker API
-        let audioUrl: string;
+        let blob: Blob;
         try {
-          audioUrl = await signFile(asset.fileKey);
+          blob = await fetchLibraryAudioBlob(asset.fileKey);
         } catch (error) {
-          console.error('Failed to get signed URL for asset:', error);
+          console.error('Failed to load library audio:', error);
           const msg = error instanceof Error ? error.message : '';
-          throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+          throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
         }
-        
-        // Fetch the audio file
-        const response = await fetch(audioUrl);
-        const blob = await response.blob();
         const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
         
         // Load the audio file into buffer
@@ -1701,22 +1694,18 @@ const Studio = () => {
         throw new Error('Audio initialization failed. Please try again.');
       }
       
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
         if (!asset.fileKey) {
           throw new Error('Asset fileKey is missing');
         }
-        signedUrl = await signFile(asset.fileKey);
+        blob = await fetchLibraryAudioBlob(asset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
       // Load the audio file into buffer
@@ -1869,22 +1858,17 @@ const Studio = () => {
         throw new Error('Audio initialization failed. Please try again.');
       }
       
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
         if (!selectedAsset.fileKey) {
           throw new Error('Asset fileKey is missing');
         }
-        signedUrl = await signFile(selectedAsset.fileKey);
+        blob = await fetchLibraryAudioBlob(selectedAsset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
-
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
       const file = new File([blob], `${selectedAsset.name}.${selectedAsset.type}`, { type: `audio/${selectedAsset.type}` });
       
       // Load the audio file into buffer
@@ -2948,23 +2932,14 @@ const Studio = () => {
         await resumeAudioContext();
       }
 
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
-        signedUrl = await signFile(asset.fileKey);
+        blob = await fetchLibraryAudioBlob(asset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
-
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio file: ${response.status}`);
-      }
-      
-      const blob = await response.blob();
       const buffer = await context.decodeAudioData(await blob.arrayBuffer());
       
       // Create a File object from the blob
@@ -3296,22 +3271,18 @@ const Studio = () => {
       const randomIndex = Math.floor(Math.random() * availableTracks.length);
       const asset = availableTracks[randomIndex];
       
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
         if (!asset.fileKey) {
           throw new Error('Asset fileKey is missing');
         }
-        signedUrl = await signFile(asset.fileKey);
+        blob = await fetchLibraryAudioBlob(asset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
       const buffer = await loadAudioBuffer(file, context);
