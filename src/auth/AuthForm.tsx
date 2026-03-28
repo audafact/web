@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { authService } from './authService';
 
 interface AuthFormProps {
   mode: 'signin' | 'signup';
@@ -16,6 +17,9 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [mfaStep, setMfaStep] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
   const turnstileRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -26,7 +30,12 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
 
   // Initialize Turnstile widget
   useEffect(() => {
-    if ((mode === 'signup' || mode === 'signin') && turnstileSiteKey && turnstileRef.current) {
+    if (
+      (mode === 'signup' || mode === 'signin') &&
+      !mfaStep &&
+      turnstileSiteKey &&
+      turnstileRef.current
+    ) {
       // Clear any existing widget
       turnstileRef.current.innerHTML = '';
       
@@ -54,7 +63,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
         }
       };
     }
-  }, [mode, turnstileSiteKey]);
+  }, [mode, turnstileSiteKey, mfaStep]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +103,28 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
 
       if (result.success) {
         if (mode === 'signin') {
+          if (result.mfaRequired) {
+            let factorId = result.mfaTotpFactorIds?.[0];
+            if (!factorId) {
+              const listed = await authService.listMfaFactors();
+              if (listed.success && listed.totp?.length) {
+                factorId = listed.totp.find((f) => f.status === 'verified')
+                  ?.id;
+              }
+            }
+            if (!factorId) {
+              setError(
+                'Two-factor sign-in is required, but no authenticator factor was found. Try again or contact support.'
+              );
+              setLoading(false);
+              return;
+            }
+            setMfaFactorId(factorId);
+            setMfaStep(true);
+            setMfaCode('');
+            setLoading(false);
+            return;
+          }
           setMessage('Signed in successfully!');
           if (onSuccess) {
             onSuccess();
@@ -114,6 +145,110 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
       setLoading(false);
     }
   };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaFactorId || !mfaCode.trim()) {
+      setError('Enter the code from your authenticator app');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await authService.verifyMfaLogin(
+        mfaFactorId,
+        mfaCode.trim()
+      );
+      if (result.success) {
+        setMessage('Signed in successfully!');
+        setMfaStep(false);
+        setMfaFactorId(null);
+        setMfaCode('');
+        if (onSuccess) {
+          onSuccess();
+        }
+      } else {
+        setError(result.error || 'Invalid code');
+      }
+    } catch {
+      setError('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaCancel = async () => {
+    setLoading(true);
+    await authService.signOut();
+    setMfaStep(false);
+    setMfaFactorId(null);
+    setMfaCode('');
+    setError('');
+    setMessage('');
+    setLoading(false);
+  };
+
+  if (mode === 'signin' && mfaStep && mfaFactorId) {
+    return (
+      <div className="max-w-md mx-auto p-6 audafact-card-enhanced">
+        <h2 className="text-2xl font-bold mb-2 text-center audafact-heading">
+          Two-factor authentication
+        </h2>
+        <p className="text-sm text-center audafact-text-secondary mb-6">
+          Enter the 6-digit code from your authenticator app.
+        </p>
+        <form onSubmit={handleMfaSubmit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="mfaCode"
+              className="block text-sm font-medium audafact-text-secondary mb-1"
+            >
+              Authentication code
+            </label>
+            <input
+              type="text"
+              id="mfaCode"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\s/g, ''))}
+              className="w-full px-3 py-2 bg-audafact-surface-2 border border-audafact-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-audafact-accent-cyan text-audafact-text-primary"
+              placeholder="000000"
+              maxLength={12}
+              required
+              autoFocus
+            />
+          </div>
+          {error && (
+            <div className="text-audafact-alert-red text-sm bg-audafact-surface-2 border border-audafact-alert-red p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+          {message && (
+            <div className="text-audafact-accent-green text-sm bg-audafact-surface-2 border border-audafact-accent-green p-3 rounded-lg">
+              {message}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={loading || mfaCode.trim().length < 6}
+            className="w-full audafact-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Verifying…' : 'Verify and sign in'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleMfaCancel()}
+            disabled={loading}
+            className="w-full text-sm audafact-text-secondary hover:text-audafact-heading py-2"
+          >
+            Cancel and use a different account
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto p-6 audafact-card-enhanced">

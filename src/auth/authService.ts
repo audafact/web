@@ -1,11 +1,59 @@
 import { supabase } from "../services/supabase";
-import { User } from "@supabase/supabase-js";
+import { User, isAuthError } from "@supabase/supabase-js";
 import { isLocalBrowserDevHost } from "../routing/hostRouting";
+
+/** User-visible MFA API errors; append setup hint when GoTrue returns 422. */
+function mfaHttpErrorMessage(err: unknown, fallback: string): string {
+  const base = isAuthError(err)
+    ? err.message || fallback
+    : err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof (err as { message: unknown }).message === "string"
+      ? (err as { message: string }).message
+      : fallback;
+  if (isAuthError(err) && err.status === 422) {
+    return `${base} (HTTP 422: enable Authenticator/TOTP under Supabase → Authentication → MFA, or restart local Supabase after changing MFA config. If TOTP is already on, sign out and back in, then try again.)`;
+  }
+  return base;
+}
+
+/** Removes pending TOTP enrollments so POST /factors does not 422 on retry. */
+async function removeUnverifiedTotpFactors(): Promise<void> {
+  const { data, error } = await supabase.auth.mfa.listFactors();
+  if (error || !data?.all?.length) {
+    return;
+  }
+  for (const f of data.all) {
+    if (f.factor_type === "totp" && f.status === "unverified") {
+      await supabase.auth.mfa.unenroll({ factorId: f.id });
+    }
+  }
+}
 
 export interface AuthResponse {
   success: boolean;
   user?: User;
   error?: string;
+  /** After password sign-in: session is AAL1 and TOTP verification is required. */
+  mfaRequired?: boolean;
+  /** Verified TOTP factor IDs from the server; use with `verifyMfaLogin`. */
+  mfaTotpFactorIds?: string[];
+}
+
+export interface MfaFactorsResult {
+  success: boolean;
+  error?: string;
+  totp?: { id: string; friendly_name?: string; status: string }[];
+}
+
+export interface MfaEnrollTotpResult {
+  success: boolean;
+  error?: string;
+  factorId?: string;
+  /** Pass to img src as `data:image/svg+xml;utf-8,${qrCode}` */
+  qrCode?: string;
+  secret?: string;
 }
 
 function isStagingPagesPreviewHost(hostname: string): boolean {
@@ -311,14 +359,193 @@ export const authService = {
         };
       }
 
+      const { data: aalData, error: aalError } =
+        await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+      if (aalError) {
+        return {
+          success: false,
+          error: aalError.message,
+        };
+      }
+
+      if (
+        aalData?.currentLevel === "aal1" &&
+        aalData?.nextLevel === "aal2"
+      ) {
+        const { data: factorData, error: factorError } =
+          await supabase.auth.mfa.listFactors();
+        if (factorError) {
+          return {
+            success: false,
+            error: factorError.message,
+          };
+        }
+        const mfaTotpFactorIds = (factorData?.totp ?? []).map((f) => f.id);
+        return {
+          success: true,
+          mfaRequired: true,
+          mfaTotpFactorIds,
+          user: data.user ?? undefined,
+        };
+      }
+
       return {
         success: true,
         user: data.user || undefined,
       };
-    } catch (error) {
+    } catch {
       return {
         success: false,
         error: "An unexpected error occurred during sign in",
+      };
+    }
+  },
+
+  /**
+   * Complete MFA after `signIn` returned `mfaRequired: true`.
+   * Uses the first challenge + verify cycle for the given TOTP factor.
+   */
+  async verifyMfaLogin(factorId: string, code: string): Promise<AuthResponse> {
+    try {
+      const { data: challengeData, error: challengeError } =
+        await supabase.auth.mfa.challenge({ factorId });
+
+      if (challengeError || !challengeData) {
+        return {
+          success: false,
+          error: challengeError?.message ?? "MFA challenge failed",
+        };
+      }
+
+      const { data: verifyData, error: verifyError } =
+        await supabase.auth.mfa.verify({
+          factorId,
+          challengeId: challengeData.id,
+          code: code.trim(),
+        });
+
+      if (verifyError || !verifyData) {
+        return {
+          success: false,
+          error: verifyError?.message ?? "Invalid verification code",
+        };
+      }
+
+      return {
+        success: true,
+        user: verifyData.user,
+      };
+    } catch {
+      return {
+        success: false,
+        error: "An unexpected error occurred during MFA verification",
+      };
+    }
+  },
+
+  async listMfaFactors(): Promise<MfaFactorsResult> {
+    try {
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error || !data) {
+        return {
+          success: false,
+          error: mfaHttpErrorMessage(error, "Could not list MFA factors"),
+        };
+      }
+      return {
+        success: true,
+        totp: data.totp.map((f) => ({
+          id: f.id,
+          friendly_name: f.friendly_name,
+          status: f.status,
+        })),
+      };
+    } catch {
+      return {
+        success: false,
+        error: "An unexpected error occurred while listing MFA factors",
+      };
+    }
+  },
+
+  async enrollTotpMfa(friendlyName = "Authenticator app"): Promise<MfaEnrollTotpResult> {
+    try {
+      await removeUnverifiedTotpFactors();
+
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName,
+      });
+
+      if (error || !data) {
+        return {
+          success: false,
+          error: mfaHttpErrorMessage(
+            error,
+            "Could not start MFA enrollment"
+          ),
+        };
+      }
+
+      return {
+        success: true,
+        factorId: data.id,
+        /** Already a usable `img` src when prefixed by auth-js (`data:image/svg+xml;utf-8,...`). */
+        qrCode: data.totp.qr_code,
+        secret: data.totp.secret,
+      };
+    } catch {
+      return {
+        success: false,
+        error: "An unexpected error occurred during MFA enrollment",
+      };
+    }
+  },
+
+  async completeTotpEnrollment(
+    factorId: string,
+    code: string
+  ): Promise<AuthResponse> {
+    try {
+      const { data, error } = await supabase.auth.mfa.challengeAndVerify({
+        factorId,
+        code: code.trim(),
+      });
+
+      if (error || !data) {
+        return {
+          success: false,
+          error: error?.message ?? "Could not verify the code",
+        };
+      }
+
+      return {
+        success: true,
+        user: data.user,
+      };
+    } catch {
+      return {
+        success: false,
+        error: "An unexpected error occurred while completing MFA enrollment",
+      };
+    }
+  },
+
+  async unenrollMfaFactor(factorId: string): Promise<AuthResponse> {
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId });
+      if (error) {
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
+      return { success: true };
+    } catch {
+      return {
+        success: false,
+        error: "An unexpected error occurred while removing MFA",
       };
     }
   },
