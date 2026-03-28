@@ -42,8 +42,11 @@ export function isStagingBrowserHost(): boolean {
   );
 }
 
-/** Dev server proxy path; must match vite.config.js `proxy` key. */
+/** Dev server proxy path; must match vite.config.js `proxy` key (legacy; prefer direct worker). */
 const DEV_STAGING_PROXY_PREFIX = "/api/staging";
+
+/** Local wrangler dev default — browser calls this directly so we do not depend on the Vite proxy. */
+const DEFAULT_DEV_WORKER_API_BASE = "http://localhost:8787/api";
 
 const isLoopbackHostname = (h: string): boolean =>
   h === "localhost" || h === "127.0.0.1";
@@ -106,7 +109,10 @@ const getBaseUrl = () => {
   ) {
     const lan = devApiBaseFromBrowserOrigin();
     if (lan) return lan;
-    return `http://localhost:5173${DEV_STAGING_PROXY_PREFIX}`;
+    const devWorker =
+      (import.meta.env.VITE_DEV_WORKER_API_URL as string | undefined)?.trim() ||
+      DEFAULT_DEV_WORKER_API_BASE;
+    return normalizeApiBaseUrl(devWorker);
   }
 
   if (appEnv === "staging") {

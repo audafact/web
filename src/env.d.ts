@@ -1,5 +1,7 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
+  /** Override local worker URL when not using default http://localhost:8787/api */
+  readonly VITE_DEV_WORKER_API_URL?: string;
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
   readonly VITE_APP_ENV: string;

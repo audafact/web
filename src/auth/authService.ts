@@ -18,6 +18,57 @@ function mfaHttpErrorMessage(err: unknown, fallback: string): string {
   return base;
 }
 
+/**
+ * Last-resort wipe for @supabase/ssr cookie storage when API signOut fails (403 on global
+ * revoke, corrupted session). Matches keys like `sb-<projectRef>-auth-token` and chunks.
+ */
+function clearSupabaseBrowserPersistence(): void {
+  if (typeof window === "undefined") return;
+  try {
+    let storagePrefix = "sb-";
+    try {
+      const ref = new URL(
+        import.meta.env.VITE_SUPABASE_URL || "https://x.supabase.co"
+      ).hostname.split(".")[0];
+      if (ref && ref !== "x") storagePrefix = `sb-${ref}`;
+    } catch {
+      /* ignore */
+    }
+
+    for (const store of [localStorage, sessionStorage]) {
+      const toRemove: string[] = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (
+          k &&
+          (k.startsWith(storagePrefix) ||
+            k.startsWith("sb-") ||
+            k.toLowerCase().includes("supabase"))
+        ) {
+          toRemove.push(k);
+        }
+      }
+      for (const k of toRemove) store.removeItem(k);
+    }
+
+    if (document.cookie) {
+      const names = new Set<string>();
+      for (const part of document.cookie.split(";")) {
+        const name = part.split("=")[0]?.trim();
+        if (name) names.add(name);
+      }
+      for (const name of names) {
+        if (name.startsWith("sb-") || name.toLowerCase().includes("supabase")) {
+          document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+          document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax; Secure`;
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Removes pending TOTP enrollments so POST /factors does not 422 on retry. */
 async function removeUnverifiedTotpFactors(): Promise<void> {
   const { data, error } = await supabase.auth.mfa.listFactors();
@@ -553,24 +604,17 @@ export const authService = {
   // Sign out
   async signOut(): Promise<AuthResponse> {
     try {
-      const { error } = await supabase.auth.signOut();
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: "An unexpected error occurred during sign out",
-      };
+      await supabase.auth.signOut({ scope: "global" });
+    } catch {
+      /* global revoke often 403 if refresh token is already invalid */
     }
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      /* continue to wipe */
+    }
+    clearSupabaseBrowserPersistence();
+    return { success: true };
   },
 
   // Reset password
