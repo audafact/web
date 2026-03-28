@@ -1,5 +1,6 @@
 import { supabase } from "../services/supabase";
 import { User } from "@supabase/supabase-js";
+import { isLocalBrowserDevHost } from "../routing/hostRouting";
 
 export interface AuthResponse {
   success: boolean;
@@ -14,12 +15,115 @@ function isStagingPagesPreviewHost(hostname: string): boolean {
     .endsWith(".audafact-web-staging.pages.dev");
 }
 
+/** True when the page host is loopback — not Bonjour `.local` or LAN IP. */
+function isLoopbackDevHostname(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  return (
+    h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]"
+  );
+}
+
 /** OAuth / email / password-reset callback URL (Supabase `redirectTo` / `emailRedirectTo`). */
 export function getAuthRedirectUrl(): string {
-  // LAN / *.local dev: never use a .env callback that points at localhost or prod —
-  // Supabase must redirect back to the same host the user signed in from.
-  if (import.meta.env.DEV) {
-    return `${window.location.origin}/auth/callback`;
+  const host =
+    typeof window !== "undefined"
+      ? window.location.hostname.trim().toLowerCase()
+      : "";
+
+  // 1) Explicit development build + 2) Vite dev server + 3) loopback/LAN-style hosts:
+  // keep OAuth on `window.location.origin` so PKCE + cookies stay with the tab that
+  // started sign-in. (`vite preview` has DEV=false but often MODE/VITE_APP_ENV=development;
+  // a production `VITE_AUTH_REDIRECT_URL` must not send localhost to prod.)
+  if (
+    import.meta.env.DEV ||
+    import.meta.env.VITE_APP_ENV === "development" ||
+    (host && isLocalBrowserDevHost(host))
+  ) {
+    const envPin = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim() ?? "";
+    if (envPin.length > 0 && host && isLocalBrowserDevHost(host)) {
+      const pinLooksLocal =
+        envPin.includes("localhost") ||
+        envPin.includes("127.0.0.1") ||
+        /\.local[/:]/.test(envPin);
+      const pinRefsLoopback =
+        envPin.includes("localhost") || envPin.includes("127.0.0.1");
+      // Pinned `localhost` is for the dev machine’s browser. On a phone at
+      // `*.local` or a LAN IP, `localhost` would mean the phone — use current origin.
+      if (
+        pinLooksLocal &&
+        !(pinRefsLoopback && !isLoopbackDevHostname(host))
+      ) {
+        const url = envPin.includes("/callback")
+          ? envPin
+          : `${envPin.replace(/\/$/, "")}/auth/callback`;
+        try {
+          const pinProto = new URL(url).protocol;
+          const pageProto =
+            typeof window !== "undefined" ? window.location.protocol : "";
+          if (pinProto === pageProto) {
+            // #region agent log
+            fetch(
+              "/__agent-debug-log",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  sessionId: "6faadc",
+                  hypothesisId: "H1",
+                  location: "authService.ts:getAuthRedirectUrl",
+                  message: "branch dev_env_VITE_AUTH_REDIRECT_URL",
+                  data: {
+                    branch: "dev_env_pin",
+                    url,
+                    host,
+                    pageOrigin:
+                      typeof window !== "undefined"
+                        ? window.location.origin
+                        : null,
+                  },
+                  timestamp: Date.now(),
+                }),
+              },
+            ).catch(() => {});
+            // #endregion
+            return url;
+          }
+        } catch {
+          /* fall through to origin */
+        }
+      }
+    }
+    const url = `${window.location.origin}/auth/callback`;
+    // #region agent log
+    fetch(
+      "/__agent-debug-log",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: "6faadc",
+          hypothesisId: "H1",
+          location: "authService.ts:getAuthRedirectUrl",
+          message: "branch dev_local_origin",
+          data: {
+            branch: "dev_local_origin",
+            url,
+            host,
+            DEV: import.meta.env.DEV,
+            MODE: import.meta.env.MODE,
+            VITE_APP_ENV: import.meta.env.VITE_APP_ENV,
+            isLocalBrowserDevHost: !!(host && isLocalBrowserDevHost(host)),
+          },
+          timestamp: Date.now(),
+        }),
+      },
+    ).catch(() => {});
+    // #endregion
+    return url;
   }
 
   const configured = import.meta.env.VITE_AUTH_REDIRECT_URL?.trim() ?? "";
@@ -31,8 +135,57 @@ export function getAuthRedirectUrl(): string {
       (import.meta.env.VITE_APP_ENV === "staging" ||
         import.meta.env.VITE_APP_ENV === "production")
     ) {
-      return `${window.location.origin}/auth/callback`;
+      const u = `${window.location.origin}/auth/callback`;
+      // #region agent log
+      fetch(
+        "/__agent-debug-log",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: "6faadc",
+            hypothesisId: "H1",
+            location: "authService.ts:getAuthRedirectUrl",
+            message: "branch configured_local_override",
+            data: {
+              branch: "configured_local_override",
+              url: u,
+              configuredSnippet: configured.slice(0, 32),
+              host,
+            },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
+      // #endregion
+      return u;
     }
+    // #region agent log
+    fetch(
+      "/__agent-debug-log",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: "6faadc",
+          hypothesisId: "H1",
+          location: "authService.ts:getAuthRedirectUrl",
+          message: "branch configured VITE_AUTH_REDIRECT_URL",
+          data: {
+            branch: "configured",
+            url: configured,
+            host,
+            VITE_APP_ENV: import.meta.env.VITE_APP_ENV,
+          },
+          timestamp: Date.now(),
+        }),
+      },
+    ).catch(() => {});
+    // #endregion
     return configured;
   }
 
@@ -44,11 +197,56 @@ export function getAuthRedirectUrl(): string {
         ? window.location.hostname.trim().toLowerCase()
         : "";
     if (host && !isStagingPagesPreviewHost(host)) {
-      return "https://app.staging.audafact.com/auth/callback";
+      const url = "https://app.staging.audafact.com/auth/callback";
+      // #region agent log
+      fetch(
+        "/__agent-debug-log",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: "6faadc",
+            hypothesisId: "H1",
+            location: "authService.ts:getAuthRedirectUrl",
+            message: "branch staging_app_host",
+            data: { branch: "staging_app_callback", url, host },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
+      // #endregion
+      return url;
     }
   }
 
-  return `${window.location.origin}/auth/callback`;
+  const fallback = `${window.location.origin}/auth/callback`;
+  // #region agent log
+  fetch(
+    "/__agent-debug-log",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId: "6faadc",
+        hypothesisId: "H1",
+        location: "authService.ts:getAuthRedirectUrl",
+        message: "branch fallback origin",
+        data: {
+          branch: "fallback_origin",
+          url: fallback,
+          host,
+          VITE_APP_ENV: import.meta.env.VITE_APP_ENV,
+        },
+        timestamp: Date.now(),
+      }),
+    },
+  ).catch(() => {});
+  // #endregion
+  return fallback;
 }
 
 function getOAuthRedirectUrl(): string {
@@ -211,12 +409,70 @@ export const authService = {
   // Sign in with Google
   async signInWithGoogle(): Promise<AuthResponse> {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const redirectTo = getOAuthRedirectUrl();
+      // #region agent log
+      fetch(
+        "/__agent-debug-log",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: "6faadc",
+            hypothesisId: "H5",
+            location: "authService.ts:signInWithGoogle",
+            message: "signInWithOAuth redirectTo",
+            data: {
+              redirectTo,
+              pageOrigin:
+                typeof window !== "undefined" ? window.location.origin : null,
+              pageHost:
+                typeof window !== "undefined"
+                  ? window.location.hostname
+                  : null,
+            },
+            timestamp: Date.now(),
+          }),
+        },
+      ).catch(() => {});
+      // #endregion
+      const oauth = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: getOAuthRedirectUrl(),
+          redirectTo,
         },
       });
+      // #region agent log
+      try {
+        const authorizeUrl = oauth.data?.url ?? null;
+        let redirectToParam: string | null = null;
+        if (authorizeUrl) {
+          const u = new URL(authorizeUrl);
+          redirectToParam = u.searchParams.get("redirect_to");
+        }
+        fetch("/__agent-debug-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: "6faadc",
+            hypothesisId: "H6",
+            location: "authService.ts:signInWithGoogle after OAuth",
+            message: "authorize URL redirect_to param",
+            data: {
+              requestedRedirectTo: redirectTo,
+              authorizeUrlHost: authorizeUrl ? new URL(authorizeUrl).host : null,
+              redirectToInAuthorizeUrl: redirectToParam,
+              oauthError: oauth.error?.message ?? null,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      // #endregion
+      const error = oauth.error;
 
       if (error) {
         return {

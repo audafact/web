@@ -4,6 +4,63 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { getEnvironmentConfig } from "./config/environments.js";
 
+/** Append agent debug NDJSON lines (browser POSTs same-origin to avoid CORS on ingest). */
+function agentDebugLogPlugin() {
+  const logFile = path.resolve(__dirname, "../.cursor/debug-6faadc.log");
+  return {
+    name: "agent-debug-log",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        try {
+          const pathOnly = req.url?.split("?")[0] ?? "";
+          if (
+            pathOnly === "/auth/callback" ||
+            pathOnly.startsWith("/auth/callback/")
+          ) {
+            fs.mkdirSync(path.dirname(logFile), { recursive: true });
+            fs.appendFileSync(
+              logFile,
+              `${JSON.stringify({
+                hypothesisId: "H11",
+                location: "vite.devServer",
+                message: "incoming HTTP to /auth/callback",
+                data: {
+                  method: req.method,
+                  path: pathOnly,
+                  host: req.headers.host,
+                },
+                timestamp: Date.now(),
+              })}\n`,
+              "utf8",
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+        next();
+      });
+      server.middlewares.use("/__agent-debug-log", (req, res, next) => {
+        if (req.method !== "POST") return next();
+        const chunks = [];
+        req.on("data", (c) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const line = Buffer.concat(chunks).toString("utf8").trim();
+            if (line) {
+              fs.mkdirSync(path.dirname(logFile), { recursive: true });
+              fs.appendFileSync(logFile, `${line}\n`, "utf8");
+            }
+          } catch (_) {
+            /* ignore */
+          }
+          res.statusCode = 204;
+          res.end();
+        });
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Load environment variables
   const env = loadEnv(mode, process.cwd(), "");
@@ -134,7 +191,7 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
-    plugins: [react()],
+    plugins: [agentDebugLogPlugin(), react()],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "src"),

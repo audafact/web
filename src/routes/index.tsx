@@ -6,7 +6,11 @@ import { AuthPage } from '../auth/AuthPage';
 import { AuthCallback } from '../auth/AuthCallback';
 import { AuthVerification } from '../auth/AuthVerification';
 import { CheckEmailPage } from '../auth/CheckEmailPage';
-import { getAppEntryUrl, getHostExperience } from '../routing/hostRouting';
+import {
+  getAppEntryUrl,
+  getHostExperience,
+  SAME_HOST_STUDIO_PATH,
+} from '../routing/hostRouting';
 
 // Lazy load views for better performance
 const Home = lazy(() => import('../views/Home'));
@@ -48,22 +52,50 @@ const RootRouteResolver = () => {
   );
 };
 
-const LegacyStudioRedirect = () => {
+const normalizePathname = (pathname: string) => {
+  const t = pathname.replace(/\/$/, '');
+  return t === '' ? '/' : t;
+};
+
+/** /studio: app host uses root studio; marketing cross-origin redirects to app origin; same-host marketing renders Studio here. */
+const StudioEntryRoute = () => {
   const experience = getHostExperience();
-
-  useEffect(() => {
-    if (experience !== 'marketing') return;
-
-    const targetUrl = getAppEntryUrl();
-    if (window.location.href !== targetUrl) {
-      window.location.replace(targetUrl);
-    }
-  }, [experience]);
 
   if (experience === 'app') {
     return <Navigate to="/" replace />;
   }
 
+  const entryUrl = getAppEntryUrl();
+  let entry: URL;
+  try {
+    entry = new URL(entryUrl);
+  } catch {
+    return <LoadingSpinner />;
+  }
+
+  const cur = window.location;
+  const sameOrigin = entry.origin === cur.origin;
+  const sameEntry =
+    sameOrigin &&
+    normalizePathname(entry.pathname) === normalizePathname(cur.pathname);
+
+  if (sameEntry) {
+    return (
+      <TapTempoProvider>
+        <Suspense fallback={<LoadingSpinner />}>
+          <Studio />
+        </Suspense>
+      </TapTempoProvider>
+    );
+  }
+
+  return <RedirectToStudioEntry entryUrl={entryUrl} />;
+};
+
+const RedirectToStudioEntry = ({ entryUrl }: { entryUrl: string }) => {
+  useEffect(() => {
+    window.location.replace(entryUrl);
+  }, [entryUrl]);
   return <LoadingSpinner />;
 };
 
@@ -78,7 +110,7 @@ export const appRoutes = [
       },
       {
         path: 'studio',
-        element: <LegacyStudioRedirect />,
+        element: <StudioEntryRoute />,
       },
       {
         path: 'pricing',
@@ -90,13 +122,7 @@ export const appRoutes = [
       },
       {
         path: 'stash',
-        element: (
-          <TapTempoProvider>
-            <Suspense fallback={<LoadingSpinner />}>
-              <Studio />
-            </Suspense>
-          </TapTempoProvider>
-        ),
+        element: <Navigate to={SAME_HOST_STUDIO_PATH} replace />,
       },
       {
         path: 'checkout-result',
