@@ -12,15 +12,135 @@ export const AuthCallback = () => {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
+        const g = globalThis as unknown as { __AUDAFACT_AUTH_TRACE?: unknown[] };
+        g.__AUDAFACT_AUTH_TRACE = g.__AUDAFACT_AUTH_TRACE ?? [];
+        g.__AUDAFACT_AUTH_TRACE.push({
+          step: 'callback_effect_start',
+          t: Date.now(),
+          href: typeof window !== 'undefined' ? window.location.href : null,
+        });
+        // #region agent log
+        fetch(
+          '/__agent-debug-log',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: '6faadc',
+              hypothesisId: 'H2',
+              location: 'AuthCallback.tsx:handleAuthCallback',
+              message: 'callback entry',
+              data: {
+                host: typeof window !== 'undefined' ? window.location.hostname : null,
+                origin: typeof window !== 'undefined' ? window.location.origin : null,
+                pathname: typeof window !== 'undefined' ? window.location.pathname : null,
+                hasOAuthCode: !!(searchParams.get('code')),
+                hashPresent:
+                  typeof window !== 'undefined' &&
+                  !!window.location.hash?.length,
+                authErrorParam: searchParams.get('error'),
+                authErrorDescription: searchParams.get('error_description'),
+              },
+              timestamp: Date.now(),
+            }),
+          },
+        ).catch(() => {});
+        // #endregion
         // PKCE (OAuth) returns ?code=... on the callback URL, not a hash.
         const oauthCode = searchParams.get('code');
         if (oauthCode) {
           const { data: exchanged, error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(oauthCode);
+          // #region agent log
+          fetch(
+            '/__agent-debug-log',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: '6faadc',
+                hypothesisId: 'H9',
+                location: 'AuthCallback.tsx:exchangeCodeForSession',
+                message: 'after exchangeCodeForSession',
+                data: {
+                  host:
+                    typeof window !== 'undefined'
+                      ? window.location.hostname
+                      : null,
+                  exchangeError: exchangeError?.message ?? null,
+                  hasSessionUser: !!exchanged?.session?.user,
+                },
+                timestamp: Date.now(),
+              }),
+            },
+          ).catch(() => {});
+          // #endregion
+          g.__AUDAFACT_AUTH_TRACE?.push({
+            step: 'after_exchange',
+            t: Date.now(),
+            exchangeError: exchangeError?.message ?? null,
+            hasUser: !!exchanged?.session?.user,
+          });
           if (!exchangeError && exchanged.session?.user) {
-            window.location.replace(getPostAuthStudioUrl());
+            const next = getPostAuthStudioUrl();
+            // #region agent log
+            fetch(
+              '/__agent-debug-log',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  sessionId: '6faadc',
+                  hypothesisId: 'H3',
+                  location: 'AuthCallback.tsx:oauth exchange success',
+                  message: 'replace after exchangeCodeForSession',
+                  data: {
+                    next,
+                    host:
+                      typeof window !== 'undefined'
+                        ? window.location.hostname
+                        : null,
+                  },
+                  timestamp: Date.now(),
+                }),
+              },
+            ).catch(() => {});
+            // #endregion
+            window.location.replace(next);
             return;
           }
+          // #region agent log
+          fetch(
+            '/__agent-debug-log',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: '6faadc',
+                hypothesisId: 'H10',
+                location: 'AuthCallback.tsx:oauth branch fallthrough',
+                message:
+                  'had OAuth code but no session after exchange — fallthrough',
+                data: {
+                  host:
+                    typeof window !== 'undefined'
+                      ? window.location.hostname
+                      : null,
+                  exchangeError: exchangeError?.message ?? null,
+                },
+                timestamp: Date.now(),
+              }),
+            },
+          ).catch(() => {});
+          // #endregion
+          g.__AUDAFACT_AUTH_TRACE?.push({
+            step: 'oauth_fallthrough',
+            t: Date.now(),
+          });
           // If the client already auto-exchanged, or the code was consumed, fall through.
         }
 

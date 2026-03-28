@@ -4,6 +4,7 @@ import {
   getAppEntryUrl,
   getHostExperience,
   getPostAuthStudioUrl,
+  isLocalBrowserDevHost,
   resolveHostExperience,
 } from "../../src/routing/hostRouting";
 
@@ -40,6 +41,19 @@ describe("host routing classifier", () => {
     expect(resolveHostExperience("foo.example.com")).toBe("marketing");
   });
 
+  it("isLocalBrowserDevHost matches typical local and LAN dev hostnames", () => {
+    expect(isLocalBrowserDevHost("localhost")).toBe(true);
+    expect(isLocalBrowserDevHost("127.0.0.1")).toBe(true);
+    expect(isLocalBrowserDevHost("::1")).toBe(true);
+    expect(isLocalBrowserDevHost("app.localhost")).toBe(true);
+    expect(isLocalBrowserDevHost("192.168.1.10")).toBe(true);
+    expect(isLocalBrowserDevHost("my-macbook.local")).toBe(true);
+    expect(isLocalBrowserDevHost("www.audafact.com")).toBe(false);
+    expect(isLocalBrowserDevHost("preview.audafact-web-staging.pages.dev")).toBe(
+      false
+    );
+  });
+
   it("supports explicit host experience override", () => {
     (import.meta.env as any).VITE_HOST_EXPERIENCE = "app";
     expect(getHostExperience()).toBe("app");
@@ -58,31 +72,34 @@ describe("host routing classifier", () => {
     expect(getAppEntryUrl("www.staging.audafact.com", "https:", "")).toBe(
       "https://app.staging.audafact.com/"
     );
-    expect(getAppEntryUrl("www.staging.audafact.com", "https:", "")).toBe(
-      "https://www.staging.audafact.com/stash"
+  });
+
+  it("uses same-host /studio for localhost marketing dev (app.localhost often not in DNS)", () => {
+    expect(getAppEntryUrl("localhost", "http:", "5173")).toBe(
+      "http://localhost:5173/studio"
     );
   });
 
-  it("uses same-host /stash for staging Pages host", () => {
+  it("uses same-host /studio for staging Pages host", () => {
     expect(
       getAppEntryUrl(
         "develop.audafact-web-staging.pages.dev",
         "https:",
         ""
       )
-    ).toBe("https://develop.audafact-web-staging.pages.dev/stash");
+    ).toBe("https://develop.audafact-web-staging.pages.dev/studio");
   });
 
-  it("uses same-host /stash for LAN IPv4 dev (no app.192.168… redirect)", () => {
+  it("uses same-host /studio for LAN IPv4 dev (no app.192.168… redirect)", () => {
     expect(getAppEntryUrl("192.168.1.157", "https:", "5173")).toBe(
-      "https://192.168.1.157:5173/stash"
+      "https://192.168.1.157:5173/studio"
     );
   });
 
-  it("uses same-host /stash for Bonjour *.local marketing host (app.*.local not in DNS)", () => {
+  it("uses same-host /studio for Bonjour *.local marketing host (app.*.local not in DNS)", () => {
     expect(
       getAppEntryUrl("davids-macbook-pro-2.local", "https:", "5173")
-    ).toBe("https://davids-macbook-pro-2.local:5173/stash");
+    ).toBe("https://davids-macbook-pro-2.local:5173/studio");
   });
 });
 
@@ -109,28 +126,22 @@ describe("getPostAuthStudioUrl", () => {
     );
   });
 
-  it("uses localhost /stash in dev marketing", () => {
-    if (!import.meta.env.DEV) {
-      expect(true).toBe(true);
-      return;
-    }
+  it("uses localhost /studio in marketing post-auth (local browser host)", () => {
     (window.location as any).hostname = "localhost";
     (window.location as any).protocol = "http:";
     (window.location as any).port = "5173";
     (import.meta.env as any).VITE_HOST_EXPERIENCE = "";
-    expect(getPostAuthStudioUrl()).toBe("http://localhost:5173/stash");
+    expect(getPostAuthStudioUrl()).toBe("http://localhost:5173/studio");
   });
 
-  it("uses localhost root in dev app experience", () => {
-    if (!import.meta.env.DEV) {
-      expect(true).toBe(true);
-      return;
-    }
+  it("uses localhost root in app experience override on local browser host", () => {
     (window.location as any).hostname = "localhost";
     (window.location as any).protocol = "http:";
     (window.location as any).port = "5173";
     (import.meta.env as any).VITE_HOST_EXPERIENCE = "app";
-    expect(getPostAuthStudioUrl("tier=pro")).toBe("http://localhost:5173/?tier=pro");
+    expect(getPostAuthStudioUrl("tier=pro")).toBe(
+      "http://localhost:5173/?tier=pro"
+    );
   });
 });
 
@@ -147,7 +158,7 @@ describe("router host-aware/canonical routes", () => {
   it("redirects /studio to canonical root", () => {
     const studioRoute = childRoutes.find((route) => route.path === "studio");
     expect(studioRoute).toBeDefined();
-    expect(studioRoute.element.type.name).toBe("LegacyStudioRedirect");
+    expect(studioRoute.element.type.name).toBe("StudioEntryRoute");
   });
 
   it("uses /account as canonical and redirects /profile", () => {

@@ -29,6 +29,7 @@ interface ImportMetaEnv {
   readonly VITE_AUTH_REDIRECT_URL?: string;
   readonly MODE: string;
   readonly PROD: boolean;
+  readonly DEV: boolean;
 }
 
 interface ImportMeta {
