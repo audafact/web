@@ -82,3 +82,49 @@ export async function authHeader(): Promise<Record<string, string>> {
   const token = data?.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+const streamRetryDelayMs = 2000;
+
+/**
+ * Download audio bytes via Worker GET /stream (same-origin / CORS-safe).
+ * Use this instead of sign-file + fetch(presignedUrl) in the browser so R2 bucket CORS is not required.
+ */
+export async function fetchLibraryAudioBlob(
+  fileKey: string,
+  retryCount = 0
+): Promise<Blob> {
+  const sessionResult = await supabase.auth.getSession();
+  const token = sessionResult?.data?.session?.access_token;
+  if (!token) throw new Error("Not signed in");
+
+  const r = await fetch(
+    `${getApiBase()}/stream?key=${encodeURIComponent(fileKey)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (r.status === 429 && retryCount < 2) {
+    const delay = streamRetryDelayMs * 2 ** retryCount;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    return fetchLibraryAudioBlob(fileKey, retryCount + 1);
+  }
+
+  if (!r.ok) {
+    let detail = "";
+    try {
+      const j = (await r.json()) as { error?: string };
+      detail = j.error || "";
+    } catch {
+      detail = await r.text().catch(() => "");
+    }
+    if (r.status === 429) {
+      throw new Error(
+        "Too many requests. Please wait a moment and try again."
+      );
+    }
+    throw new Error(detail || `Audio stream failed: ${r.status}`);
+  }
+
+  return r.blob();
+}
