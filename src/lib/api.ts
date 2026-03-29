@@ -1,7 +1,7 @@
 // web/src/lib/api.ts
 // sign-file rate limits: free=100/hour, pro=1000/hour. All track loads and library
 // previews share "preview" quota. Caching + coalescing reduce redundant requests.
-import { API_CONFIG } from "@/config/api";
+import { API_CONFIG, isApiBaseDebugEnabled } from "@/config/api";
 import { supabase } from "@/services/supabase";
 
 /** Worker REST base including `/api` — recomputed per call so it matches runtime host. */
@@ -24,12 +24,21 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
   const token = s?.session?.access_token;
   if (!token) throw new Error("Not signed in");
 
-  const r = await fetch(
-    `${getApiBase()}/sign-file?key=${encodeURIComponent(key)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  );
+  const base = getApiBase();
+  const signUrl = `${base}/sign-file?key=${encodeURIComponent(key)}`;
+  if (isApiBaseDebugEnabled()) {
+    console.warn("[Audafact API] sign-file fetch", {
+      base,
+      signUrl,
+      key,
+      hostname:
+        typeof window !== "undefined" ? window.location.hostname : "(no window)",
+    });
+  }
+
+  const r = await fetch(signUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (r.status === 429 && retryCount < 2) {
     const delay = signFileRetryDelay * Math.pow(2, retryCount);
@@ -97,12 +106,21 @@ export async function fetchLibraryAudioBlob(
   const token = sessionResult?.data?.session?.access_token;
   if (!token) throw new Error("Not signed in");
 
-  const r = await fetch(
-    `${getApiBase()}/stream?key=${encodeURIComponent(fileKey)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  );
+  const base = getApiBase();
+  const streamUrl = `${base}/stream?key=${encodeURIComponent(fileKey)}`;
+  if (isApiBaseDebugEnabled()) {
+    console.warn("[Audafact API] stream fetch", {
+      base,
+      streamUrl,
+      fileKey,
+      hostname:
+        typeof window !== "undefined" ? window.location.hostname : "(no window)",
+    });
+  }
+
+  const r = await fetch(streamUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (r.status === 429 && retryCount < 2) {
     const delay = streamRetryDelayMs * 2 ** retryCount;

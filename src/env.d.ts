@@ -5,10 +5,6 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
   readonly VITE_APP_ENV: string;
-  /** Baked by Vite for CF Pages; optional override in Cloudflare env. Forces staging Worker when true. */
-  readonly VITE_USE_STAGING_API?: string;
-  /** When "true", production build keeps console.* (staging / VITE_KEEP_CONSOLE in vite). */
-  readonly VITE_KEEP_CONSOLE?: string;
   readonly VITE_AUDIO_SAMPLE_RATE: string;
   readonly VITE_MAX_UPLOAD_SIZE: string;
   readonly VITE_STRIPE_MODE: string;
@@ -30,6 +26,10 @@ interface ImportMetaEnv {
   readonly VITE_HOST_EXPERIENCE?: "app" | "marketing";
   /** Optional; if unset, OAuth uses `window.location.origin`/auth/callback */
   readonly VITE_AUTH_REDIRECT_URL?: string;
+  /** When "true", production builds keep console.* (Terser). Pair with staging debug. */
+  readonly VITE_KEEP_CONSOLE?: string;
+  /** When "true", log [Audafact API base] and sign-file/stream URL resolution in the browser. */
+  readonly VITE_DEBUG_API_BASE?: string;
   readonly MODE: string;
   readonly PROD: boolean;
   readonly DEV: boolean;
