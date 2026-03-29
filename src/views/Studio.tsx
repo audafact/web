@@ -918,10 +918,17 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-                 // In demo mode, use the DemoProvider's current track
-         if (isGuestMode && currentGuestTrack) {
-          
-          // Use existing audio context if available
+        // Anonymous only: bundled guest assets. Signed-in users use library + Worker (staging/prod).
+        if (isGuestMode) {
+          let guestTrack = currentGuestTrack;
+          if (!guestTrack) {
+            guestTrack = await loadRandomGuestTrack();
+            if (!guestTrack) {
+              setIsTrackLoading(false);
+              return;
+            }
+          }
+
           let context = audioContext;
           if (!context) {
             try {
@@ -931,66 +938,67 @@ const Studio = () => {
               console.error('Error initializing audio context:', initError);
               setNeedsUserInteraction(true);
               setIsTrackLoading(false);
-              // Don't return - let the user interaction handler retry
               return;
             }
           }
-          
-          // Check if audio context is suspended and needs user interaction
+
           if (context.state === 'suspended') {
             setNeedsUserInteraction(true);
             setIsTrackLoading(false);
             return;
           }
 
-                     // Fetch the bundled track from DemoProvider
-           const response = await fetch(currentGuestTrack.file);
-           const blob = await response.blob();
-           const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
-             type: `audio/${currentGuestTrack.type}` 
-           });
-           
-           // Load the audio file into buffer
-           const buffer = await loadAudioBuffer(file, context);
-           
-           // Create track using DemoProvider metadata
-           const newTrack: Track = {
-             id: currentGuestTrack.id,
-             file,
-             buffer,
-             peaks: extractPeaksFromBuffer(buffer),
-             mode: 'cue',
-             chopTriggerStyle: 'cue',
-             loopStart: 0,
-             loopEnd: buffer.duration,
-             cuePoints: Array.from({ length: 10 }, (_, i) => 
-               buffer.duration * (i / 10)
-             ),
-             tempo: currentGuestTrack.bpm || 120,
-             timeSignature: { numerator: 4, denominator: 4 },
-             firstMeasureTime: 0,
-             showMeasures: false
-           };
-          
+          const response = await fetch(guestTrack.file);
+          const blob = await response.blob();
+          const file = new File([blob], `${guestTrack.name}.${guestTrack.type}`, {
+            type: `audio/${guestTrack.type}`,
+          });
+
+          const buffer = await loadAudioBuffer(file, context);
+
+          const newTrack: Track = {
+            id: guestTrack.id,
+            file,
+            buffer,
+            peaks: extractPeaksFromBuffer(buffer),
+            mode: 'cue',
+            chopTriggerStyle: 'cue',
+            loopStart: 0,
+            loopEnd: buffer.duration,
+            cuePoints: Array.from({ length: 10 }, (_, i) =>
+              buffer.duration * (i / 10)
+            ),
+            tempo: guestTrack.bpm || 120,
+            timeSignature: { numerator: 4, denominator: 4 },
+            firstMeasureTime: 0,
+            showMeasures: false,
+          };
+
           setTracks([newTrack]);
           setCurrentTrackIndex(0);
-          setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
+          setShowCueThumbs((prev) => ({ ...prev, [newTrack.id]: true }));
           setSelectedCueTrackId(newTrack.id);
           setIsTrackLoading(false);
-          
-          // Creative metrics: sampler_ready + track_loaded (first track)
+
           if (!hasEmittedSamplerReady.current) {
-            trackEvent('sampler_ready', { trackId: currentGuestTrack.id, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+            trackEvent('sampler_ready', {
+              trackId: guestTrack.id,
+              userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
+            });
             hasEmittedSamplerReady.current = true;
           }
-          trackEvent('track_loaded', { trackId: currentGuestTrack.id, trackIndex: 0, source: 'guest', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
-          
-          // Track demo event
-          trackGuestEvent('session_started', { 
-            trackId: currentGuestTrack.id,
-            timestamp: Date.now()
+          trackEvent('track_loaded', {
+            trackId: guestTrack.id,
+            trackIndex: 0,
+            source: 'guest',
+            userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
           });
-          
+
+          trackGuestEvent('session_started', {
+            trackId: guestTrack.id,
+            timestamp: Date.now(),
+          });
+
           return;
         }
         
@@ -1109,7 +1117,7 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
+    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, loadRandomGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
@@ -3199,26 +3207,23 @@ const Studio = () => {
       setIsAudioInitialized(true);
       
       if (isGuestMode) {
-        // For demo mode, use DemoProvider bundled tracks
-        if (!currentGuestTrack) {
-          // Load a bundled track first if none is loaded
-          await loadRandomGuestTrack();
-          if (!currentGuestTrack) {
+        // Anonymous only: bundled /assets/library-inbox/* — signed-in users use library + Worker above.
+        let guestTrack = currentGuestTrack;
+        if (!guestTrack) {
+          guestTrack = await loadRandomGuestTrack();
+          if (!guestTrack) {
             throw new Error('Failed to load bundled track. Please try again.');
           }
         }
-        
 
-        
-        // Fetch the bundled track from DemoProvider
-        const response = await fetch(currentGuestTrack.file);
+        const response = await fetch(guestTrack.file);
         const blob = await response.blob();
-        const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
-          type: `audio/${currentGuestTrack.type}` 
+        const file = new File([blob], `${guestTrack.name}.${guestTrack.type}`, { 
+          type: `audio/${guestTrack.type}` 
         });
         
         const buffer = await loadAudioBuffer(file, context);
-        const trackId = currentGuestTrack.id;
+        const trackId = guestTrack.id;
         const mode: 'cue' | 'loop' = preferredMode ?? 'cue';
         
         const newTrack: Track = {
@@ -3233,7 +3238,7 @@ const Studio = () => {
           cuePoints: Array.from({ length: 10 }, (_, i) => 
             buffer.duration * (i / 10)
           ),
-          tempo: currentGuestTrack.bpm || 120,
+          tempo: guestTrack.bpm || 120,
           timeSignature: { numerator: 4, denominator: 4 },
           firstMeasureTime: 0,
           showMeasures: false
@@ -3252,7 +3257,7 @@ const Studio = () => {
         
         // Track demo event
         trackGuestEvent('session_started', { 
-          trackId: currentGuestTrack.id,
+          trackId: guestTrack.id,
           timestamp: Date.now()
         });
         
