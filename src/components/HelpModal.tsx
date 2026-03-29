@@ -1,13 +1,22 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { useUser } from '../hooks/useUser';
+import FeedbackModal from './FeedbackModal';
 
 interface HelpModalProps {
   isOpen: boolean;
   onClose: () => void;
+  feedbackOpen: boolean;
+  onFeedbackOpenChange: (open: boolean) => void;
 }
 
-const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
-  if (!isOpen) return null;
+const HelpModal: React.FC<HelpModalProps> = ({
+  isOpen,
+  onClose,
+  feedbackOpen,
+  onFeedbackOpenChange,
+}) => {
+  const { isPro, isStarter } = useUser();
 
   const shortcuts = [
     { key: 'Space', description: 'Play/Pause armed loops (loop tracks are armed by default)' },
@@ -34,7 +43,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
     'Save your sessions to return to them later'
   ];
 
-  return createPortal(
+  const helpContent = (
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
       {/* Backdrop */}
       <div 
@@ -158,20 +167,46 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-audafact-divider">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm bg-audafact-surface-2 text-audafact-text-primary rounded hover:bg-audafact-surface-3 transition-colors"
-          >
-            Close
-          </button>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-6 border-t border-audafact-divider">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onFeedbackOpenChange(true)}
+              className="px-4 py-2 text-sm bg-audafact-accent-cyan/20 text-audafact-accent-cyan border border-audafact-accent-cyan/40 rounded hover:bg-audafact-accent-cyan/30 transition-colors"
+            >
+              {isPro ? 'Priority feedback' : 'Send feedback'}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm bg-audafact-surface-2 text-audafact-text-primary rounded hover:bg-audafact-surface-3 transition-colors"
+            >
+              Close
+            </button>
+          </div>
           <div className="text-xs text-audafact-text-secondary">
-            Need more help? Contact support at help@audafact.com
+            Need more help?{' '}
+            <a
+              href="mailto:hello@audafact.com"
+              className="text-audafact-accent-cyan hover:underline"
+            >
+              hello@audafact.com
+            </a>
           </div>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
+  );
+
+  return (
+    <>
+      {isOpen ? createPortal(helpContent, document.body) : null}
+      <FeedbackModal
+        isOpen={feedbackOpen}
+        onClose={() => onFeedbackOpenChange(false)}
+        isPro={isPro}
+        isStarter={isStarter}
+      />
+    </>
   );
 };
 
