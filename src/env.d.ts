@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
   readonly VITE_APP_ENV: string;
+  /** Baked by Vite for CF Pages; optional override in Cloudflare env. Forces staging Worker when true. */
+  readonly VITE_USE_STAGING_API?: string;
   readonly VITE_AUDIO_SAMPLE_RATE: string;
   readonly VITE_MAX_UPLOAD_SIZE: string;
   readonly VITE_STRIPE_MODE: string;
