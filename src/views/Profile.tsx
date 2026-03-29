@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useUser } from '../hooks/useUser';
 import { SubscriptionManager } from '../components/SubscriptionManager';
 import { User, Settings, CreditCard, Shield } from 'lucide-react';
 import {
@@ -11,6 +12,7 @@ import { userHasEmailPasswordIdentity } from '../auth/changePasswordIdentity';
 
 export const Profile: React.FC = () => {
   const { user } = useAuth();
+  const { isStarter } = useUser();
   const [passwordOpen, setPasswordOpen] = useState(false);
 
   if (!user) {
@@ -114,7 +116,7 @@ export const Profile: React.FC = () => {
               </div>
             </div>
 
-            <SubscriptionManager />
+            <SubscriptionManager isStarter={isStarter} />
           </div>
 
           <div className="audafact-card-enhanced p-6 mt-6">

@@ -3,8 +3,16 @@ import { useUserAccess } from '../hooks/useUserAccess';
 import { createCustomerPortalSession, cancelSubscription } from '../services/stripeService';
 import { CreditCard, Calendar, AlertTriangle, CheckCircle, Settings } from 'lucide-react';
 
-export const SubscriptionManager: React.FC = () => {
+type SubscriptionManagerProps = {
+  /** From useUser on Profile — Starter must not be shown as Free */
+  isStarter?: boolean;
+};
+
+export const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({
+  isStarter: isStarterFromUser,
+}) => {
   const { accessTier, subscriptionId, planInterval, loading } = useUserAccess();
+  const isStarter = isStarterFromUser === true || accessTier === 'starter';
   const [portalLoading, setPortalLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
 
@@ -55,6 +63,81 @@ export const SubscriptionManager: React.FC = () => {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (isStarter) {
+    return (
+      <div className="audafact-card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <CheckCircle className="h-8 w-8 text-audafact-accent-green mr-3" />
+            <div>
+              <h3 className="text-lg font-semibold audafact-heading">
+                Starter Plan
+              </h3>
+              <p className="text-sm audafact-text-secondary">
+                {planInterval === 'yearly' ? 'Annual billing' : 'Monthly billing'}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold audafact-heading">$5</div>
+            <div className="text-sm audafact-text-secondary">per month</div>
+          </div>
+        </div>
+
+        <p className="text-sm audafact-text-secondary mb-6">
+          You&apos;re on Starter with higher limits than Free. Upgrade to Pro Creator for WAV export,
+          unlimited uploads, sessions, and recordings.
+        </p>
+
+        <div className="space-y-4 mb-6">
+          <div className="flex items-center text-sm audafact-text-secondary">
+            <CreditCard className="h-4 w-4 mr-2" />
+            <span>Subscription ID: {subscriptionId?.slice(-8) || 'N/A'}</span>
+          </div>
+          <div className="flex items-center text-sm audafact-text-secondary">
+            <Calendar className="h-4 w-4 mr-2" />
+            <span>Billing Cycle: {planInterval === 'yearly' ? 'Annual' : 'Monthly'}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={handleManageBilling}
+            disabled={portalLoading}
+            className="flex-1 flex items-center justify-center px-4 py-2 border border-audafact-divider rounded-md shadow-sm text-sm font-medium audafact-text-secondary bg-audafact-surface-2 hover:bg-audafact-divider focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-audafact-accent-blue disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {portalLoading ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-audafact-text-secondary mr-2"></div>
+            ) : (
+              <Settings className="h-4 w-4 mr-2" />
+            )}
+            Manage Billing
+          </button>
+          <a
+            href="/pricing"
+            className="flex-1 flex items-center justify-center px-4 py-2 audafact-button-primary text-center"
+          >
+            Upgrade to Pro
+          </a>
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={handleCancelSubscription}
+            disabled={cancelLoading}
+            className="w-full flex items-center justify-center px-4 py-2 border border-audafact-alert-red rounded-md shadow-sm text-sm font-medium text-audafact-alert-red bg-audafact-surface-2 hover:bg-audafact-alert-red hover:bg-opacity-10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-audafact-alert-red disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {cancelLoading ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-audafact-alert-red mr-2"></div>
+            ) : (
+              <AlertTriangle className="h-4 w-4 mr-2" />
+            )}
+            Cancel Subscription
+          </button>
+        </div>
       </div>
     );
   }
