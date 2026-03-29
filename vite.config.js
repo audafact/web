@@ -83,6 +83,12 @@ export default defineConfig(({ mode }) => {
     "";
 
   let resolvedApiUrl = env.VITE_API_BASE_URL || envConfig.apiUrl;
+
+  const cfPagesUrl = (process.env.CF_PAGES_URL || "").toLowerCase();
+  const deployLooksLikeStagingWeb =
+    cfPagesUrl.includes("staging.audafact.com") ||
+    cfPagesUrl.includes("audafact-web-staging.pages.dev");
+
   // Never bake localhost API base for deployed envs (local .env / Pages env mistakes)
   if (
     appEnv !== "development" &&
@@ -92,14 +98,18 @@ export default defineConfig(({ mode }) => {
   ) {
     resolvedApiUrl = envConfig.apiUrl;
   }
-  // Cloudflare Pages often sets one VITE_API_BASE_URL for all preview envs → prod worker + staging host = CORS failure
+  // Cloudflare Pages often sets one VITE_API_BASE_URL for all branches → prod worker URL baked while the
+  // site is served from staging hosts = CORS failure. CF_PAGES_URL detects staging deployments even when
+  // getEnvironment() resolves to "preview" (non-default branch).
+  const stagingWorkerApiBaked =
+    "https://audafact-api-staging.david-g-cortinas.workers.dev/api";
   if (
-    appEnv === "staging" &&
+    (appEnv === "staging" || deployLooksLikeStagingWeb) &&
     resolvedApiUrl &&
     resolvedApiUrl.includes("audafact-api.david-g-cortinas.workers.dev") &&
     !resolvedApiUrl.includes("audafact-api-staging")
   ) {
-    resolvedApiUrl = envConfig.apiUrl;
+    resolvedApiUrl = stagingWorkerApiBaked;
   }
   // Worker hosts use /api/* — match runtime normalizeApiBaseUrl in src/config/api.ts
   if (

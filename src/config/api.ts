@@ -54,24 +54,24 @@ export function shouldUseStagingApiBase(): boolean {
   return isStagingBrowserHost();
 }
 
-/** Dev server proxy path; must match vite.config.js `proxy` key (legacy; prefer direct worker). */
+/** Dev server proxy path; must match vite.config.js `proxy` key. */
 const DEV_STAGING_PROXY_PREFIX = "/api/staging";
 
-/** Local wrangler dev default — browser calls this directly so we do not depend on the Vite proxy. */
+/**
+ * Local wrangler dev (Node / non-browser). The browser always uses the Vite proxy
+ * (same origin) so HTTPS dev + HTTP :8787 never hits mixed-content blocking.
+ */
 const DEFAULT_DEV_WORKER_API_BASE = "http://localhost:8787/api";
 
-const isLoopbackHostname = (h: string): boolean =>
-  h === "localhost" || h === "127.0.0.1";
-
 /**
- * When .env pins the API to localhost but the page is opened from LAN or *.local
- * (phone, another machine), use the current page origin so requests hit the dev machine.
+ * In Vite dev/staging mode, call the worker through the dev server proxy so:
+ * - https://localhost:5173 can reach the API without mixed content
+ * - phones on LAN use the laptop's origin, not http://localhost:8787 on the device
  */
-const devApiBaseFromBrowserOrigin = (): string | undefined => {
+const devBrowserApiBaseViaViteProxy = (): string | undefined => {
   if (import.meta.env.PROD || typeof window === "undefined") return undefined;
   const origin = window.location?.origin;
-  const host = window.location?.hostname;
-  if (!origin || !host || isLoopbackHostname(host)) return undefined;
+  if (!origin) return undefined;
   return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
 };
 
@@ -93,19 +93,30 @@ const getBaseUrl = () => {
     return normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
   }
 
+  const mode = import.meta.env.MODE;
+
+  // Browser dev: same-origin proxy must win over VITE_API_BASE_URL=http://localhost:8787/api
+  // so .env never reintroduces mixed content or phone-localhost mistakes.
+  if (
+    typeof window !== "undefined" &&
+    !import.meta.env.PROD &&
+    (mode === "development" || mode === "staging")
+  ) {
+    const proxied = devBrowserApiBaseViaViteProxy();
+    if (proxied) return proxied;
+  }
+
   if (fromEnv) {
     if (
       !import.meta.env.PROD &&
       fromEnv.includes(DEV_STAGING_PROXY_PREFIX) &&
       /\blocalhost\b|127\.0\.0\.1/.test(fromEnv)
     ) {
-      const lan = devApiBaseFromBrowserOrigin();
-      if (lan) return lan;
+      const proxied = devBrowserApiBaseViaViteProxy();
+      if (proxied) return proxied;
     }
     return normalizeApiBaseUrl(fromEnv);
   }
-
-  const mode = import.meta.env.MODE;
 
   // Only the Vite dev server may use the proxy; never localhost in PROD builds
   // (including vite build --mode staging, where MODE is staging but PROD is true).
@@ -113,8 +124,6 @@ const getBaseUrl = () => {
     !import.meta.env.PROD &&
     (mode === "development" || mode === "staging")
   ) {
-    const lan = devApiBaseFromBrowserOrigin();
-    if (lan) return lan;
     const devWorker =
       (import.meta.env.VITE_DEV_WORKER_API_URL as string | undefined)?.trim() ||
       DEFAULT_DEV_WORKER_API_BASE;
