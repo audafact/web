@@ -38,4 +38,11 @@ describe("api base staging detection", () => {
     (window.location as any).hostname = "app.staging.audafact.com";
     expect(shouldUseStagingApiBase()).toBe(true);
   });
+
+  it("treats apex staging.audafact.com as staging host", () => {
+    (import.meta.env as any).VITE_APP_ENV = "production";
+    (window.location as any).hostname = "staging.audafact.com";
+    expect(isStagingBrowserHost()).toBe(true);
+    expect(shouldUseStagingApiBase()).toBe(true);
+  });
 });

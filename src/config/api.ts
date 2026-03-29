@@ -31,17 +31,16 @@ export function normalizeApiBaseUrl(raw: string): string {
  * True when the page is served from a staging web host.
  * Cloudflare Pages often builds with NODE_ENV=production and no VITE_APP_ENV=staging;
  * host detection is the reliable signal for which worker to call.
+ *
+ * Uses strict regex so we match apex `staging.audafact.com` and `*.staging.audafact.com`
+ * without false positives (e.g. a label ending in "notstaging").
  */
 export function isStagingBrowserHost(): boolean {
   if (typeof window === "undefined") return false;
   const h = window.location.hostname.toLowerCase();
-  return (
-    h === "staging.audafact.com" ||
-    h.endsWith(".staging.audafact.com") ||
-    /** Apex Pages host is `project.pages.dev`, not `*.project.pages.dev`. */
-    h === "audafact-web-staging.pages.dev" ||
-    h.endsWith(".audafact-web-staging.pages.dev")
-  );
+  if (/(^|\.)staging\.audafact\.com$/.test(h)) return true;
+  if (/(^|\.)audafact-web-staging\.pages\.dev$/.test(h)) return true;
+  return false;
 }
 
 /**
@@ -49,6 +48,13 @@ export function isStagingBrowserHost(): boolean {
  * Relying on hostname alone misses apex `*.pages.dev` URLs and some preview hosts.
  */
 export function shouldUseStagingApiBase(): boolean {
+  if (
+    String(import.meta.env.VITE_USE_STAGING_API || "")
+      .toLowerCase()
+      .trim() === "true"
+  ) {
+    return true;
+  }
   const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
   if (appEnv === "staging") return true;
   return isStagingBrowserHost();
