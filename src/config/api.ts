@@ -38,8 +38,20 @@ export function isStagingBrowserHost(): boolean {
   return (
     h === "staging.audafact.com" ||
     h.endsWith(".staging.audafact.com") ||
+    /** Apex Pages host is `project.pages.dev`, not `*.project.pages.dev`. */
+    h === "audafact-web-staging.pages.dev" ||
     h.endsWith(".audafact-web-staging.pages.dev")
   );
+}
+
+/**
+ * Use staging Worker API when the bundle is built for staging or the page is on a staging host.
+ * Relying on hostname alone misses apex `*.pages.dev` URLs and some preview hosts.
+ */
+export function shouldUseStagingApiBase(): boolean {
+  const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
+  if (appEnv === "staging") return true;
+  return isStagingBrowserHost();
 }
 
 /** Dev server proxy path; must match vite.config.js `proxy` key (legacy; prefer direct worker). */
@@ -65,7 +77,6 @@ const devApiBaseFromBrowserOrigin = (): string | undefined => {
 
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
-  const appEnv = import.meta.env.VITE_APP_ENV as string | undefined;
 
   if (
     import.meta.env.PROD &&
@@ -75,16 +86,11 @@ const getBaseUrl = () => {
     fromEnv = undefined;
   }
 
-  if (isStagingBrowserHost()) {
+  if (shouldUseStagingApiBase()) {
     if (fromEnv && !isProductionWorkerApiUrl(fromEnv)) {
       return normalizeApiBaseUrl(fromEnv);
     }
     return normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
-  }
-
-  // Pages / CI sometimes set a single VITE_API_BASE_URL to prod; staging origin would hit CORS.
-  if (appEnv === "staging" && fromEnv && isProductionWorkerApiUrl(fromEnv)) {
-    fromEnv = undefined;
   }
 
   if (fromEnv) {
@@ -113,10 +119,6 @@ const getBaseUrl = () => {
       (import.meta.env.VITE_DEV_WORKER_API_URL as string | undefined)?.trim() ||
       DEFAULT_DEV_WORKER_API_BASE;
     return normalizeApiBaseUrl(devWorker);
-  }
-
-  if (appEnv === "staging") {
-    return normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
   }
 
   return PRODUCTION_WORKER_API_BASE;
