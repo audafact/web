@@ -172,6 +172,7 @@ const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
   // Drop baked loopback URLs unless we're actually on the Vite dev machine (localhost in the address bar).
+  // Hostname checks avoid serving baked http://localhost:5173/api/staging on real staging hosts (PNA/CORS).
   if (
     import.meta.env.PROD &&
     fromEnv &&
