@@ -81,6 +81,19 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
   return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
 };
 
+/** True on real deploys (Pages / audafact.com). Local dev + LAN IPs stay false so .env localhost can still apply. */
+function isDeployedAudafactOrPagesHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname.toLowerCase();
+  return h.includes("audafact.com") || h.includes("pages.dev");
+}
+
+function isPageLocalhostLoopback(): boolean {
+  if (typeof window === "undefined") return false;
+  const hn = window.location.hostname.toLowerCase();
+  return hn === "localhost" || hn === "127.0.0.1" || hn.endsWith(".localhost");
+}
+
 // #region agent log
 /** Debug: trace which branch selected the Worker API base (staging CORS investigation). */
 function logApiBaseResolve(branch: string, result: string): void {
@@ -142,12 +155,17 @@ function logApiBaseResolve(branch: string, result: string): void {
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
+  // Drop baked dev URLs (e.g. http://localhost:5173/api/staging) on real deploys. Some CI builds set
+  // PROD false or leak .env; without this, analytics/sign-file target loopback → blocked (not fixable by CORS).
   if (
-    import.meta.env.PROD &&
     fromEnv &&
     (fromEnv.includes("localhost") || fromEnv.includes("127.0.0.1"))
   ) {
-    fromEnv = undefined;
+    if (isDeployedAudafactOrPagesHost()) {
+      fromEnv = undefined;
+    } else if (import.meta.env.PROD && !isPageLocalhostLoopback()) {
+      fromEnv = undefined;
+    }
   }
 
   // Browser hostname wins over baked VITE_API_BASE_URL (prod worker) for staging hosts — avoids CORS
