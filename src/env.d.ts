@@ -30,6 +30,8 @@ interface ImportMetaEnv {
   readonly VITE_KEEP_CONSOLE?: string;
   /** When "true", log [Audafact API base] and sign-file/stream URL resolution in the browser. */
   readonly VITE_DEBUG_API_BASE?: string;
+  /** Optional; surfaced in API base debug payload if set in CI. */
+  readonly VITE_USE_STAGING_API?: string;
   readonly MODE: string;
   readonly PROD: boolean;
   readonly DEV: boolean;

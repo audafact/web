@@ -80,6 +80,24 @@ const DEV_STAGING_PROXY_PREFIX = "/api/staging";
  */
 const DEFAULT_DEV_WORKER_API_BASE = "http://localhost:8787/api";
 
+function isPageLocalhostLoopback(): boolean {
+  if (typeof window === "undefined") return false;
+  const hn = window.location.hostname.toLowerCase();
+  return hn === "localhost" || hn === "127.0.0.1" || hn.endsWith(".localhost");
+}
+
+/**
+ * Only a real browser session on the Vite dev host may use loopback in VITE_API_BASE_URL.
+ * `vite build --mode staging` still sets PROD=true; hostname checks avoid baked localhost on real staging.
+ */
+function isLocalDevBrowserWhereLoopbackEnvIsValid(): boolean {
+  if (typeof window === "undefined") return false;
+  if (import.meta.env.PROD) return false;
+  const mode = import.meta.env.MODE;
+  if (mode !== "development" && mode !== "staging") return false;
+  return isPageLocalhostLoopback();
+}
+
 /**
  * In Vite dev/staging mode, call the worker through the dev server proxy so:
  * - https://localhost:5173 can reach the API without mixed content
@@ -91,6 +109,46 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
   if (!origin) return undefined;
   return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
 };
+
+/** Persist last resolution for staging debugging; console only if VITE_KEEP_CONSOLE (see vite.config.js). */
+function logApiBaseResolve(branch: string, result: string): void {
+  if (typeof window === "undefined") return;
+  const h = window.location.hostname.toLowerCase();
+  const payload = {
+    branch,
+    resultPrefix: result.slice(0, 100),
+    host: h,
+    pathname: window.location.pathname,
+    viteUseStaging: String(import.meta.env.VITE_USE_STAGING_API ?? ""),
+    viteAppEnv: String(import.meta.env.VITE_APP_ENV ?? ""),
+    viteApiBasePrefix: String(import.meta.env.VITE_API_BASE_URL ?? "").slice(
+      0,
+      80
+    ),
+    mode: String(import.meta.env.MODE),
+    prod: import.meta.env.PROD,
+    isStagingHost: isStagingBrowserHost(),
+    shouldUseStaging: shouldUseStagingApiBase(),
+    regexStagingAudafact: /(^|\.)staging\.audafact\.com$/.test(h),
+    regexStagingPages: /(^|\.)audafact-web-staging\.pages\.dev$/.test(h),
+    t: Date.now(),
+  };
+  try {
+    (window as Window & { __AUDAFACT_API_BASE_DEBUG__?: typeof payload }).__AUDAFACT_API_BASE_DEBUG__ =
+      payload;
+    sessionStorage.setItem("audafact_api_base_debug", JSON.stringify(payload));
+  } catch {
+    /* private mode / quota */
+  }
+  logApiBase("resolve", { ...payload, result });
+  if (
+    String(import.meta.env.VITE_KEEP_CONSOLE || "")
+      .toLowerCase()
+      .trim() === "true"
+  ) {
+    console.info("[Audafact API base]", payload);
+  }
+}
 
 const getBaseUrl = () => {
   const mode = import.meta.env.MODE;
@@ -113,13 +171,42 @@ const getBaseUrl = () => {
 
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
+  // Drop baked loopback URLs unless we're actually on the Vite dev machine (localhost in the address bar).
   if (
     import.meta.env.PROD &&
     fromEnv &&
     (fromEnv.includes("localhost") || fromEnv.includes("127.0.0.1"))
   ) {
-    logApiBase("strip localhost from baked URL in PROD", { before: fromEnv });
-    fromEnv = undefined;
+    if (!isLocalDevBrowserWhereLoopbackEnvIsValid()) {
+      logApiBase("strip localhost from baked URL in PROD", { before: fromEnv });
+      fromEnv = undefined;
+    }
+  }
+
+  // Browser hostname wins over baked VITE_API_BASE_URL (prod worker) for staging hosts — avoids CORS
+  // when Cloudflare bakes prod URL or an old chunk mis-orders checks.
+  if (typeof window !== "undefined") {
+    const h = window.location.hostname.toLowerCase();
+    const onStagingAudafact =
+      h === "staging.audafact.com" || h.endsWith(".staging.audafact.com");
+    const onStagingPages =
+      h === "audafact-web-staging.pages.dev" ||
+      h.endsWith(".audafact-web-staging.pages.dev");
+    if (onStagingAudafact || onStagingPages) {
+      if (
+        fromEnv &&
+        !isProductionWorkerApiUrl(fromEnv) &&
+        !fromEnv.includes("localhost") &&
+        !fromEnv.includes("127.0.0.1")
+      ) {
+        const out = normalizeApiBaseUrl(fromEnv);
+        logApiBaseResolve("staging-host-browser-non-prod-env", out);
+        return out;
+      }
+      const out = normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
+      logApiBaseResolve("staging-host-browser-default", out);
+      return out;
+    }
   }
 
   if (shouldUseStagingApiBase()) {
@@ -129,6 +216,7 @@ const getBaseUrl = () => {
         fromEnv,
         out,
       });
+      logApiBaseResolve("shouldUseStaging-custom-env", out);
       return out;
     }
     const out = normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
@@ -136,6 +224,7 @@ const getBaseUrl = () => {
       fromEnv_was: fromEnv,
       out,
     });
+    logApiBaseResolve("shouldUseStaging-default-staging-worker", out);
     return out;
   }
 
@@ -149,6 +238,7 @@ const getBaseUrl = () => {
     const proxied = devBrowserApiBaseViaViteProxy();
     if (proxied) {
       logApiBase("return dev browser Vite proxy", { proxied, mode });
+      logApiBaseResolve("dev-vite-proxy", proxied);
       return proxied;
     }
   }
@@ -162,11 +252,13 @@ const getBaseUrl = () => {
       const proxied = devBrowserApiBaseViaViteProxy();
       if (proxied) {
         logApiBase("return fromEnv→proxy rewrite", { proxied });
+        logApiBaseResolve("fromEnv-proxy-rewrite", proxied);
         return proxied;
       }
     }
     const out = normalizeApiBaseUrl(fromEnv);
     logApiBase("return baked VITE_API_BASE_URL", { fromEnv, out });
+    logApiBaseResolve("baked-vite-api-base-url", out);
     return out;
   }
 
@@ -181,6 +273,7 @@ const getBaseUrl = () => {
       devWorker,
       out,
     });
+    logApiBaseResolve("dev-default-worker", out);
     return out;
   }
 
@@ -189,6 +282,7 @@ const getBaseUrl = () => {
       "shouldUseStagingApiBase was false and no earlier branch matched — check hostname vs isStagingBrowserHost()",
     PRODUCTION_WORKER_API_BASE,
   });
+  logApiBaseResolve("production-fallback", PRODUCTION_WORKER_API_BASE);
   return PRODUCTION_WORKER_API_BASE;
 };
 
@@ -206,7 +300,7 @@ const API_TIMEOUTS = {
   REQUEST: 10000,
 } as const;
 
-/** Resolve worker API base at read time so browser hostname / env always match the live page. */
+/** Resolve worker API base at read time so browser hostname / session always match the live page. */
 export const API_CONFIG = {
   get BASE_URL(): string {
     return getBaseUrl();
