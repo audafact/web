@@ -81,17 +81,23 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
   return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
 };
 
-/** True on real deploys (Pages / audafact.com). Local dev + LAN IPs stay false so .env localhost can still apply. */
-function isDeployedAudafactOrPagesHost(): boolean {
-  if (typeof window === "undefined") return false;
-  const h = window.location.hostname.toLowerCase();
-  return h.includes("audafact.com") || h.includes("pages.dev");
-}
-
 function isPageLocalhostLoopback(): boolean {
   if (typeof window === "undefined") return false;
   const hn = window.location.hostname.toLowerCase();
   return hn === "localhost" || hn === "127.0.0.1" || hn.endsWith(".localhost");
+}
+
+/**
+ * Only a real browser session on the Vite dev host may use loopback in VITE_API_BASE_URL.
+ * `vite build --mode staging` sets PROD=false; without this, baked http://localhost:5173/api/staging
+ * survives SSR or mis-ordered checks and is returned for *.staging.audafact.com (Private Network Access block).
+ */
+function isLocalDevBrowserWhereLoopbackEnvIsValid(): boolean {
+  if (typeof window === "undefined") return false;
+  if (import.meta.env.PROD) return false;
+  const mode = import.meta.env.MODE;
+  if (mode !== "development" && mode !== "staging") return false;
+  return isPageLocalhostLoopback();
 }
 
 // #region agent log
@@ -134,36 +140,20 @@ function logApiBaseResolve(branch: string, result: string): void {
   ) {
     console.info("[Audafact API base]", payload);
   }
-  fetch("http://127.0.0.1:7242/ingest/10e4759a-d96b-49b3-bfb4-de256f0de7a3", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "fa003a",
-    },
-    body: JSON.stringify({
-      sessionId: "fa003a",
-      timestamp: Date.now(),
-      location: "api.ts:getBaseUrl",
-      message: "api_base_resolve",
-      hypothesisId: "H1-H5",
-      data: payload,
-    }),
-  }).catch(() => {});
 }
 // #endregion
 
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
-  // Drop baked dev URLs (e.g. http://localhost:5173/api/staging) on real deploys. Some CI builds set
-  // PROD false or leak .env; without this, analytics/sign-file target loopback → blocked (not fixable by CORS).
+  // Drop baked loopback URLs unless we're actually on the Vite dev machine (localhost in the address bar).
+  // Staging builds often use `vite build --mode staging` → PROD=false; hostname-based checks alone miss SSR
+  // or mis-ordered branches and can return http://localhost:5173/api/staging on app.staging (PNA/CORS).
   if (
     fromEnv &&
     (fromEnv.includes("localhost") || fromEnv.includes("127.0.0.1"))
   ) {
-    if (isDeployedAudafactOrPagesHost()) {
-      fromEnv = undefined;
-    } else if (import.meta.env.PROD && !isPageLocalhostLoopback()) {
+    if (!isLocalDevBrowserWhereLoopbackEnvIsValid()) {
       fromEnv = undefined;
     }
   }
@@ -178,7 +168,12 @@ const getBaseUrl = () => {
       h === "audafact-web-staging.pages.dev" ||
       h.endsWith(".audafact-web-staging.pages.dev");
     if (onStagingAudafact || onStagingPages) {
-      if (fromEnv && !isProductionWorkerApiUrl(fromEnv)) {
+      if (
+        fromEnv &&
+        !isProductionWorkerApiUrl(fromEnv) &&
+        !fromEnv.includes("localhost") &&
+        !fromEnv.includes("127.0.0.1")
+      ) {
         const out = normalizeApiBaseUrl(fromEnv);
         logApiBaseResolve("staging-host-browser-non-prod-env", out);
         return out;

@@ -92,14 +92,17 @@ export default defineConfig(({ mode }) => {
     cfBranch === "develop" ||
     cfBranch === "staging";
 
-  // Never bake localhost API base for deployed envs (local .env / Pages env mistakes)
+  // Never bake localhost API base for deployed envs (local .env / Pages env mistakes).
+  // If VITE_APP_ENV=development is set by mistake on Cloudflare Pages, still strip loopback.
+  const isCloudflarePagesBuild = process.env.CF_PAGES === "1";
   if (
-    appEnv !== "development" &&
     resolvedApiUrl &&
     (resolvedApiUrl.includes("localhost") ||
       resolvedApiUrl.includes("127.0.0.1"))
   ) {
-    resolvedApiUrl = envConfig.apiUrl;
+    if (appEnv !== "development" || isCloudflarePagesBuild) {
+      resolvedApiUrl = envConfig.apiUrl;
+    }
   }
   // Cloudflare Pages often sets one VITE_API_BASE_URL for all branches → prod worker URL baked while the
   // site is served from staging hosts = CORS failure. CF_PAGES_URL detects staging deployments even when
