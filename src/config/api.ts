@@ -45,20 +45,25 @@ export function normalizeApiBaseUrl(raw: string): string {
 }
 
 /**
+ * Apex + subdomains for staging web + Pages preview. Regex avoids edge cases where
+ * `endsWith(".staging.audafact.com")` misses the apex host `staging.audafact.com`.
+ */
+function isStagingDeploymentHostname(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  return (
+    /(^|\.)staging\.audafact\.com$/.test(h) ||
+    /(^|\.)audafact-web-staging\.pages\.dev$/.test(h)
+  );
+}
+
+/**
  * True when the page is served from a staging web host.
  * Cloudflare Pages often builds with NODE_ENV=production and no VITE_APP_ENV=staging;
  * host detection is the reliable signal for which worker to call.
  */
 export function isStagingBrowserHost(): boolean {
   if (typeof window === "undefined") return false;
-  const h = window.location.hostname.toLowerCase();
-  return (
-    h === "staging.audafact.com" ||
-    h.endsWith(".staging.audafact.com") ||
-    /** Apex Pages host is `project.pages.dev`, not `*.project.pages.dev`. */
-    h === "audafact-web-staging.pages.dev" ||
-    h.endsWith(".audafact-web-staging.pages.dev")
-  );
+  return isStagingDeploymentHostname(window.location.hostname);
 }
 
 /**
@@ -171,6 +176,24 @@ const getBaseUrl = () => {
 
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
+  // Real staging tab: never keep prod worker, loopback, or Vite dev proxy URL from CI/.env mistakes.
+  // Do not rely only on import.meta.env.PROD (some tooling sets it unexpectedly).
+  if (typeof window !== "undefined") {
+    const h = window.location.hostname;
+    if (isStagingDeploymentHostname(h) && fromEnv) {
+      const incompatible =
+        isProductionWorkerApiUrl(fromEnv) ||
+        fromEnv.includes("localhost") ||
+        fromEnv.includes("127.0.0.1");
+      if (incompatible) {
+        logApiBase("staging host: clear baked prod/loopback URL", {
+          before: fromEnv,
+        });
+        fromEnv = undefined;
+      }
+    }
+  }
+
   // Drop baked loopback URLs unless we're actually on the Vite dev machine (localhost in the address bar).
   // Hostname checks avoid serving baked http://localhost:5173/api/staging on real staging hosts (PNA/CORS).
   if (
@@ -188,12 +211,7 @@ const getBaseUrl = () => {
   // when Cloudflare bakes prod URL or an old chunk mis-orders checks.
   if (typeof window !== "undefined") {
     const h = window.location.hostname.toLowerCase();
-    const onStagingAudafact =
-      h === "staging.audafact.com" || h.endsWith(".staging.audafact.com");
-    const onStagingPages =
-      h === "audafact-web-staging.pages.dev" ||
-      h.endsWith(".audafact-web-staging.pages.dev");
-    if (onStagingAudafact || onStagingPages) {
+    if (isStagingDeploymentHostname(h)) {
       if (
         fromEnv &&
         !isProductionWorkerApiUrl(fromEnv) &&

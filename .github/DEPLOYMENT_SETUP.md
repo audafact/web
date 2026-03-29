@@ -59,6 +59,26 @@ project-root/
 
 Each directory has its own GitHub Actions workflows and deployment process.
 
+## Staging-only: API base debug logs in the browser
+
+Staging is built in **GitHub Actions** (`deploy-frontend-staging.yml`), not by Cloudflare’s own build pipeline. **`import.meta.env.VITE_*` values must be present at that `npm run build:staging` step**, so they belong in the workflow (or in GitHub **Variables** referenced by the workflow).
+
+### Toggle without editing YAML
+
+1. Open the **`web`** GitHub repo → **Settings** → **Secrets and variables** → **Actions**.
+2. Open the **Variables** tab (not Secrets).
+3. Add or update:
+   - **`VITE_DEBUG_API_BASE`** = `true` — enables `[Audafact API base]` / `[Audafact API]` `console.warn` traces and, together with `vite.config.js`, disables Terser `drop_console` for that build.
+   - **`VITE_KEEP_CONSOLE`** = `true` — keeps **all** `console.*` in the minified bundle without turning on the verbose API trace (you can set both to `true` while investigating).
+
+4. Run a new deploy: push to `develop` / `staging`, or **Actions** → **Deploy Frontend to Staging** → **Run workflow**.
+
+5. After debugging, set those variables to **`false`** or **delete** them, then redeploy — otherwise staging ships extra console noise and larger effective bundles.
+
+**Note:** Cloudflare Pages **project** → **Settings** → **Environment variables** apply when **Cloudflare builds** your site. This repo uploads a **pre-built `dist/`** from Actions, so those dashboard vars are **not** used for the build unless you change the pipeline.
+
+---
+
 ## Required GitHub Secrets
 
 Both the frontend and worker repositories need the following secrets:
