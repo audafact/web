@@ -81,6 +81,48 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
   return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
 };
 
+// #region agent log
+/** Debug: trace which branch selected the Worker API base (staging CORS investigation). */
+function logApiBaseResolve(branch: string, result: string): void {
+  const h =
+    typeof window !== "undefined"
+      ? window.location.hostname.toLowerCase()
+      : "(no-window)";
+  fetch("http://127.0.0.1:7242/ingest/10e4759a-d96b-49b3-bfb4-de256f0de7a3", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "fa003a",
+    },
+    body: JSON.stringify({
+      sessionId: "fa003a",
+      timestamp: Date.now(),
+      location: "api.ts:getBaseUrl",
+      message: "api_base_resolve",
+      hypothesisId: "H1-H5",
+      data: {
+        branch,
+        resultPrefix: result.slice(0, 100),
+        host: h,
+        pathname:
+          typeof window !== "undefined" ? window.location.pathname : "",
+        viteUseStaging: String(import.meta.env.VITE_USE_STAGING_API ?? ""),
+        viteAppEnv: String(import.meta.env.VITE_APP_ENV ?? ""),
+        viteApiBasePrefix: String(
+          import.meta.env.VITE_API_BASE_URL ?? ""
+        ).slice(0, 80),
+        mode: String(import.meta.env.MODE),
+        prod: import.meta.env.PROD,
+        isStagingHost: isStagingBrowserHost(),
+        shouldUseStaging: shouldUseStagingApiBase(),
+        regexStagingAudafact: /(^|\.)staging\.audafact\.com$/.test(h),
+        regexStagingPages: /(^|\.)audafact-web-staging\.pages\.dev$/.test(h),
+      },
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const getBaseUrl = () => {
   let fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
@@ -94,9 +136,17 @@ const getBaseUrl = () => {
 
   if (shouldUseStagingApiBase()) {
     if (fromEnv && !isProductionWorkerApiUrl(fromEnv)) {
-      return normalizeApiBaseUrl(fromEnv);
+      const out = normalizeApiBaseUrl(fromEnv);
+      // #region agent log
+      logApiBaseResolve("staging-non-prod-from-env", out);
+      // #endregion
+      return out;
     }
-    return normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
+    const out = normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
+    // #region agent log
+    logApiBaseResolve("staging-default-worker", out);
+    // #endregion
+    return out;
   }
 
   const mode = import.meta.env.MODE;
@@ -109,7 +159,12 @@ const getBaseUrl = () => {
     (mode === "development" || mode === "staging")
   ) {
     const proxied = devBrowserApiBaseViaViteProxy();
-    if (proxied) return proxied;
+    if (proxied) {
+      // #region agent log
+      logApiBaseResolve("dev-vite-proxy", proxied);
+      // #endregion
+      return proxied;
+    }
   }
 
   if (fromEnv) {
@@ -119,9 +174,18 @@ const getBaseUrl = () => {
       /\blocalhost\b|127\.0\.0\.1/.test(fromEnv)
     ) {
       const proxied = devBrowserApiBaseViaViteProxy();
-      if (proxied) return proxied;
+      if (proxied) {
+        // #region agent log
+        logApiBaseResolve("dev-vite-proxy-from-env", proxied);
+        // #endregion
+        return proxied;
+      }
     }
-    return normalizeApiBaseUrl(fromEnv);
+    const out = normalizeApiBaseUrl(fromEnv);
+    // #region agent log
+    logApiBaseResolve("baked-from-env-fallback", out);
+    // #endregion
+    return out;
   }
 
   // Only the Vite dev server may use the proxy; never localhost in PROD builds
@@ -133,9 +197,16 @@ const getBaseUrl = () => {
     const devWorker =
       (import.meta.env.VITE_DEV_WORKER_API_URL as string | undefined)?.trim() ||
       DEFAULT_DEV_WORKER_API_BASE;
-    return normalizeApiBaseUrl(devWorker);
+    const out = normalizeApiBaseUrl(devWorker);
+    // #region agent log
+    logApiBaseResolve("dev-default-worker", out);
+    // #endregion
+    return out;
   }
 
+  // #region agent log
+  logApiBaseResolve("production-worker-fallback", PRODUCTION_WORKER_API_BASE);
+  // #endregion
   return PRODUCTION_WORKER_API_BASE;
 };
 
