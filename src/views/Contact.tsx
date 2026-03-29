@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
-import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
-import emailjs from '@emailjs/browser';
+import { useEffect, useRef, useState } from 'react';
+import { submitContactForm } from '../services/feedbackSubmissionService';
 
 const Contact = () => {
-  const { isMobile } = useResponsiveDesign();
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -14,6 +14,27 @@ const Contact = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!turnstileRef.current) return;
+    const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+    if (!turnstileSiteKey) return;
+
+    turnstileRef.current.innerHTML = '';
+    const widgetId = window.turnstile?.render(turnstileRef.current, {
+      sitekey: turnstileSiteKey,
+      callback: (token: string) => setCaptchaToken(token),
+      'error-callback': () => setCaptchaToken(null),
+      'expired-callback': () => setCaptchaToken(null),
+      'timeout-callback': () => setCaptchaToken(null),
+    });
+
+    return () => {
+      if (widgetId && window.turnstile) {
+        window.turnstile.remove(widgetId);
+      }
+    };
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -25,30 +46,44 @@ const Contact = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!captchaToken) {
+      alert('Please complete the security verification.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
     try {
-      // EmailJS configuration using environment variables
-      const result = await emailjs.send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        {
-          from_name: formData.name,
-          from_email: formData.email,
-          subject: formData.subject,
-          message: formData.message,
-          inquiry_type: formData.inquiryType,
-          to_email: 'hello@audafact.com'
-        },
-        import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-      );
+      const result = await submitContactForm({
+        name: formData.name,
+        email: formData.email,
+        subject: formData.subject,
+        message: formData.message,
+        inquiryType: formData.inquiryType,
+        turnstileToken: captchaToken,
+      });
 
-      console.log('Email sent successfully:', result.text);
-      setSubmitStatus('success');
-      setFormData({ name: '', email: '', subject: '', message: '', inquiryType: 'general' });
+      if (result.ok) {
+        setSubmitStatus('success');
+        setFormData({ name: '', email: '', subject: '', message: '', inquiryType: 'general' });
+        setCaptchaToken(null);
+        if (turnstileRef.current && import.meta.env.VITE_TURNSTILE_SITE_KEY) {
+          turnstileRef.current.innerHTML = '';
+          window.turnstile?.render(turnstileRef.current, {
+            sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+            callback: (token: string) => setCaptchaToken(token),
+            'error-callback': () => setCaptchaToken(null),
+            'expired-callback': () => setCaptchaToken(null),
+            'timeout-callback': () => setCaptchaToken(null),
+          });
+        }
+      } else {
+        console.error('Contact submission failed:', result.error);
+        setSubmitStatus('error');
+      }
     } catch (error) {
-      console.error('Failed to send email:', error);
+      console.error('Failed to send message:', error);
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -93,7 +128,7 @@ const Contact = () => {
               </h1>
               <p className="text-slate-300 text-lg leading-relaxed">
                 Have questions about Audafact? Want to provide feedback on the beta? 
-                We'd love to hear from you. Whether you're an artist, producer, or DJ interested in the future of creator collaboration, we're here to help.
+                We&apos;d love to hear from you. Whether you&apos;re an artist, producer, or DJ interested in the future of creator collaboration, we&apos;re here to help.
               </p>
             </div>
 
@@ -107,8 +142,15 @@ const Contact = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-2">Email</h3>
                   <p className="text-slate-300">
+                    General:{' '}
                     <a href="mailto:hello@audafact.com" className="text-audafact-accent-cyan hover:text-audafact-accent-cyan transition-colors duration-200">
                       hello@audafact.com
+                    </a>
+                  </p>
+                  <p className="text-slate-300 mt-2">
+                    Pro priority line:{' '}
+                    <a href="mailto:david@audafact.com" className="text-audafact-accent-cyan hover:text-audafact-accent-cyan transition-colors duration-200">
+                      david@audafact.com
                     </a>
                   </p>
                 </div>
@@ -123,7 +165,8 @@ const Contact = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-2">Response Time</h3>
                   <p className="text-slate-300">
-                    We typically respond within 24-48 hours during business days.
+                    We typically respond within 24-48 hours during business days for general inquiries.
+                    Pro members using the priority channel get an acknowledgment target of 24 hours.
                   </p>
                 </div>
               </div>
@@ -158,8 +201,8 @@ const Contact = () => {
                 <div>
               <h3 className="text-lg font-semibold text-white mb-2">Shape the Future of Music Collaboration</h3>
               <p className="text-slate-300 text-sm leading-relaxed">
-                <strong className="text-audafact-accent-cyan">Be part of the next phase.</strong> We're working toward tools that will let artists and producers connect directly, creating new ways to collaborate and share revenue without traditional gatekeepers. 
-                Use the contact form and select "Music Contribution" to be among the first artists on our platform.
+                <strong className="text-audafact-accent-cyan">Be part of the next phase.</strong> We&apos;re working toward tools that will let artists and producers connect directly, creating new ways to collaborate and share revenue without traditional gatekeepers. 
+                Use the contact form and select &quot;Music Contribution&quot; to be among the first artists on our platform.
               </p>
                 </div>
               </div>
@@ -174,7 +217,7 @@ const Contact = () => {
               <div className="text-center py-8">
                 <div className="text-green-400 text-6xl mb-4">✓</div>
                 <p className="text-white text-lg">Thanks for reaching out!</p>
-                <p className="text-slate-300 mt-2">We'll get back to you soon.</p>
+                <p className="text-slate-300 mt-2">We&apos;ll get back to you soon.</p>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -262,9 +305,13 @@ const Contact = () => {
                   />
                 </div>
 
+                <div className="flex justify-center">
+                  <div ref={turnstileRef} />
+                </div>
+
                 {submitStatus === 'error' && (
                   <div className="text-red-400 text-sm text-center">
-                    Something went wrong. Please try again or email us directly.
+                    Something went wrong. Please try again or email hello@audafact.com directly.
                   </div>
                 )}
 

@@ -101,6 +101,7 @@ const Studio = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
   const [showEarlyCreatorModal, setShowEarlyCreatorModal] = useState<boolean>(false);
   const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3446,11 +3447,14 @@ const Studio = () => {
           <HelpButton
             onStartTutorial={onboarding.startOnboarding}
             onShowHelp={() => setShowHelpModal(true)}
+            onShowFeedback={() => setShowFeedbackModal(true)}
             hideTutorial={false}
           />
           <HelpModal
             isOpen={showHelpModal}
             onClose={() => setShowHelpModal(false)}
+            feedbackOpen={showFeedbackModal}
+            onFeedbackOpenChange={setShowFeedbackModal}
           />
         </>
       )}
@@ -3476,11 +3480,14 @@ const Studio = () => {
           <HelpButton
             onStartTutorial={onboarding.startOnboarding}
             onShowHelp={() => setShowHelpModal(true)}
+            onShowFeedback={() => setShowFeedbackModal(true)}
             hideTutorial={false}
           />
           <HelpModal
             isOpen={showHelpModal}
             onClose={() => setShowHelpModal(false)}
+            feedbackOpen={showFeedbackModal}
+            onFeedbackOpenChange={setShowFeedbackModal}
           />
         </>
       )}
@@ -3577,11 +3584,14 @@ const Studio = () => {
         <HelpButton
           onStartTutorial={onboarding.startOnboarding}
           onShowHelp={() => setShowHelpModal(true)}
+          onShowFeedback={() => setShowFeedbackModal(true)}
           hideTutorial={false}
         />
         <HelpModal
           isOpen={showHelpModal}
           onClose={() => setShowHelpModal(false)}
+          feedbackOpen={showFeedbackModal}
+          onFeedbackOpenChange={setShowFeedbackModal}
         />
         
         <div 
@@ -3932,11 +3942,14 @@ const Studio = () => {
         <HelpButton
           onStartTutorial={onboarding.startOnboarding}
           onShowHelp={() => setShowHelpModal(true)}
+          onShowFeedback={() => setShowFeedbackModal(true)}
           hideTutorial={false}
         />
         <HelpModal
           isOpen={showHelpModal}
           onClose={() => setShowHelpModal(false)}
+          feedbackOpen={showFeedbackModal}
+          onFeedbackOpenChange={setShowFeedbackModal}
         />
         </>
       )}
@@ -4867,6 +4880,7 @@ const Studio = () => {
       <HelpButton
         onStartTutorial={onboarding.startOnboarding}
         onShowHelp={() => setShowHelpModal(true)}
+        onShowFeedback={() => setShowFeedbackModal(true)}
         hideTutorial={false}
       />
 
@@ -4874,6 +4888,8 @@ const Studio = () => {
       <HelpModal
         isOpen={showHelpModal}
         onClose={() => setShowHelpModal(false)}
+        feedbackOpen={showFeedbackModal}
+        onFeedbackOpenChange={setShowFeedbackModal}
       />
         </>
       )}

@@ -81,10 +81,10 @@ const NotFound = () => {
           <p className="text-slate-400 text-sm">
             Need help? Contact us at{' '}
             <a 
-              href="mailto:support@audafact.com" 
+              href="mailto:hello@audafact.com" 
               className="text-audafact-accent-cyan hover:text-audafact-accent-purple transition-colors duration-200"
             >
-              support@audafact.com
+              hello@audafact.com
             </a>
           </p>
         </div>
