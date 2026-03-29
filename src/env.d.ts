@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_APP_ENV: string;
   /** Baked by Vite for CF Pages; optional override in Cloudflare env. Forces staging Worker when true. */
   readonly VITE_USE_STAGING_API?: string;
+  /** When "true", production build keeps console.* (staging / VITE_KEEP_CONSOLE in vite). */
+  readonly VITE_KEEP_CONSOLE?: string;
   readonly VITE_AUDIO_SAMPLE_RATE: string;
   readonly VITE_MAX_UPLOAD_SIZE: string;
   readonly VITE_STRIPE_MODE: string;

@@ -122,6 +122,12 @@ export default defineConfig(({ mode }) => {
       : deployLooksLikeStagingWeb || appEnv === "staging"
         ? "true"
         : "false";
+
+  /** Staging builds keep console.* so API base debugging works (otherwise terser drop_console removes it). */
+  const keepConsoleInBuild =
+    deployLooksLikeStagingWeb ||
+    appEnv === "staging" ||
+    env.VITE_KEEP_CONSOLE === "true";
   // Worker hosts use /api/* — match runtime normalizeApiBaseUrl in src/config/api.ts
   if (
     resolvedApiUrl &&
@@ -149,6 +155,7 @@ export default defineConfig(({ mode }) => {
 
   const viteEnvVars = {
     VITE_USE_STAGING_API: viteUseStagingApi,
+    VITE_KEEP_CONSOLE: keepConsoleInBuild ? "true" : "false",
     VITE_API_BASE_URL: resolvedApiUrl,
     VITE_TURNSTILE_SITE_KEY:
       env.VITE_TURNSTILE_SITE_KEY || envConfig.turnstileSiteKey,
@@ -257,7 +264,7 @@ export default defineConfig(({ mode }) => {
       minify: "terser",
       terserOptions: {
         compress: {
-          drop_console: true,
+          drop_console: !keepConsoleInBuild,
           drop_debugger: true,
         },
       },

@@ -105,13 +105,21 @@ function logApiBaseResolve(branch: string, result: string): void {
     regexStagingPages: /(^|\.)audafact-web-staging\.pages\.dev$/.test(h),
     t: Date.now(),
   };
-  // Staging HTTPS cannot POST to localhost ingest (blocked); production build strips console.* (terser).
+  // Staging HTTPS cannot POST to localhost ingest (blocked). Console is stripped in prod unless
+  // Vite sets VITE_KEEP_CONSOLE=true (staging builds — see vite.config.js keepConsoleInBuild).
   try {
     (window as Window & { __AUDAFACT_API_BASE_DEBUG__?: typeof payload }).__AUDAFACT_API_BASE_DEBUG__ =
       payload;
     sessionStorage.setItem("audafact_api_base_debug", JSON.stringify(payload));
   } catch {
     /* private mode / quota */
+  }
+  if (
+    String(import.meta.env.VITE_KEEP_CONSOLE || "")
+      .toLowerCase()
+      .trim() === "true"
+  ) {
+    console.info("[Audafact API base]", payload);
   }
   fetch("http://127.0.0.1:7242/ingest/10e4759a-d96b-49b3-bfb4-de256f0de7a3", {
     method: "POST",
@@ -140,6 +148,27 @@ const getBaseUrl = () => {
     (fromEnv.includes("localhost") || fromEnv.includes("127.0.0.1"))
   ) {
     fromEnv = undefined;
+  }
+
+  // Browser hostname wins over baked VITE_API_BASE_URL (prod worker) for staging hosts — avoids CORS
+  // when Cloudflare bakes prod URL or shouldUseStagingApiBase is false in an old chunk.
+  if (typeof window !== "undefined") {
+    const h = window.location.hostname.toLowerCase();
+    const onStagingAudafact =
+      h === "staging.audafact.com" || h.endsWith(".staging.audafact.com");
+    const onStagingPages =
+      h === "audafact-web-staging.pages.dev" ||
+      h.endsWith(".audafact-web-staging.pages.dev");
+    if (onStagingAudafact || onStagingPages) {
+      if (fromEnv && !isProductionWorkerApiUrl(fromEnv)) {
+        const out = normalizeApiBaseUrl(fromEnv);
+        logApiBaseResolve("staging-host-browser-non-prod-env", out);
+        return out;
+      }
+      const out = normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
+      logApiBaseResolve("staging-host-browser-default", out);
+      return out;
+    }
   }
 
   if (shouldUseStagingApiBase()) {
