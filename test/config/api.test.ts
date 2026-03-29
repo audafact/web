@@ -23,7 +23,8 @@ describe("api base staging detection", () => {
   });
 
   it("still treats branch staging Pages hosts as staging", () => {
-    (window.location as any).hostname = "develop.audafact-web-staging.pages.dev";
+    (window.location as any).hostname =
+      "develop.audafact-web-staging.pages.dev";
     expect(isStagingBrowserHost()).toBe(true);
   });
 

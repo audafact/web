@@ -82,15 +82,25 @@ export default defineConfig(({ mode }) => {
     envConfig.name?.toLowerCase() ||
     "";
 
+  const envTruthy = (v) =>
+    String(v || "")
+      .toLowerCase()
+      .trim() === "true" ||
+    String(v || "").trim() === "1";
+  /** Preserve console.* in production bundles (Terser). Set in Cloudflare Pages or .env for staging debug. */
+  const keepConsole =
+    envTruthy(env.VITE_KEEP_CONSOLE) || envTruthy(process.env.VITE_KEEP_CONSOLE);
+  /** Verbose [Audafact API base] resolution logs in src/config/api.ts */
+  const debugApiBase =
+    envTruthy(env.VITE_DEBUG_API_BASE) || envTruthy(process.env.VITE_DEBUG_API_BASE);
+  const preserveConsoleInBuild = keepConsole || debugApiBase;
+
   let resolvedApiUrl = env.VITE_API_BASE_URL || envConfig.apiUrl;
 
   const cfPagesUrl = (process.env.CF_PAGES_URL || "").toLowerCase();
-  const cfBranch = (process.env.CF_PAGES_BRANCH || "").toLowerCase();
   const deployLooksLikeStagingWeb =
     cfPagesUrl.includes("staging.audafact.com") ||
-    cfPagesUrl.includes("audafact-web-staging.pages.dev") ||
-    cfBranch === "develop" ||
-    cfBranch === "staging";
+    cfPagesUrl.includes("audafact-web-staging.pages.dev");
 
   // Never bake localhost API base for deployed envs (local .env / Pages env mistakes).
   // If VITE_APP_ENV=development is set by mistake on Cloudflare Pages, still strip loopback.
@@ -117,20 +127,6 @@ export default defineConfig(({ mode }) => {
   ) {
     resolvedApiUrl = stagingWorkerApiBaked;
   }
-
-  const viteUseStagingApi =
-    typeof env.VITE_USE_STAGING_API === "string" &&
-    env.VITE_USE_STAGING_API.trim() !== ""
-      ? env.VITE_USE_STAGING_API.trim()
-      : deployLooksLikeStagingWeb || appEnv === "staging"
-        ? "true"
-        : "false";
-
-  /** Staging builds keep console.* so API base debugging works (otherwise terser drop_console removes it). */
-  const keepConsoleInBuild =
-    deployLooksLikeStagingWeb ||
-    appEnv === "staging" ||
-    env.VITE_KEEP_CONSOLE === "true";
   // Worker hosts use /api/* — match runtime normalizeApiBaseUrl in src/config/api.ts
   if (
     resolvedApiUrl &&
@@ -157,8 +153,6 @@ export default defineConfig(({ mode }) => {
   }
 
   const viteEnvVars = {
-    VITE_USE_STAGING_API: viteUseStagingApi,
-    VITE_KEEP_CONSOLE: keepConsoleInBuild ? "true" : "false",
     VITE_API_BASE_URL: resolvedApiUrl,
     VITE_TURNSTILE_SITE_KEY:
       env.VITE_TURNSTILE_SITE_KEY || envConfig.turnstileSiteKey,
@@ -220,6 +214,8 @@ export default defineConfig(({ mode }) => {
     VITE_CORS_ORIGINS:
       env.VITE_CORS_ORIGINS || JSON.stringify(envConfig.corsOrigins),
     VITE_AUTH_REDIRECT_URL: authRedirectUrl,
+    VITE_KEEP_CONSOLE: env.VITE_KEEP_CONSOLE || process.env.VITE_KEEP_CONSOLE || "",
+    VITE_DEBUG_API_BASE: env.VITE_DEBUG_API_BASE || process.env.VITE_DEBUG_API_BASE || "",
   };
 
   return {
@@ -267,8 +263,9 @@ export default defineConfig(({ mode }) => {
       minify: "terser",
       terserOptions: {
         compress: {
-          drop_console: !keepConsoleInBuild,
-          drop_debugger: true,
+          // Default: strip console in production. Set VITE_KEEP_CONSOLE or VITE_DEBUG_API_BASE=true in CI/Pages to retain logs.
+          drop_console: !preserveConsoleInBuild,
+          drop_debugger: !preserveConsoleInBuild,
         },
       },
       // Optimize chunk size
