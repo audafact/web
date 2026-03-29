@@ -51,6 +51,7 @@ const StudioDemo = () => {
   const [filterEnabled, setFilterEnabled] = useState<boolean>(false);
   const [expandedControls, setExpandedControls] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   // Debug logging function that updates UI
@@ -641,6 +642,7 @@ const StudioDemo = () => {
       <HelpButton
         onStartTutorial={handleStartTutorial}
         onShowHelp={handleShowHelp}
+        onShowFeedback={() => setShowFeedbackModal(true)}
         hideTutorial={true}
       />
 
@@ -648,6 +650,8 @@ const StudioDemo = () => {
       <HelpModal
         isOpen={showHelpModal}
         onClose={() => setShowHelpModal(false)}
+        feedbackOpen={showFeedbackModal}
+        onFeedbackOpenChange={setShowFeedbackModal}
       />
     </div>
   );

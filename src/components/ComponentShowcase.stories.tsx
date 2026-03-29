@@ -52,6 +52,7 @@ export const AllComponents: Story = {
               <HelpButton 
                 onStartTutorial={() => console.log('Tutorial started')}
                 onShowHelp={() => console.log('Help shown')}
+                onShowFeedback={() => console.log('Feedback opened')}
               />
               <p className="text-sm audafact-text-secondary">Click the help button in the bottom right corner</p>
             </div>
