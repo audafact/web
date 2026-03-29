@@ -84,10 +84,35 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
 // #region agent log
 /** Debug: trace which branch selected the Worker API base (staging CORS investigation). */
 function logApiBaseResolve(branch: string, result: string): void {
-  const h =
-    typeof window !== "undefined"
-      ? window.location.hostname.toLowerCase()
-      : "(no-window)";
+  if (typeof window === "undefined") return;
+  const h = window.location.hostname.toLowerCase();
+  const payload = {
+    branch,
+    resultPrefix: result.slice(0, 100),
+    host: h,
+    pathname: window.location.pathname,
+    viteUseStaging: String(import.meta.env.VITE_USE_STAGING_API ?? ""),
+    viteAppEnv: String(import.meta.env.VITE_APP_ENV ?? ""),
+    viteApiBasePrefix: String(import.meta.env.VITE_API_BASE_URL ?? "").slice(
+      0,
+      80
+    ),
+    mode: String(import.meta.env.MODE),
+    prod: import.meta.env.PROD,
+    isStagingHost: isStagingBrowserHost(),
+    shouldUseStaging: shouldUseStagingApiBase(),
+    regexStagingAudafact: /(^|\.)staging\.audafact\.com$/.test(h),
+    regexStagingPages: /(^|\.)audafact-web-staging\.pages\.dev$/.test(h),
+    t: Date.now(),
+  };
+  // Staging HTTPS cannot POST to localhost ingest (blocked); production build strips console.* (terser).
+  try {
+    (window as Window & { __AUDAFACT_API_BASE_DEBUG__?: typeof payload }).__AUDAFACT_API_BASE_DEBUG__ =
+      payload;
+    sessionStorage.setItem("audafact_api_base_debug", JSON.stringify(payload));
+  } catch {
+    /* private mode / quota */
+  }
   fetch("http://127.0.0.1:7242/ingest/10e4759a-d96b-49b3-bfb4-de256f0de7a3", {
     method: "POST",
     headers: {
@@ -100,24 +125,7 @@ function logApiBaseResolve(branch: string, result: string): void {
       location: "api.ts:getBaseUrl",
       message: "api_base_resolve",
       hypothesisId: "H1-H5",
-      data: {
-        branch,
-        resultPrefix: result.slice(0, 100),
-        host: h,
-        pathname:
-          typeof window !== "undefined" ? window.location.pathname : "",
-        viteUseStaging: String(import.meta.env.VITE_USE_STAGING_API ?? ""),
-        viteAppEnv: String(import.meta.env.VITE_APP_ENV ?? ""),
-        viteApiBasePrefix: String(
-          import.meta.env.VITE_API_BASE_URL ?? ""
-        ).slice(0, 80),
-        mode: String(import.meta.env.MODE),
-        prod: import.meta.env.PROD,
-        isStagingHost: isStagingBrowserHost(),
-        shouldUseStaging: shouldUseStagingApiBase(),
-        regexStagingAudafact: /(^|\.)staging\.audafact\.com$/.test(h),
-        regexStagingPages: /(^|\.)audafact-web-staging\.pages\.dev$/.test(h),
-      },
+      data: payload,
     }),
   }).catch(() => {});
 }
@@ -237,3 +245,17 @@ export const API_CONFIG = {
 export const buildApiUrl = (endpoint: string): string => {
   return `${getBaseUrl()}${endpoint}`;
 };
+
+// #region agent log
+/** Force one getBaseUrl resolution on load (assignment keeps side effects from being tree-shaken). */
+if (typeof window !== "undefined") {
+  queueMicrotask(() => {
+    try {
+      (window as Window & { __AUDAFACT_API_BASE_PROBE__?: string }).__AUDAFACT_API_BASE_PROBE__ =
+        API_CONFIG.BASE_URL;
+    } catch {
+      /* ignore */
+    }
+  });
+}
+// #endregion
