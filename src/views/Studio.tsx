@@ -3900,6 +3900,20 @@ const Studio = () => {
                     <div className="space-y-3">
                       <button
                         onClick={() => {
+                          savePreferredMode('cue');
+                          setGetStartedStep(null);
+                          handleInitializeAudio('cue');
+                        }}
+                        disabled={user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading}
+                        className="w-full text-left p-4 rounded-lg border border-audafact-divider bg-audafact-surface-2 hover:border-audafact-accent-cyan hover:bg-audafact-surface-2/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <h3 className="font-medium text-audafact-heading mb-1">Chop up a sample</h3>
+                        <p className="text-sm text-audafact-text-secondary">
+                          Instant cue points. Trigger with keys 1–0, drag nodes to find the perfect chop.
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => {
                           savePreferredMode('loop');
                           setGetStartedStep(null);
                           handleInitializeAudio('loop');
@@ -3910,20 +3924,6 @@ const Studio = () => {
                         <h3 className="font-medium text-audafact-heading mb-1">Lock in a loop</h3>
                         <p className="text-sm text-audafact-text-secondary">
                           Set start and end on the waveform. Hit space to play.
-                        </p>
-                      </button>
-                      <button
-                        onClick={() => {
-                          savePreferredMode('cue');
-                          setGetStartedStep(null);
-                          handleInitializeAudio('cue');
-                        }}
-                        disabled={user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading}
-                        className="w-full text-left p-4 rounded-lg border border-audafact-divider bg-audafact-surface-2 hover:border-audafact-accent-cyan hover:bg-audafact-surface-2/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <h3 className="font-medium text-audafact-heading mb-1">Play your samples</h3>
-                        <p className="text-sm text-audafact-text-secondary">
-                          Instant cue points. Trigger with keys 1–0, drag nodes to reshape.
                         </p>
                       </button>
                     </div>
