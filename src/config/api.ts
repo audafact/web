@@ -44,16 +44,28 @@ export function normalizeApiBaseUrl(raw: string): string {
   return base;
 }
 
+/** Normalize hostname for comparisons (Safari can expose a trailing dot on some DNS setups). */
+function normalizeBrowserHostname(hostname: string): string {
+  return hostname.trim().toLowerCase().replace(/\.$/, "");
+}
+
 /**
  * Apex + subdomains for staging web + Pages preview. Regex avoids edge cases where
  * `endsWith(".staging.audafact.com")` misses the apex host `staging.audafact.com`.
  */
 function isStagingDeploymentHostname(hostname: string): boolean {
-  const h = hostname.trim().toLowerCase();
-  return (
+  const h = normalizeBrowserHostname(hostname);
+  if (
     /(^|\.)staging\.audafact\.com$/.test(h) ||
     /(^|\.)audafact-web-staging\.pages\.dev$/.test(h)
-  );
+  ) {
+    return true;
+  }
+  // Redundant suffix checks: if regex ever fails for a real deployment host, still route to staging.
+  if (h.includes("staging.audafact.com") || h.endsWith("audafact-web-staging.pages.dev")) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -87,7 +99,7 @@ const DEFAULT_DEV_WORKER_API_BASE = "http://localhost:8787/api";
 
 function isPageLocalhostLoopback(): boolean {
   if (typeof window === "undefined") return false;
-  const hn = window.location.hostname.toLowerCase();
+  const hn = normalizeBrowserHostname(window.location.hostname);
   return hn === "localhost" || hn === "127.0.0.1" || hn.endsWith(".localhost");
 }
 
@@ -118,7 +130,7 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
 /** Persist last resolution for staging debugging; console only if VITE_KEEP_CONSOLE (see vite.config.js). */
 function logApiBaseResolve(branch: string, result: string): void {
   if (typeof window === "undefined") return;
-  const h = window.location.hostname.toLowerCase();
+  const h = normalizeBrowserHostname(window.location.hostname);
   const payload = {
     branch,
     resultPrefix: result.slice(0, 100),
@@ -155,10 +167,58 @@ function logApiBaseResolve(branch: string, result: string): void {
   }
 }
 
-const getBaseUrl = () => {
+/**
+ * Baked env, cached chunks, or rare hostname edge cases can still yield the Vite proxy base
+ * (localhost:5173/.../api/staging) or the prod worker on a staging tab. Last-line defense for
+ * public origins only (not localhost dev).
+ */
+function coerceApiBaseForPublicPage(url: string): string {
+  if (typeof window === "undefined") return url;
+  if (isPageLocalhostLoopback()) return url;
+
+  const stagingContext = shouldUseStagingApiBase();
+
+  if (stagingContext && isProductionWorkerApiUrl(url)) {
+    const out = normalizeApiBaseUrl(STAGING_WORKER_API_BASE);
+    logApiBase("coerce: prod worker → staging worker on staging tab", {
+      before: url,
+      out,
+    });
+    logApiBaseResolve("coerce-prod-to-staging-worker", out);
+    return out;
+  }
+
+  const low = url.trim().toLowerCase();
+  const looksLikeDevProxyOrLoopback =
+    low.includes("localhost") ||
+    low.includes("127.0.0.1") ||
+    (low.includes("/api/staging") && !low.includes("workers.dev"));
+
+  if (looksLikeDevProxyOrLoopback) {
+    const out = normalizeApiBaseUrl(
+      stagingContext ? STAGING_WORKER_API_BASE : PRODUCTION_WORKER_API_BASE,
+    );
+    logApiBase("coerce: loopback/dev-proxy base → worker on public tab", {
+      before: url,
+      out,
+      stagingContext,
+    });
+    logApiBaseResolve(
+      stagingContext ? "coerce-loopback-staging" : "coerce-loopback-production",
+      out,
+    );
+    return out;
+  }
+
+  return url;
+}
+
+const resolveBaseUrl = () => {
   const mode = import.meta.env.MODE;
   const host =
-    typeof window !== "undefined" ? window.location.hostname : "(no window)";
+    typeof window !== "undefined"
+      ? normalizeBrowserHostname(window.location.hostname)
+      : "(no window)";
   const origin =
     typeof window !== "undefined" ? window.location.origin : "(no window)";
 
@@ -179,7 +239,7 @@ const getBaseUrl = () => {
   // Real staging tab: never keep prod worker, loopback, or Vite dev proxy URL from CI/.env mistakes.
   // Do not rely only on import.meta.env.PROD (some tooling sets it unexpectedly).
   if (typeof window !== "undefined") {
-    const h = window.location.hostname;
+    const h = normalizeBrowserHostname(window.location.hostname);
     if (isStagingDeploymentHostname(h) && fromEnv) {
       const incompatible =
         isProductionWorkerApiUrl(fromEnv) ||
@@ -210,7 +270,7 @@ const getBaseUrl = () => {
   // Browser hostname wins over baked VITE_API_BASE_URL (prod worker) for staging hosts — avoids CORS
   // when Cloudflare bakes prod URL or an old chunk mis-orders checks.
   if (typeof window !== "undefined") {
-    const h = window.location.hostname.toLowerCase();
+    const h = normalizeBrowserHostname(window.location.hostname);
     if (isStagingDeploymentHostname(h)) {
       if (
         fromEnv &&
@@ -304,6 +364,8 @@ const getBaseUrl = () => {
   logApiBaseResolve("production-fallback", PRODUCTION_WORKER_API_BASE);
   return PRODUCTION_WORKER_API_BASE;
 };
+
+const getBaseUrl = () => coerceApiBaseForPublicPage(resolveBaseUrl());
 
 const API_ENDPOINTS = {
   SIGN_UPLOAD: "/sign-upload",

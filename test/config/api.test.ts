@@ -46,4 +46,10 @@ describe("api base staging detection", () => {
     expect(isStagingBrowserHost()).toBe(true);
     expect(shouldUseStagingApiBase()).toBe(true);
   });
+
+  it("treats staging host with trailing dot (DNS) as staging", () => {
+    (import.meta.env as any).VITE_APP_ENV = "production";
+    (window.location as any).hostname = "staging.audafact.com.";
+    expect(isStagingBrowserHost()).toBe(true);
+  });
 });
