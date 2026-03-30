@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AuthForm } from './AuthForm';
 import { PasswordReset } from './PasswordReset';
+import { getPostAuthStudioUrl } from '../routing/hostRouting';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
@@ -11,8 +12,11 @@ export const AuthPage = () => {
 
   const handleAuthSuccess = () => {
     const redirect = searchParams.get('redirect');
-    const target = redirect && redirect.startsWith('/') ? redirect : '/';
-    window.location.href = target;
+    const safeRedirect = redirect && redirect.startsWith('/') ? redirect : undefined;
+    const target = safeRedirect
+      ? getPostAuthStudioUrl(`redirect=${encodeURIComponent(safeRedirect)}`)
+      : getPostAuthStudioUrl();
+    window.location.replace(target);
   };
 
   return (
