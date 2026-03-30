@@ -1,6 +1,6 @@
-# Waitlist Submission Edge Function
+# Beta access / marketing form submission (Edge Function)
 
-This Supabase Edge Function handles waitlist form submissions with proper Turnstile validation.
+This Supabase Edge Function validates Turnstile and forwards submissions to HubSpot for beta access updates (legacy function name: `waitlist-submission`).
 
 ## Features
 
@@ -77,3 +77,9 @@ The function expects a POST request with the following payload:
 - Only processes submissions with valid tokens
 - Includes client IP in verification request
 - Comprehensive error logging
+
+## HubSpot follow-up (after copy or `pageName` changes)
+
+1. In HubSpot, open the form used by this integration and check post-submit emails, thank-you text, and any workflow enrolled on form submit.
+2. Search workflows, sequences, and marketing emails for “waitlist” and align wording with **beta access** / **early access** on the site.
+3. Send a test submission from staging or production; confirm the contact timeline shows `pageName` **Audafact Beta Access (Verified)** and the expected automation still runs.
