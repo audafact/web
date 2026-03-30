@@ -1126,7 +1126,7 @@ const Studio = () => {
       }
     }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
-  // Keyboard navigation for track switching
+  // Global keyboard shortcuts (Space, help, zoom) — track switching uses Prev/Next or swipe only
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       // Skip shortcuts when user is typing in an input (volume, speed, filters, etc.)
@@ -1138,7 +1138,6 @@ const Studio = () => {
         (active instanceof HTMLInputElement &&
           (active as HTMLInputElement).type !== 'range');
       if (isTypingInput) {
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
         if (event.key === ' ') return; // Never trigger playback when typing in text inputs
         if (event.key === 'z' || event.key === 'Z' || event.key === 'x' || event.key === 'X' || event.key === 'c' || event.key === 'C') return; // Don't trigger zoom when typing
       }
@@ -1177,88 +1176,80 @@ const Studio = () => {
           return;
         }
       }
-
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        handlePreviousTrack();
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        handleNextTrack();
-      }
     };
 
     window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
     return () => window.removeEventListener('keydown', handleKeyPress, true);
   }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay]);
 
-        // Handle demo track changes
-      useEffect(() => {
-        if (isGuestMode && currentGuestTrack && audioContext && tracks.length > 0) {
-          // If the currently loaded track already matches the bundled track, do nothing
-          if (tracks[0]?.id === currentGuestTrack.id) return;
-          
-          // Reload the guest buffer so next/prev actually swaps the loaded audio + cue points.
-          (async () => {
-            try {
-              setIsInitializingAudio(true);
-              setError(null);
+  // Handle demo track changes
+  useEffect(() => {
+    if (isGuestMode && currentGuestTrack && audioContext && tracks.length > 0) {
+      // If the currently loaded track already matches the bundled track, do nothing
+      if (tracks[0]?.id === currentGuestTrack.id) return;
 
-              const response = await fetch(currentGuestTrack.file);
-              const blob = await response.blob();
-              const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, {
-                type: `audio/${currentGuestTrack.type}`,
-              });
+      // Reload the guest buffer so next/prev actually swaps the loaded audio + cue points.
+      (async () => {
+        try {
+          setIsInitializingAudio(true);
+          setError(null);
 
-              const buffer = await loadAudioBuffer(file, audioContext);
-              const trackId = currentGuestTrack.id;
-              const mode: 'cue' | 'loop' = tracks[0]?.mode === 'loop' ? 'loop' : 'cue';
+          const response = await fetch(currentGuestTrack.file);
+          const blob = await response.blob();
+          const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, {
+            type: `audio/${currentGuestTrack.type}`,
+          });
 
-              const newTrack: Track = {
-                id: trackId,
-                file,
-                buffer,
-                peaks: extractPeaksFromBuffer(buffer),
-                mode,
-                chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
-                loopStart: 0,
-                loopEnd: buffer.duration,
-                cuePoints: Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10)),
-                tempo: currentGuestTrack.bpm || 120,
-                timeSignature: { numerator: 4, denominator: 4 },
-                firstMeasureTime: 0,
-                showMeasures: false,
-              };
+          const buffer = await loadAudioBuffer(file, audioContext);
+          const trackId = currentGuestTrack.id;
+          const mode: 'cue' | 'loop' = tracks[0]?.mode === 'loop' ? 'loop' : 'cue';
 
-              setTracks([newTrack]);
-              setCurrentTrackIndex(0);
-              setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
-              setShowCueThumbs((prev) => ({ ...prev, [trackId]: mode === 'cue' }));
-              if (mode === 'cue') setSelectedCueTrackId(trackId);
-              setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
-              setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
-              setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
-              setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
-              setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
-              setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
-              setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
-              setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
-              setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
-              setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
+          const newTrack: Track = {
+            id: trackId,
+            file,
+            buffer,
+            peaks: extractPeaksFromBuffer(buffer),
+            mode,
+            chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
+            loopStart: 0,
+            loopEnd: buffer.duration,
+            cuePoints: Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10)),
+            tempo: currentGuestTrack.bpm || 120,
+            timeSignature: { numerator: 4, denominator: 4 },
+            firstMeasureTime: 0,
+            showMeasures: false,
+          };
 
-              trackGuestEvent('next_track', {
-                fromTrackId: tracks[0]?.id,
-                toTrackId: currentGuestTrack.id,
-              });
-            } catch (error) {
-              console.error('Failed to reload guest track:', error);
-              const msg = error instanceof Error ? error.message : '';
-              setError(msg || 'Failed to load guest track');
-            } finally {
-              setIsInitializingAudio(false);
-            }
-          })();
+          setTracks([newTrack]);
+          setCurrentTrackIndex(0);
+          setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
+          setShowCueThumbs((prev) => ({ ...prev, [trackId]: mode === 'cue' }));
+          if (mode === 'cue') setSelectedCueTrackId(trackId);
+          setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
+          setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
+          setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
+          setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
+          setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
+          setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
+          setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
+          setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
+          setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
+          setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
+
+          trackGuestEvent('next_track', {
+            fromTrackId: tracks[0]?.id,
+            toTrackId: currentGuestTrack.id,
+          });
+        } catch (error) {
+          console.error('Failed to reload guest track:', error);
+          const msg = error instanceof Error ? error.message : '';
+          setError(msg || 'Failed to load guest track');
+        } finally {
+          setIsInitializingAudio(false);
         }
-      }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
+      })();
+    }
+  }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
 
   // Reset the hasLoadedTrack flag when tracks are cleared
   useEffect(() => {
@@ -4828,7 +4819,6 @@ const Studio = () => {
         </div>
       </div>
 
-      {/* Signup Modal */}
       {showEarlyCreatorModal && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-xl audafact-card-enhanced p-6">
