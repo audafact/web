@@ -54,7 +54,7 @@ export const SIGNUP_MODAL_CONFIGS: Record<string, SignupModalConfig> = {
       "Access available tracks",
       "Multiple genres and BPMs",
       "High-quality audio files",
-      "More sounds added during beta"
+      "More catalog sounds added over time"
     ],
     ctaText: "Sign up to add tracks",
     redirectAction: 'add_library_track'

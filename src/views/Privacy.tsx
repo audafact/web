@@ -26,7 +26,7 @@ export const Privacy: React.FC = () => {
         <div className="prose prose-invert max-w-none">
           <div className="bg-gradient-to-r from-audafact-surface-2 to-audafact-surface-1 p-6 rounded-lg border border-audafact-divider mb-12">
             <p className="text-lg audafact-text-secondary leading-relaxed mb-0">
-              <strong className="text-audafact-text-primary">Audafact values your privacy.</strong> This Privacy Policy explains how we collect, use, and protect your information when you sign up for our waitlist or interact with our website.
+              <strong className="text-audafact-text-primary">Audafact values your privacy.</strong> This Privacy Policy explains how we collect, use, and protect your information when you sign up for beta access updates, create an account, or interact with our website.
             </p>
           </div>
 
@@ -41,7 +41,7 @@ export const Privacy: React.FC = () => {
             </div>
             <div className="bg-audafact-surface-2 p-6 rounded-lg border border-audafact-divider">
               <p className="text-audafact-text-primary mb-6 text-lg">
-                When you join the Audafact waitlist, we collect:
+                When you sign up for Audafact beta access updates (or the same form on our marketing site), we collect:
               </p>
               <div className="space-y-4 mb-6">
                 <div className="flex items-start">
