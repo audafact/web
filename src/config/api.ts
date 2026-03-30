@@ -69,18 +69,6 @@ function isStagingDeploymentHostname(hostname: string): boolean {
 }
 
 /**
- * Apex + subdomains for staging web + Pages preview. Regex avoids edge cases where
- * `endsWith(".staging.audafact.com")` misses the apex host `staging.audafact.com`.
- */
-function isStagingDeploymentHostname(hostname: string): boolean {
-  const h = hostname.trim().toLowerCase();
-  return (
-    /(^|\.)staging\.audafact\.com$/.test(h) ||
-    /(^|\.)audafact-web-staging\.pages\.dev$/.test(h)
-  );
-}
-
-/**
  * True when the page is served from a staging web host.
  * Cloudflare Pages often builds with NODE_ENV=production and no VITE_APP_ENV=staging;
  * host detection is the reliable signal for which worker to call.
