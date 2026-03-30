@@ -149,7 +149,7 @@ serve(async (req) => {
       ],
       context: {
         pageUri: body.signupPage || "",
-        pageName: "Audafact Waitlist (Verified)",
+        pageName: "Audafact Beta Access (Verified)",
       },
     };
 
@@ -170,7 +170,7 @@ serve(async (req) => {
       console.error("HubSpot submission failed:", hubspotError);
       return new Response(
         JSON.stringify({
-          error: "Failed to submit to waitlist. Please try again.",
+          error: "Failed to submit your signup. Please try again.",
           details: hubspotError,
         }),
         {
@@ -184,7 +184,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Successfully added to waitlist!",
+        message: "Successfully signed up for beta access updates!",
         turnstileVerified: true,
         hubspotSubmitted: true,
       }),
@@ -194,7 +194,7 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("Waitlist submission error:", error);
+    console.error("Beta access submission error:", error);
     return new Response(
       JSON.stringify({
         error: "An unexpected error occurred. Please try again.",
