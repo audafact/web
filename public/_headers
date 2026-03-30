@@ -1,0 +1,8 @@
+# Cloudflare Pages: last matching rule wins — list /assets/* after /* so hashed assets stay cached.
+# https://developers.cloudflare.com/pages/configuration/headers/
+
+/*
+  Cache-Control: no-cache
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

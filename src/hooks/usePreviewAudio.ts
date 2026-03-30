@@ -3,7 +3,6 @@ import { LibraryTrack } from "../types/music";
 import { trackEvent } from "../services/analyticsService";
 import { useUser } from "./useUser";
 import { usePreviewFromProvider } from "../audio/usePreviewFromProvider";
-import { signFile } from "../lib/api";
 import { pickPlayableKey } from "@/services/libraryService";
 
 type Tier = "guest" | "free" | "starter" | "pro";
@@ -37,7 +36,7 @@ function cacheGet(key: string): AudioBuffer | null {
 export const usePreviewAudio = () => {
   const { tier } = useUser();
   const {
-    loadAndDecode,
+    loadAndDecodeFromFileKey,
     loadFromBuffer,
     getBuffer,
     playLoop,
@@ -74,9 +73,8 @@ export const usePreviewAudio = () => {
         return;
       }
 
-      // 2) Miss: sign + decode, then cache
-      const url = await signFile(key);
-      await loadAndDecode(url);
+      // 2) Miss: stream via Worker + decode, then cache
+      await loadAndDecodeFromFileKey(key);
 
       const buf = getBuffer();
       if (buf) cachePut(key, buf);

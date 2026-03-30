@@ -8,7 +8,6 @@ import { useGuest } from '../context/GuestContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { useSignupModal } from '../hooks/useSignupModal';
 import { useOnboarding } from '../hooks/useOnboarding';
-import { useUserAccess } from '../hooks/useUserAccess';
 import { createOnboardingSteps, createQuickOnboardingSteps } from '../config/onboardingConfig';
 import { UpgradePrompt } from '../components/UpgradePrompt';
 import WaveformDisplay from '../components/WaveformDisplay';
@@ -33,9 +32,10 @@ import { useUser } from '../hooks/useUser';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { LibraryService } from '../services/libraryService';
 import type { SuggestionReference } from '../services/sampleSuggestionService';
-import { signFile } from '../lib/api';
+import { fetchLibraryAudioBlob } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
+import { BREAKPOINTS } from '../hooks/useResponsiveDesign';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
 
@@ -43,7 +43,7 @@ import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose'
 interface Track {
   id: string;
   sourceAssetId?: string;  // For restore: library asset id or upload id
-  fileKey?: string;        // For restore: used to fetch audio via signFile (library + user uploads)
+  fileKey?: string;        // For restore: used to fetch audio via Worker stream (library + user uploads)
   file: File;
   buffer: AudioBuffer;
   /** Pre-decoded peaks for WaveSurfer - skips duplicate decode, faster waveform load */
@@ -84,8 +84,9 @@ interface AudioAsset {
 
 const Studio = () => {
   const [searchParams] = useSearchParams();
-  const { audioContext, initializeAudio, resumeAudioContext } = useAudioContext();
-  const { isOpen: isSidePanelOpen, toggleSidePanel } = useSidePanel();
+  const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
+    useAudioContext();
+  const { isOpen: isSidePanelOpen, toggleSidePanel, closeSidePanel } = useSidePanel();
   const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
@@ -94,12 +95,11 @@ const Studio = () => {
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { user, tier, libraryTracks, loading: userLoading } = useUser();
   const { trackEvent } = useAnalytics();
-  const { accessTier, proAccessSource } = useUserAccess();
   const { isTapTempoActive } = useTapTempo();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
-  const [showEarlyCreatorModal, setShowEarlyCreatorModal] = useState<boolean>(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
   const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
@@ -113,6 +113,13 @@ const Studio = () => {
   useEffect(() => {
     trackEvent('sampler_opened', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- fire once on mount
+
+  // Below `lg` (1024px): ensure side panel closed on studio entry (matches provider initial state).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < BREAKPOINTS.tablet) {
+      closeSidePanel();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- studio entry only, match initial viewport
 
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';
@@ -185,24 +192,6 @@ const Studio = () => {
       window.history.replaceState({}, '', newUrl.toString());
     }
   }, [isVerified, user, isGuestMode]);
-
-  useEffect(() => {
-    if (!user || authLoading || userLoading) return;
-    if (accessTier !== 'pro') return;
-    if (proAccessSource !== 'founder_manual' && proAccessSource !== 'invite_code') return;
-
-    const storageKey = `early_creator_modal_seen_${user.id}`;
-    if (localStorage.getItem(storageKey) === 'true') return;
-
-    setShowEarlyCreatorModal(true);
-  }, [user, authLoading, userLoading, accessTier, proAccessSource]);
-
-  const closeEarlyCreatorModal = () => {
-    if (user) {
-      localStorage.setItem(`early_creator_modal_seen_${user.id}`, 'true');
-    }
-    setShowEarlyCreatorModal(false);
-  };
 
   // Verification handlers
   const handleStartDemo = async () => {
@@ -728,9 +717,7 @@ const Studio = () => {
 
           if (!fileKeyToUse) continue;
 
-          const signedUrl = await signFile(fileKeyToUse);
-          const response = await fetch(signedUrl);
-          const blob = await response.blob();
+          const blob = await fetchLibraryAudioBlob(fileKeyToUse);
           const file = new File([blob], savedTrack.fileName, { type: savedTrack.fileType });
           const buffer = await loadAudioBuffer(file, context);
 
@@ -831,7 +818,7 @@ const Studio = () => {
       isRestoringRef.current = false;
     }
     return false;
-  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, signFile, tier.id]);
+  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, fetchLibraryAudioBlob, tier.id]);
 
   const restoreStudioStateFromLocal = useCallback(async (): Promise<boolean> => {
     if (!user || isGuestMode) return false;
@@ -910,10 +897,17 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-                 // In demo mode, use the DemoProvider's current track
-         if (isGuestMode && currentGuestTrack) {
-          
-          // Use existing audio context if available
+        // Anonymous only: bundled guest assets. Signed-in users use library + Worker (staging/prod).
+        if (isGuestMode) {
+          let guestTrack = currentGuestTrack;
+          if (!guestTrack) {
+            guestTrack = await loadRandomGuestTrack();
+            if (!guestTrack) {
+              setIsTrackLoading(false);
+              return;
+            }
+          }
+
           let context = audioContext;
           if (!context) {
             try {
@@ -923,66 +917,67 @@ const Studio = () => {
               console.error('Error initializing audio context:', initError);
               setNeedsUserInteraction(true);
               setIsTrackLoading(false);
-              // Don't return - let the user interaction handler retry
               return;
             }
           }
-          
-          // Check if audio context is suspended and needs user interaction
+
           if (context.state === 'suspended') {
             setNeedsUserInteraction(true);
             setIsTrackLoading(false);
             return;
           }
 
-                     // Fetch the bundled track from DemoProvider
-           const response = await fetch(currentGuestTrack.file);
-           const blob = await response.blob();
-           const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
-             type: `audio/${currentGuestTrack.type}` 
-           });
-           
-           // Load the audio file into buffer
-           const buffer = await loadAudioBuffer(file, context);
-           
-           // Create track using DemoProvider metadata
-           const newTrack: Track = {
-             id: currentGuestTrack.id,
-             file,
-             buffer,
-             peaks: extractPeaksFromBuffer(buffer),
-             mode: 'cue',
-             chopTriggerStyle: 'cue',
-             loopStart: 0,
-             loopEnd: buffer.duration,
-             cuePoints: Array.from({ length: 10 }, (_, i) => 
-               buffer.duration * (i / 10)
-             ),
-             tempo: currentGuestTrack.bpm || 120,
-             timeSignature: { numerator: 4, denominator: 4 },
-             firstMeasureTime: 0,
-             showMeasures: false
-           };
-          
+          const response = await fetch(guestTrack.file);
+          const blob = await response.blob();
+          const file = new File([blob], `${guestTrack.name}.${guestTrack.type}`, {
+            type: `audio/${guestTrack.type}`,
+          });
+
+          const buffer = await loadAudioBuffer(file, context);
+
+          const newTrack: Track = {
+            id: guestTrack.id,
+            file,
+            buffer,
+            peaks: extractPeaksFromBuffer(buffer),
+            mode: 'cue',
+            chopTriggerStyle: 'cue',
+            loopStart: 0,
+            loopEnd: buffer.duration,
+            cuePoints: Array.from({ length: 10 }, (_, i) =>
+              buffer.duration * (i / 10)
+            ),
+            tempo: guestTrack.bpm || 120,
+            timeSignature: { numerator: 4, denominator: 4 },
+            firstMeasureTime: 0,
+            showMeasures: false,
+          };
+
           setTracks([newTrack]);
           setCurrentTrackIndex(0);
-          setShowCueThumbs(prev => ({ ...prev, [newTrack.id]: true }));
+          setShowCueThumbs((prev) => ({ ...prev, [newTrack.id]: true }));
           setSelectedCueTrackId(newTrack.id);
           setIsTrackLoading(false);
-          
-          // Creative metrics: sampler_ready + track_loaded (first track)
+
           if (!hasEmittedSamplerReady.current) {
-            trackEvent('sampler_ready', { trackId: currentGuestTrack.id, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+            trackEvent('sampler_ready', {
+              trackId: guestTrack.id,
+              userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
+            });
             hasEmittedSamplerReady.current = true;
           }
-          trackEvent('track_loaded', { trackId: currentGuestTrack.id, trackIndex: 0, source: 'guest', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
-          
-          // Track demo event
-          trackGuestEvent('session_started', { 
-            trackId: currentGuestTrack.id,
-            timestamp: Date.now()
+          trackEvent('track_loaded', {
+            trackId: guestTrack.id,
+            trackIndex: 0,
+            source: 'guest',
+            userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
           });
-          
+
+          trackGuestEvent('session_started', {
+            trackId: guestTrack.id,
+            timestamp: Date.now(),
+          });
+
           return;
         }
         
@@ -1016,19 +1011,14 @@ const Studio = () => {
           return;
         }
         
-        // Get signed URL from Worker API
-        let audioUrl: string;
+        let blob: Blob;
         try {
-          audioUrl = await signFile(asset.fileKey);
+          blob = await fetchLibraryAudioBlob(asset.fileKey);
         } catch (error) {
-          console.error('Failed to get signed URL for asset:', error);
+          console.error('Failed to load library audio:', error);
           const msg = error instanceof Error ? error.message : '';
-          throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+          throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
         }
-        
-        // Fetch the audio file
-        const response = await fetch(audioUrl);
-        const blob = await response.blob();
         const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
         
         // Load the audio file into buffer
@@ -1106,7 +1096,7 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
+    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, loadRandomGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
 
     useEffect(() => {
       if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
@@ -1115,7 +1105,7 @@ const Studio = () => {
       }
     }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
-  // Keyboard navigation for track switching
+  // Global keyboard shortcuts (Space, help, zoom) — track switching uses Prev/Next or swipe only
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       // Skip shortcuts when user is typing in an input (volume, speed, filters, etc.)
@@ -1127,7 +1117,6 @@ const Studio = () => {
         (active instanceof HTMLInputElement &&
           (active as HTMLInputElement).type !== 'range');
       if (isTypingInput) {
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
         if (event.key === ' ') return; // Never trigger playback when typing in text inputs
         if (event.key === 'z' || event.key === 'Z' || event.key === 'x' || event.key === 'X' || event.key === 'c' || event.key === 'C') return; // Don't trigger zoom when typing
       }
@@ -1166,19 +1155,11 @@ const Studio = () => {
           return;
         }
       }
-
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        handlePreviousTrack();
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        handleNextTrack();
-      }
     };
 
     window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
     return () => window.removeEventListener('keydown', handleKeyPress, true);
-  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay]);
+  }, [tracks, isTapTempoActive, handleGlobalPlay]);
 
         // Handle demo track changes
       useEffect(() => {
@@ -1692,22 +1673,18 @@ const Studio = () => {
         throw new Error('Audio initialization failed. Please try again.');
       }
       
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
         if (!asset.fileKey) {
           throw new Error('Asset fileKey is missing');
         }
-        signedUrl = await signFile(asset.fileKey);
+        blob = await fetchLibraryAudioBlob(asset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
       // Load the audio file into buffer
@@ -1860,22 +1837,17 @@ const Studio = () => {
         throw new Error('Audio initialization failed. Please try again.');
       }
       
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
         if (!selectedAsset.fileKey) {
           throw new Error('Asset fileKey is missing');
         }
-        signedUrl = await signFile(selectedAsset.fileKey);
+        blob = await fetchLibraryAudioBlob(selectedAsset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
-
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
       const file = new File([blob], `${selectedAsset.name}.${selectedAsset.type}`, { type: `audio/${selectedAsset.type}` });
       
       // Load the audio file into buffer
@@ -2939,23 +2911,14 @@ const Studio = () => {
         await resumeAudioContext();
       }
 
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
-        signedUrl = await signFile(asset.fileKey);
+        blob = await fetchLibraryAudioBlob(asset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
-
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio file: ${response.status}`);
-      }
-      
-      const blob = await response.blob();
       const buffer = await context.decodeAudioData(await blob.arrayBuffer());
       
       // Create a File object from the blob
@@ -3214,26 +3177,23 @@ const Studio = () => {
       setIsAudioInitialized(true);
       
       if (isGuestMode) {
-        // For demo mode, use DemoProvider bundled tracks
-        if (!currentGuestTrack) {
-          // Load a bundled track first if none is loaded
-          await loadRandomGuestTrack();
-          if (!currentGuestTrack) {
+        // Anonymous only: bundled /assets/library-inbox/* — signed-in users use library + Worker above.
+        let guestTrack = currentGuestTrack;
+        if (!guestTrack) {
+          guestTrack = await loadRandomGuestTrack();
+          if (!guestTrack) {
             throw new Error('Failed to load bundled track. Please try again.');
           }
         }
-        
 
-        
-        // Fetch the bundled track from DemoProvider
-        const response = await fetch(currentGuestTrack.file);
+        const response = await fetch(guestTrack.file);
         const blob = await response.blob();
-        const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, { 
-          type: `audio/${currentGuestTrack.type}` 
+        const file = new File([blob], `${guestTrack.name}.${guestTrack.type}`, { 
+          type: `audio/${guestTrack.type}` 
         });
         
         const buffer = await loadAudioBuffer(file, context);
-        const trackId = currentGuestTrack.id;
+        const trackId = guestTrack.id;
         const mode: 'cue' | 'loop' = preferredMode ?? 'cue';
         
         const newTrack: Track = {
@@ -3248,7 +3208,7 @@ const Studio = () => {
           cuePoints: Array.from({ length: 10 }, (_, i) => 
             buffer.duration * (i / 10)
           ),
-          tempo: currentGuestTrack.bpm || 120,
+          tempo: guestTrack.bpm || 120,
           timeSignature: { numerator: 4, denominator: 4 },
           firstMeasureTime: 0,
           showMeasures: false
@@ -3267,7 +3227,7 @@ const Studio = () => {
         
         // Track demo event
         trackGuestEvent('session_started', { 
-          trackId: currentGuestTrack.id,
+          trackId: guestTrack.id,
           timestamp: Date.now()
         });
         
@@ -3287,22 +3247,18 @@ const Studio = () => {
       const randomIndex = Math.floor(Math.random() * availableTracks.length);
       const asset = availableTracks[randomIndex];
       
-      // Get signed URL from Worker API using fileKey
-      let signedUrl: string;
+      let blob: Blob;
       try {
         if (!asset.fileKey) {
           throw new Error('Asset fileKey is missing');
         }
-        signedUrl = await signFile(asset.fileKey);
+        blob = await fetchLibraryAudioBlob(asset.fileKey);
       } catch (error) {
-        console.error('Failed to get signed URL for asset:', error);
+        console.error('Failed to load library audio:', error);
         const msg = error instanceof Error ? error.message : '';
-        throw new Error(msg.includes('429') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
+        throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
       }
 
-      // Fetch the audio file using the signed URL
-      const response = await fetch(signedUrl);
-      const blob = await response.blob();
       const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
       
       const buffer = await loadAudioBuffer(file, context);
@@ -3466,11 +3422,14 @@ const Studio = () => {
           <HelpButton
             onStartTutorial={onboarding.startOnboarding}
             onShowHelp={() => setShowHelpModal(true)}
+            onShowFeedback={() => setShowFeedbackModal(true)}
             hideTutorial={false}
           />
           <HelpModal
             isOpen={showHelpModal}
             onClose={() => setShowHelpModal(false)}
+            feedbackOpen={showFeedbackModal}
+            onFeedbackOpenChange={setShowFeedbackModal}
           />
         </>
       )}
@@ -3496,11 +3455,14 @@ const Studio = () => {
           <HelpButton
             onStartTutorial={onboarding.startOnboarding}
             onShowHelp={() => setShowHelpModal(true)}
+            onShowFeedback={() => setShowFeedbackModal(true)}
             hideTutorial={false}
           />
           <HelpModal
             isOpen={showHelpModal}
             onClose={() => setShowHelpModal(false)}
+            feedbackOpen={showFeedbackModal}
+            onFeedbackOpenChange={setShowFeedbackModal}
           />
         </>
       )}
@@ -3597,11 +3559,14 @@ const Studio = () => {
         <HelpButton
           onStartTutorial={onboarding.startOnboarding}
           onShowHelp={() => setShowHelpModal(true)}
+          onShowFeedback={() => setShowFeedbackModal(true)}
           hideTutorial={false}
         />
         <HelpModal
           isOpen={showHelpModal}
           onClose={() => setShowHelpModal(false)}
+          feedbackOpen={showFeedbackModal}
+          onFeedbackOpenChange={setShowFeedbackModal}
         />
         
         <div 
@@ -3952,11 +3917,14 @@ const Studio = () => {
         <HelpButton
           onStartTutorial={onboarding.startOnboarding}
           onShowHelp={() => setShowHelpModal(true)}
+          onShowFeedback={() => setShowFeedbackModal(true)}
           hideTutorial={false}
         />
         <HelpModal
           isOpen={showHelpModal}
           onClose={() => setShowHelpModal(false)}
+          feedbackOpen={showFeedbackModal}
+          onFeedbackOpenChange={setShowFeedbackModal}
         />
         </>
       )}
@@ -4750,6 +4718,7 @@ const Studio = () => {
                 loopDragState={loopDragStates[track.id] || null}
                 cuePoints={track.cuePoints}
                 ensureAudio={ensureAudioBeforeAction}
+                primeIosSessionForWebAudio={primeIosSessionForWebAudio}
                 isSelected={track.id === selectedCueTrackId}
                 onSelect={() => handleTrackSelect(track.id)}
                 onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}
@@ -4830,33 +4799,6 @@ const Studio = () => {
       </div>
 
       {/* Signup Modal */}
-      {showEarlyCreatorModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-xl audafact-card-enhanced p-6">
-            <h2 className="text-2xl font-bold audafact-heading mb-3">
-              You&apos;ve been given Pro access as an early creator
-            </h2>
-            <p className="audafact-text-secondary mb-4">
-              You&apos;re part of a small group helping shape where Audafact goes next.
-            </p>
-            <div className="rounded-lg bg-audafact-surface-2 p-4 mb-6">
-              <p className="text-sm font-semibold audafact-heading mb-2">Try one of these now:</p>
-              <ul className="text-sm audafact-text-secondary space-y-1">
-                <li>- Chop one library track and test trigger styles</li>
-                <li>- Record a short performance and export it</li>
-                <li>- Share one piece of honest feedback after your session</li>
-              </ul>
-            </div>
-            <div className="flex justify-end">
-              <button type="button" className="audafact-button-primary" onClick={closeEarlyCreatorModal}>
-                Let&apos;s create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Signup Modal */}
       <SignupModal
         isOpen={modalState.isOpen}
         onClose={closeSignupModal}
@@ -4886,6 +4828,7 @@ const Studio = () => {
       <HelpButton
         onStartTutorial={onboarding.startOnboarding}
         onShowHelp={() => setShowHelpModal(true)}
+        onShowFeedback={() => setShowFeedbackModal(true)}
         hideTutorial={false}
       />
 
@@ -4893,6 +4836,8 @@ const Studio = () => {
       <HelpModal
         isOpen={showHelpModal}
         onClose={() => setShowHelpModal(false)}
+        feedbackOpen={showFeedbackModal}
+        onFeedbackOpenChange={setShowFeedbackModal}
       />
         </>
       )}

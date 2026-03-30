@@ -282,6 +282,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const { guestTracks, isLoading: guestTracksLoading } = useGuest();
 
   const guestLibraryTracks = useMemo<LibraryTrack[]>(() => {
+    if (user) return [];
     return guestTracks.map((t) => ({
       id: t.id,
       name: t.name,
@@ -295,7 +296,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
       tags: [],
       isDemo: true,
     }));
-  }, [guestTracks]);
+  }, [user, guestTracks]);
   
   // Collapsible menu state - Tracks open by default, but Sessions/Recordings use saved preference
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {

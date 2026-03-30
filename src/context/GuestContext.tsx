@@ -71,10 +71,13 @@ const selectRandom = (tracks: AudioAsset[]): AudioAsset | null => {
 interface GuestContextType {
   isGuestMode: boolean;
   isAuthenticated: boolean;
+  /** Bundled /assets/library-inbox/* demo audio — only for anonymous users; always null when signed in. */
   currentGuestTrack: AudioAsset | null;
   isLoading: boolean;
-  loadRandomGuestTrack: () => void;
+  /** No-op with `null` when signed in. Returns the selected track for immediate use (avoids stale React state). */
+  loadRandomGuestTrack: () => Promise<AudioAsset | null>;
   trackGuestEvent: (event: string, properties: any) => void;
+  /** Empty when signed in so library UI always uses Supabase + Worker for QA parity with production. */
   guestTracks: AudioAsset[];
 }
 
@@ -90,7 +93,7 @@ export const GuestProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isAuthenticated = !!user;
 
   const trackGuestEvent = useCallback((event: string, properties: any) => {
-    if (isGuestMode) {
+    if (!user) {
       // Track guest-specific events
       console.log(`Guest event: ${event}`, {
         ...properties,
@@ -100,14 +103,13 @@ export const GuestProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       // TODO: Integrate with analytics service
     }
-  }, [isGuestMode]);
+  }, [user]);
 
-  const loadRandomGuestTrack = useCallback(async () => {
-    if (user) return; // Don't load guest tracks for authenticated users
-    
+  const loadRandomGuestTrack = useCallback(async (): Promise<AudioAsset | null> => {
+    if (user) return null;
+
     setIsLoading(true);
     try {
-      // Set available guest tracks
       setAvailableGuestTracks(GUEST_TRACKS);
 
       const selected = selectRandom(GUEST_TRACKS);
@@ -118,9 +120,12 @@ export const GuestProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           genre: selected.genre,
           bpm: selected.bpm
         });
+        return selected;
       }
+      return null;
     } catch (error) {
       console.error('Failed to load guest track:', error);
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -129,20 +134,27 @@ export const GuestProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Preload guest tracks for anonymous users
   useEffect(() => {
     if (!isGuestMode) return;
-    
+
     if (!currentGuestTrack && availableGuestTracks.length === 0) {
       loadRandomGuestTrack();
     }
   }, [isGuestMode, currentGuestTrack, availableGuestTracks.length, loadRandomGuestTrack]);
 
+  // Signed-in QA must use library + Worker (staging API), never bundled /assets/library-inbox URLs.
+  useEffect(() => {
+    if (!user) return;
+    setCurrentGuestTrack(null);
+    setAvailableGuestTracks([]);
+  }, [user]);
+
   const value = {
     isGuestMode,
     isAuthenticated,
-    currentGuestTrack,
+    currentGuestTrack: isGuestMode ? currentGuestTrack : null,
     isLoading,
     loadRandomGuestTrack,
     trackGuestEvent,
-    guestTracks: availableGuestTracks
+    guestTracks: isGuestMode ? availableGuestTracks : [],
   };
   
   return (

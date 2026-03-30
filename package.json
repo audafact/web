@@ -47,9 +47,9 @@
     "test:visual": "node scripts/test-visual-regression.js"
   },
   "dependencies": {
-    "@emailjs/browser": "^4.4.1",
     "@stripe/react-stripe-js": "^3.8.1",
     "@stripe/stripe-js": "^7.7.0",
+    "@supabase/ssr": "^0.9.0",
     "@tailwindcss/forms": "^0.5.0",
     "@tailwindcss/typography": "^0.5.0",
     "@wavesurfer/react": "^1.0.11",
@@ -93,7 +93,7 @@
     "eslint-plugin-react-hooks": "^4.0.0",
     "eslint-plugin-react-refresh": "^0.4.0",
     "eslint-plugin-storybook": "^0.10.1",
-    "happy-dom": "^20.0.11",
+    "happy-dom": "^20.8.9",
     "jsdom": "^28.1.0",
     "postcss": "^8.0.0",
     "storybook": "^8.6.17",

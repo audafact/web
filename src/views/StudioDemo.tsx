@@ -27,7 +27,7 @@ interface Track {
 // Use the same track as GuestContext for consistency
 
 const StudioDemo = () => {
-  const { audioContext, initializeAudio } = useAudioContext();
+  const { audioContext, initializeAudio, primeIosSessionForWebAudio } = useAudioContext();
   const { currentGuestTrack, loadRandomGuestTrack } = useGuest();
   const [track, setTrack] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +51,7 @@ const StudioDemo = () => {
   const [filterEnabled, setFilterEnabled] = useState<boolean>(false);
   const [expandedControls, setExpandedControls] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   // Debug logging function that updates UI
@@ -600,6 +601,7 @@ const StudioDemo = () => {
                   }
                   callback();
                 }}
+                primeIosSessionForWebAudio={primeIosSessionForWebAudio}
                 isSelected={true}
                 onSelect={() => {}}
                 onPlaybackTimeChange={handleTimeChange}
@@ -640,6 +642,7 @@ const StudioDemo = () => {
       <HelpButton
         onStartTutorial={handleStartTutorial}
         onShowHelp={handleShowHelp}
+        onShowFeedback={() => setShowFeedbackModal(true)}
         hideTutorial={true}
       />
 
@@ -647,6 +650,8 @@ const StudioDemo = () => {
       <HelpModal
         isOpen={showHelpModal}
         onClose={() => setShowHelpModal(false)}
+        feedbackOpen={showFeedbackModal}
+        onFeedbackOpenChange={setShowFeedbackModal}
       />
     </div>
   );

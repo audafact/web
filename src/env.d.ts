@@ -1,5 +1,7 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
+  /** Override local worker URL when not using default http://localhost:8787/api */
+  readonly VITE_DEV_WORKER_API_URL?: string;
   readonly VITE_SUPABASE_URL: string;
   readonly VITE_SUPABASE_ANON_KEY: string;
   readonly VITE_APP_ENV: string;
@@ -21,12 +23,18 @@ interface ImportMetaEnv {
   readonly VITE_STRIPE_LIVE_PRICE_YEARLY: string;
   readonly VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER: string;
   readonly VITE_TURNSTILE_SITE_KEY: string;
-  readonly VITE_EMAILJS_SERVICE_ID: string;
-  readonly VITE_EMAILJS_TEMPLATE_ID: string;
-  readonly VITE_EMAILJS_PUBLIC_KEY: string;
   readonly VITE_HOST_EXPERIENCE?: "app" | "marketing";
+  /** Optional; if unset, OAuth uses `window.location.origin`/auth/callback */
+  readonly VITE_AUTH_REDIRECT_URL?: string;
+  /** When "true", production builds keep console.* (Terser). Pair with staging debug. */
+  readonly VITE_KEEP_CONSOLE?: string;
+  /** When "true", log [Audafact API base] and sign-file/stream URL resolution in the browser. */
+  readonly VITE_DEBUG_API_BASE?: string;
+  /** Optional; surfaced in API base debug payload if set in CI. */
+  readonly VITE_USE_STAGING_API?: string;
   readonly MODE: string;
   readonly PROD: boolean;
+  readonly DEV: boolean;
 }
 
 interface ImportMeta {

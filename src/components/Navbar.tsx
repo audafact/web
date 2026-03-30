@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSidePanel } from '../context/SidePanelContext';
 import { useState } from 'react';
 import { PerformanceDashboard } from './PerformanceDashboard';
-import { getHostExperience } from '../routing/hostRouting';
+import { getAppEntryUrl, getHostExperience } from '../routing/hostRouting';
 
 const Navbar = () => {
   const { user, loading, signOut } = useAuth();
@@ -16,6 +16,8 @@ const Navbar = () => {
     location.pathname.startsWith('/stash') ||
     (isAppExperience && location.pathname === '/');
   const isHomePage = !isAppExperience && location.pathname === '/';
+  /** Marketing pages always show main links; studio hides them once the user is signed in. */
+  const showMainNavLinks = !isStudioPage || !user;
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -59,8 +61,8 @@ const Navbar = () => {
           </div>
 
           {/* Navigation Links - Absolutely Centered (show on lg+ to avoid overlap on tablet portrait) */}
-          <div className="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
-            {!user && (
+          {showMainNavLinks && (
+            <div className="hidden lg:flex space-x-8 absolute left-1/2 transform -translate-x-1/2">
               <Link 
                 to="/" 
                 className={`font-medium transition-colors duration-200 ${
@@ -71,28 +73,41 @@ const Navbar = () => {
               >
                 Home
               </Link>
-            )}
-            <Link 
-              to="/studio" 
-              className={`font-medium transition-colors duration-200 ${
-                isStudioPage
-                  ? 'text-audafact-accent-cyan' 
-                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-              }`}
-            >
-              Studio
-            </Link>
-            <Link 
-              to="/pricing" 
-              className={`font-medium transition-colors duration-200 ${
-                location.pathname === '/pricing' 
-                  ? 'text-audafact-accent-cyan' 
-                  : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-              }`}
-            >
-              Pricing
-            </Link>
-          </div>
+              {isAppExperience ? (
+                <Link
+                  to="/studio"
+                  className={`font-medium transition-colors duration-200 ${
+                    isStudioPage
+                      ? 'text-audafact-accent-cyan'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                  }`}
+                >
+                  Studio
+                </Link>
+              ) : (
+                <a
+                  href={getAppEntryUrl()}
+                  className={`font-medium transition-colors duration-200 ${
+                    isStudioPage
+                      ? 'text-audafact-accent-cyan'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                  }`}
+                >
+                  Studio
+                </a>
+              )}
+              <Link 
+                to="/pricing" 
+                className={`font-medium transition-colors duration-200 ${
+                  location.pathname === '/pricing' 
+                    ? 'text-audafact-accent-cyan' 
+                    : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                }`}
+              >
+                Pricing
+              </Link>
+            </div>
+          )}
 
           {/* Auth Section */}
           <div className="flex items-center space-x-2 md:space-x-4 ml-auto">
@@ -112,23 +127,23 @@ const Navbar = () => {
             
             {!loading && (
               user ? (
-                <div className="flex items-center space-x-2 md:space-x-4">
+                <>
                   <Link
                     to="/account"
                     className="hidden sm:inline text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200 text-sm"
                   >
                     Profile
                   </Link>
-                  <span className="hidden md:inline text-audafact-text-secondary text-sm">
-                    {user.email}
-                  </span>
                   <button
-                    onClick={signOut}
-                    className="text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200"
+                    type="button"
+                    onClick={() => {
+                      void signOut();
+                    }}
+                    className="hidden lg:inline text-audafact-text-secondary hover:text-audafact-text-primary transition-colors duration-200 text-sm"
                   >
                     Sign Out
                   </button>
-                </div>
+                </>
               ) : (
                 <Link
                   to="/auth"
@@ -161,41 +176,57 @@ const Navbar = () => {
         className={`${isMobileMenuOpen ? 'block' : 'hidden'} lg:hidden border-t border-audafact-divider bg-audafact-surface-1`}
       >
         <div className="px-4 py-3 space-y-2">
-          {!user && (
-            <Link
-              to="/"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
-                location.pathname === '/'
-                  ? 'text-audafact-accent-cyan bg-audafact-surface-2'
-                  : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
-              }`}
-            >
-              Home
-            </Link>
+          {showMainNavLinks && (
+            <>
+              <Link
+                to="/"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                  location.pathname === '/'
+                    ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                    : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+                }`}
+              >
+                Home
+              </Link>
+              {isAppExperience ? (
+                <Link
+                  to="/studio"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                    isStudioPage
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+                  }`}
+                >
+                  Studio
+                </Link>
+              ) : (
+                <a
+                  href={getAppEntryUrl()}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                    isStudioPage
+                      ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                      : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+                  }`}
+                >
+                  Studio
+                </a>
+              )}
+              <Link
+                to="/pricing"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
+                  location.pathname === '/pricing'
+                    ? 'text-audafact-accent-cyan bg-audafact-surface-2'
+                    : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
+                }`}
+              >
+                Pricing
+              </Link>
+            </>
           )}
-          <Link
-            to="/studio"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
-              isStudioPage
-                ? 'text-audafact-accent-cyan bg-audafact-surface-2'
-                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
-            }`}
-          >
-            Studio
-          </Link>
-          <Link
-            to="/pricing"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className={`block px-2 py-2 rounded-lg transition-colors duration-200 ${
-              location.pathname === '/pricing'
-                ? 'text-audafact-accent-cyan bg-audafact-surface-2'
-                : 'text-audafact-text-secondary hover:text-audafact-text-primary hover:bg-audafact-surface-2'
-            }`}
-          >
-            Pricing
-          </Link>
 
           {/* Account section */}
           {!loading && (

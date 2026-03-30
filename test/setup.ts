@@ -109,21 +109,25 @@ vi.mock("../src/config", () => ({
   supabaseAnonKey: "mock-anon-key",
 }));
 
-// Mock API config with buildApiUrl function
-vi.mock("../src/config/api", () => ({
-  API_CONFIG: {
-    BASE_URL: "https://audafact-api.david-g-cortinas.workers.dev/api",
-    ENDPOINTS: {
-      SIGN_UPLOAD: "/sign-upload",
-      ANALYTICS: "/analytics",
-      TRIGGER_ANALYSIS: "/trigger-analysis",
+// Mock API base URL for most tests; keep real helpers (staging host detection, etc.).
+vi.mock("../src/config/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/config/api")>();
+  return {
+    ...actual,
+    API_CONFIG: {
+      BASE_URL: "https://audafact-api.david-g-cortinas.workers.dev/api",
+      ENDPOINTS: {
+        SIGN_UPLOAD: "/sign-upload",
+        ANALYTICS: "/analytics",
+        TRIGGER_ANALYSIS: "/trigger-analysis",
+      },
     },
-  },
-  buildApiUrl: vi.fn(
-    (endpoint: string) =>
-      `https://audafact-api.david-g-cortinas.workers.dev/api${endpoint}`
-  ),
-}));
+    buildApiUrl: vi.fn(
+      (endpoint: string) =>
+        `https://audafact-api.david-g-cortinas.workers.dev/api${endpoint}`
+    ),
+  };
+});
 
 // Mock performance API
 Object.defineProperty(global, "performance", {

@@ -30,7 +30,7 @@ const Tooltip: React.FC<TooltipProps> = ({
   const tooltipRef = useRef<HTMLDivElement>(null);
 
   
-  const showTooltip = (e: React.MouseEvent | React.FocusEvent) => {
+  const showTooltip = (_e: React.MouseEvent | React.FocusEvent) => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       const tooltipHeight = 40; // Approximate tooltip height
@@ -65,11 +65,16 @@ const Tooltip: React.FC<TooltipProps> = ({
         y = rect.top + rect.height / 2;
         finalPosition = 'right';
       }
-      
-      // Ensure tooltip stays within viewport bounds
-      x = Math.max(viewportPadding, Math.min(x, window.innerWidth - tooltipWidth - viewportPadding));
+
+      // For top/bottom, `left` + translateX(-50%) anchors the horizontal *center* at x — do not clamp x as if it were the left edge.
+      if (finalPosition === 'top' || finalPosition === 'bottom') {
+        const halfW = maxWidth / 2;
+        x = Math.max(halfW, Math.min(x, window.innerWidth - halfW));
+      } else {
+        x = Math.max(viewportPadding, Math.min(x, window.innerWidth - tooltipWidth - viewportPadding));
+      }
       y = Math.max(viewportPadding, Math.min(y, window.innerHeight - tooltipHeight - viewportPadding));
-      
+
       setTooltipPosition({ x, y });
       setFinalPosition(finalPosition);
     }
@@ -100,7 +105,8 @@ const Tooltip: React.FC<TooltipProps> = ({
         const tooltipHeight = 40; // Approximate tooltip height
         const tooltipWidth = 200; // Approximate tooltip width
         const spacing = 12; // Space between tooltip and trigger
-        
+        const viewportPadding = 0;
+
         let x = rect.left + rect.width / 2;
         let y = rect.top;
         let finalPosition = position;
@@ -126,7 +132,15 @@ const Tooltip: React.FC<TooltipProps> = ({
           y = rect.top + rect.height / 2;
           finalPosition = 'right';
         }
-        
+
+        if (finalPosition === 'top' || finalPosition === 'bottom') {
+          const halfW = maxWidth / 2;
+          x = Math.max(halfW, Math.min(x, window.innerWidth - halfW));
+        } else {
+          x = Math.max(viewportPadding, Math.min(x, window.innerWidth - tooltipWidth - viewportPadding));
+        }
+        y = Math.max(viewportPadding, Math.min(y, window.innerHeight - tooltipHeight - viewportPadding));
+
         setTooltipPosition({ x, y });
         setFinalPosition(finalPosition);
         setIsVisible(true);
@@ -171,7 +185,7 @@ const Tooltip: React.FC<TooltipProps> = ({
     <div className={`tooltip-container ${className}`}>
       <div
         ref={triggerRef}
-        className="tooltip-trigger"
+        className="tooltip-trigger w-fit max-w-full"
         {...eventHandlers[trigger]}
       >
         {children}
@@ -185,13 +199,14 @@ const Tooltip: React.FC<TooltipProps> = ({
             position: 'fixed',
             left: tooltipPosition.x,
             top: tooltipPosition.y,
-            transform: position === 'top' || position === 'bottom' 
-              ? 'translateX(-50%)' 
-              : position === 'right' 
-                ? 'translateY(-50%)' 
-              : position === 'left'
-                ? 'translateX(-100%) translateY(-50%)'
-                : 'none',
+            transform:
+              finalPosition === 'top' || finalPosition === 'bottom'
+                ? 'translateX(-50%)'
+                : finalPosition === 'right'
+                  ? 'translateY(-50%)'
+                  : finalPosition === 'left'
+                    ? 'translateX(-100%) translateY(-50%)'
+                    : 'none',
             maxWidth: `${maxWidth}px`,
             zIndex
           }}

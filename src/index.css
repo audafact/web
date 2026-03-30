@@ -315,6 +315,7 @@
   white-space: normal;
   max-width: 200px;
   word-wrap: break-word;
+  text-align: center;
   box-shadow: var(--tooltip-shadow);
   line-height: 1.4;
   font-weight: 400;

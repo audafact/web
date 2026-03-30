@@ -28,7 +28,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
   development: {
     name: "Development",
     domain: "localhost:5173",
-    apiUrl: "http://localhost:5173/api/staging", // Use proxy for staging
+    apiUrl: "http://localhost:8787/api", // wrangler dev; avoid Vite proxy for API
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: [
       "http://localhost:5173",
@@ -51,6 +51,7 @@ export const environments: Record<Environment, EnvironmentConfig> = {
     turnstileSiteKey: "0x4AAAAAABpJ3cypikhi7CPU",
     corsOrigins: [
       "https://staging.audafact.com",
+      "https://www.staging.audafact.com",
       "https://app.staging.audafact.com",
     ],
     stripeMode: "test",
@@ -129,21 +130,32 @@ export function getEnvironment(): Environment {
     return envOverride;
   }
 
-  // Check for Vite mode
+  // Cloudflare Pages sets CF_PAGES / CF_PAGES_BRANCH during build (Git-connected projects).
+  // Do NOT trust NODE_ENV alone: `vite build` sets NODE_ENV=production for all environments,
+  // which previously forced production worker + prod Supabase into staging bundles.
+  if (process.env.CF_PAGES === "1") {
+    const b = (process.env.CF_PAGES_BRANCH || "").toLowerCase();
+    if (b === "main") return "production";
+    if (b === "develop" || b === "staging") return "staging";
+    return "preview";
+  }
+
+  try {
+    const branch = getCurrentBranch().toLowerCase();
+    if (branch === "main") return "production";
+    if (branch === "develop" || branch === "staging") return "staging";
+    if (branch && branch !== "head" && branch !== "development") {
+      return "preview";
+    }
+  } catch {
+    // fall through
+  }
+
   const mode = process.env.NODE_ENV || process.env.MODE;
   if (mode === "staging") return "staging";
   if (mode === "production") return "production";
 
-  // Auto-detect based on Git branch (if available)
-  try {
-    const branch = getCurrentBranch();
-    if (branch === "main") return "production";
-    if (branch === "develop") return "staging";
-    return "preview"; // feature branches
-  } catch (error) {
-    // Fallback to development if Git detection fails
-    return "development";
-  }
+  return "development";
 }
 
 /**

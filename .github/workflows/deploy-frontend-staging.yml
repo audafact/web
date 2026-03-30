@@ -35,6 +35,13 @@ jobs:
         run: npm run build:staging
         env:
           VITE_APP_ENV: staging
+          # Ignore repo/.env localhost; vite.config resolves apiUrl from staging env config
+          VITE_API_BASE_URL: ""
+          # Optional: set in GitHub → Settings → Secrets and variables → Actions → Variables
+          # VITE_DEBUG_API_BASE=true → [Audafact API base] step logs + keeps console in bundle (see vite.config.js)
+          # VITE_KEEP_CONSOLE=true → keep all console.* without verbose API logs (or use both for full debug)
+          VITE_DEBUG_API_BASE: ${{ vars.VITE_DEBUG_API_BASE }}
+          VITE_KEEP_CONSOLE: ${{ vars.VITE_KEEP_CONSOLE }}
 
       - name: Deploy to Cloudflare Pages (Staging)
         run: wrangler pages deploy dist --project-name=audafact-web-staging --branch develop

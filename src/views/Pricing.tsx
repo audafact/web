@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUserAccess } from '../hooks/useUserAccess';
 import { createCheckoutSession } from '../services/stripeService';
 import { redeemInviteCode } from '../services/inviteService';
-import { Check, Star, Crown, User } from 'lucide-react';
+import { Check, Star, Crown, User, ChevronDown } from 'lucide-react';
 
 const isLive = import.meta.env.VITE_STRIPE_MODE === 'live';
 
@@ -100,6 +100,7 @@ export const Pricing: React.FC = () => {
   const [isRedeemingCode, setIsRedeemingCode] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteCodeOpen, setInviteCodeOpen] = useState(false);
 
   const handleSubscribe = async (plan: PricingPlan) => {
     if (!user) {
@@ -236,29 +237,44 @@ export const Pricing: React.FC = () => {
 
       {(accessTier === 'free' || accessTier === 'starter') && (
         <div className="max-w-2xl mx-auto mb-10 audafact-card-enhanced p-4">
-          <p className="text-sm audafact-text-secondary mb-3">
-            Have an early creator invite code?
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={inviteCode}
-              onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
-              placeholder="Enter code"
-              className="flex-1 px-3 py-2 rounded-md bg-audafact-surface-2 border border-audafact-divider text-audafact-text-primary"
-              disabled={isRedeemingCode}
+          <button
+            type="button"
+            onClick={() => setInviteCodeOpen((open) => !open)}
+            aria-expanded={inviteCodeOpen}
+            className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium audafact-text-secondary hover:audafact-text-primary transition-colors"
+          >
+            <span>Enter invite code</span>
+            <ChevronDown
+              className={`h-4 w-4 flex-shrink-0 text-audafact-text-secondary transition-transform duration-200 ${
+                inviteCodeOpen ? 'rotate-180' : ''
+              }`}
+              aria-hidden
             />
-            <button
-              type="button"
-              onClick={handleRedeemCode}
-              disabled={isRedeemingCode}
-              className="audafact-button-secondary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isRedeemingCode ? 'Redeeming...' : 'Redeem code'}
-            </button>
-          </div>
-          {inviteError && <p className="mt-2 text-sm text-red-400">{inviteError}</p>}
-          {inviteMessage && <p className="mt-2 text-sm text-audafact-accent-green">{inviteMessage}</p>}
+          </button>
+          {inviteCodeOpen && (
+            <div className="mt-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+                  placeholder="Enter code"
+                  className="flex-1 px-3 py-2 rounded-md bg-audafact-surface-2 border border-audafact-divider text-audafact-text-primary"
+                  disabled={isRedeemingCode}
+                />
+                <button
+                  type="button"
+                  onClick={handleRedeemCode}
+                  disabled={isRedeemingCode}
+                  className="audafact-button-secondary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isRedeemingCode ? 'Redeeming...' : 'Redeem code'}
+                </button>
+              </div>
+              {inviteError && <p className="mt-2 text-sm text-red-400">{inviteError}</p>}
+              {inviteMessage && <p className="mt-2 text-sm text-audafact-accent-green">{inviteMessage}</p>}
+            </div>
+          )}
         </div>
       )}
 

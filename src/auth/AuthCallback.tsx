@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
+import { getPostAuthStudioUrl } from '../routing/hostRouting';
+
+/**
+ * OAuth codes are single-use. React Strict Mode runs effects twice in dev, which
+ * would call exchangeCodeForSession twice and the second POST .../token?grant_type=pkce
+ * returns 400. Share one in-flight promise per code.
+ */
+const pkceExchangeByCode = new Map<
+  string,
+  ReturnType<typeof supabase.auth.exchangeCodeForSession>
+>();
 
 export const AuthCallback = () => {
   const [loading, setLoading] = useState(true);
@@ -11,6 +22,142 @@ export const AuthCallback = () => {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
+        const g = globalThis as unknown as { __AUDAFACT_AUTH_TRACE?: unknown[] };
+        g.__AUDAFACT_AUTH_TRACE = g.__AUDAFACT_AUTH_TRACE ?? [];
+        g.__AUDAFACT_AUTH_TRACE.push({
+          step: 'callback_effect_start',
+          t: Date.now(),
+          href: typeof window !== 'undefined' ? window.location.href : null,
+        });
+        // #region agent log
+        fetch(
+          '/__agent-debug-log',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId: '6faadc',
+              hypothesisId: 'H2',
+              location: 'AuthCallback.tsx:handleAuthCallback',
+              message: 'callback entry',
+              data: {
+                host: typeof window !== 'undefined' ? window.location.hostname : null,
+                origin: typeof window !== 'undefined' ? window.location.origin : null,
+                pathname: typeof window !== 'undefined' ? window.location.pathname : null,
+                hasOAuthCode: !!(searchParams.get('code')),
+                hashPresent:
+                  typeof window !== 'undefined' &&
+                  !!window.location.hash?.length,
+                authErrorParam: searchParams.get('error'),
+                authErrorDescription: searchParams.get('error_description'),
+              },
+              timestamp: Date.now(),
+            }),
+          },
+        ).catch(() => {});
+        // #endregion
+        // PKCE (OAuth) returns ?code=... on the callback URL, not a hash.
+        const oauthCode = searchParams.get('code');
+        if (oauthCode) {
+          let inflight = pkceExchangeByCode.get(oauthCode);
+          if (!inflight) {
+            inflight = supabase.auth.exchangeCodeForSession(oauthCode);
+            pkceExchangeByCode.set(oauthCode, inflight);
+          }
+          const { data: exchanged, error: exchangeError } = await inflight;
+          // #region agent log
+          fetch(
+            '/__agent-debug-log',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: '6faadc',
+                hypothesisId: 'H9',
+                location: 'AuthCallback.tsx:exchangeCodeForSession',
+                message: 'after exchangeCodeForSession',
+                data: {
+                  host:
+                    typeof window !== 'undefined'
+                      ? window.location.hostname
+                      : null,
+                  exchangeError: exchangeError?.message ?? null,
+                  hasSessionUser: !!exchanged?.session?.user,
+                },
+                timestamp: Date.now(),
+              }),
+            },
+          ).catch(() => {});
+          // #endregion
+          g.__AUDAFACT_AUTH_TRACE?.push({
+            step: 'after_exchange',
+            t: Date.now(),
+            exchangeError: exchangeError?.message ?? null,
+            hasUser: !!exchanged?.session?.user,
+          });
+          if (!exchangeError && exchanged.session?.user) {
+            const next = getPostAuthStudioUrl();
+            // #region agent log
+            fetch(
+              '/__agent-debug-log',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  sessionId: '6faadc',
+                  hypothesisId: 'H3',
+                  location: 'AuthCallback.tsx:oauth exchange success',
+                  message: 'replace after exchangeCodeForSession',
+                  data: {
+                    next,
+                    host:
+                      typeof window !== 'undefined'
+                        ? window.location.hostname
+                        : null,
+                  },
+                  timestamp: Date.now(),
+                }),
+              },
+            ).catch(() => {});
+            // #endregion
+            window.location.replace(next);
+            return;
+          }
+          // #region agent log
+          fetch(
+            '/__agent-debug-log',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: '6faadc',
+                hypothesisId: 'H10',
+                location: 'AuthCallback.tsx:oauth branch fallthrough',
+                message:
+                  'had OAuth code but no session after exchange — fallthrough',
+                data: {
+                  host:
+                    typeof window !== 'undefined'
+                      ? window.location.hostname
+                      : null,
+                  exchangeError: exchangeError?.message ?? null,
+                },
+                timestamp: Date.now(),
+              }),
+            },
+          ).catch(() => {});
+          // #endregion
+          g.__AUDAFACT_AUTH_TRACE?.push({
+            step: 'oauth_fallthrough',
+            t: Date.now(),
+          });
+          // If the client already auto-exchanged, or the code was consumed, fall through.
+        }
+
         // Check if we have authentication data in the hash
         if (window.location.hash && window.location.hash.includes('access_token')) {
           // Parse the hash to extract the access token
@@ -41,12 +188,14 @@ export const AuthCallback = () => {
               
               // If this is a signup type OR if email was verified very recently (within 2 minutes)
               if (type === 'signup' || (verifiedAt && (now.getTime() - verifiedAt.getTime()) < 2 * 60 * 1000)) {
-                navigate('/studio?verified=true&type=signup', { replace: true });
+                window.location.replace(
+                  getPostAuthStudioUrl('?verified=true&type=signup'),
+                );
                 return;
               }
               
               // Otherwise, go directly to studio
-              navigate('/studio', { replace: true });
+              window.location.replace(getPostAuthStudioUrl());
               return;
             }
           }
@@ -65,7 +214,7 @@ export const AuthCallback = () => {
         }
 
         if (session?.user) {
-          navigate('/studio', { replace: true });
+          window.location.replace(getPostAuthStudioUrl());
         } else {
           // Check for error parameters in URL
           const errorParam = searchParams.get('error');

@@ -1,6 +1,7 @@
 // src/audio/usePreviewFromProvider.ts
 import { useRef, useState, useEffect } from "react";
 import { useAudioContext } from "@/context/AudioContext"; // keep your import
+import { fetchLibraryAudioBlob } from "@/lib/api";
 
 /**
  * Uses the shared AudioContext from your AudioProvider.
@@ -40,6 +41,18 @@ export function usePreviewFromProvider() {
     const arr = await resp.arrayBuffer();
     const buf = await ctx.decodeAudioData(arr.slice(0)); // Safari-safe copy
 
+    bufferRef.current = buf;
+    setDuration(buf.duration);
+    setLoaded(true);
+  }
+
+  /** Library / R2 keys: stream via Worker (same-origin) so R2 CORS is not required. */
+  async function loadAndDecodeFromFileKey(fileKey: string) {
+    const ctx = await ensureCtx();
+    stop();
+    const blob = await fetchLibraryAudioBlob(fileKey);
+    const arr = await blob.arrayBuffer();
+    const buf = await ctx.decodeAudioData(arr.slice(0));
     bufferRef.current = buf;
     setDuration(buf.duration);
     setLoaded(true);
@@ -133,6 +146,7 @@ export function usePreviewFromProvider() {
 
   return {
     loadAndDecode,
+    loadAndDecodeFromFileKey,
     loadFromBuffer, // ← added
     getBuffer, // ← added
     playLoop,
