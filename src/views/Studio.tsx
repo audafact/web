@@ -1105,7 +1105,7 @@ const Studio = () => {
       }
     }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
 
-  // Keyboard navigation for track switching
+  // Global keyboard shortcuts (Space, help, zoom) — track switching uses Prev/Next or swipe only
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       // Skip shortcuts when user is typing in an input (volume, speed, filters, etc.)
@@ -1117,7 +1117,6 @@ const Studio = () => {
         (active instanceof HTMLInputElement &&
           (active as HTMLInputElement).type !== 'range');
       if (isTypingInput) {
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
         if (event.key === ' ') return; // Never trigger playback when typing in text inputs
         if (event.key === 'z' || event.key === 'Z' || event.key === 'x' || event.key === 'X' || event.key === 'c' || event.key === 'C') return; // Don't trigger zoom when typing
       }
@@ -1156,19 +1155,11 @@ const Studio = () => {
           return;
         }
       }
-
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        handlePreviousTrack();
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        handleNextTrack();
-      }
     };
 
     window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
     return () => window.removeEventListener('keydown', handleKeyPress, true);
-  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay]);
+  }, [tracks, isTapTempoActive, handleGlobalPlay]);
 
         // Handle demo track changes
       useEffect(() => {

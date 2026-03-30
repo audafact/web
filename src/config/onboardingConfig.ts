@@ -25,7 +25,7 @@ export const createOnboardingSteps = (
   {
     id: 'track-navigation',
     title: 'Switch & add tracks',
-    description: 'Use Prev/Next to switch between tracks. Swipe left/right on mobile or use keyboard arrows.',
+    description: 'Use Prev/Next to switch between tracks. Swipe left/right on mobile.',
     targetSelector: '[data-testid="track-loader-bar"]',
     position: 'bottom'
   },

@@ -20,9 +20,7 @@ const HelpModal: React.FC<HelpModalProps> = ({
 
   const shortcuts = [
     { key: 'Space', description: 'Play/Pause armed loops (loop tracks are armed by default)' },
-    { key: 'Left/Right Arrow', description: 'Navigate between tracks' },
     { key: '1-0', description: 'Trigger cue points (in Chop mode)' },
-    { key: 'Escape', description: 'Close modals and dialogs' },
     { key: '?', description: 'Show this help modal' },
     { key: 'Z', description: 'Zoom in on waveform' },
     { key: 'X', description: 'Zoom out on waveform' },
