@@ -2,7 +2,10 @@ import fs from "node:fs";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import { getEnvironmentConfig } from "./config/environments.js";
+import {
+  getEnvironment,
+  getEnvironmentConfig,
+} from "./config/environments.js";
 
 /** Append agent debug NDJSON lines (browser POSTs same-origin to avoid CORS on ingest). */
 function agentDebugLogPlugin() {
@@ -61,24 +64,27 @@ function agentDebugLogPlugin() {
   };
 }
 
+/** Non-empty shell/CI env wins over .env so `VITE_APP_ENV=staging npm run build:staging` is not overwritten by VITE_APP_ENV=development from a local file (which baked localhost proxy URLs into staging). */
+function pickViteEnvPreferShell(key, loaded) {
+  const shell = process.env[key];
+  if (shell !== undefined && shell !== "") return shell;
+  return loaded[key];
+}
+
 export default defineConfig(({ mode }) => {
   // Load environment variables
   const env = loadEnv(mode, process.cwd(), "");
 
-  // loadEnv() does not populate process.env. Branch-based detection in
-  // getEnvironmentConfig() reads process.env.VITE_APP_ENV; without this,
-  // being on `main` while .env sets VITE_APP_ENV=development still picks
-  // production fallbacks (and confuses local tooling).
-  if (env.VITE_APP_ENV) {
-    process.env.VITE_APP_ENV = env.VITE_APP_ENV;
+  const resolvedViteAppEnv = pickViteEnvPreferShell("VITE_APP_ENV", env);
+  if (resolvedViteAppEnv) {
+    process.env.VITE_APP_ENV = resolvedViteAppEnv;
   }
 
   // Get environment configuration
   const envConfig = getEnvironmentConfig();
 
   const appEnv =
-    env.VITE_APP_ENV ||
-    process.env.VITE_APP_ENV ||
+    resolvedViteAppEnv ||
     envConfig.name?.toLowerCase() ||
     "";
 
@@ -95,7 +101,8 @@ export default defineConfig(({ mode }) => {
     envTruthy(env.VITE_DEBUG_API_BASE) || envTruthy(process.env.VITE_DEBUG_API_BASE);
   const preserveConsoleInBuild = keepConsole || debugApiBase;
 
-  let resolvedApiUrl = env.VITE_API_BASE_URL || envConfig.apiUrl;
+  let resolvedApiUrl =
+    pickViteEnvPreferShell("VITE_API_BASE_URL", env) || envConfig.apiUrl;
 
   const cfPagesUrl = (process.env.CF_PAGES_URL || "").toLowerCase();
   const deployLooksLikeStagingWeb =
@@ -208,7 +215,7 @@ export default defineConfig(({ mode }) => {
       env.VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER ||
       envConfig.stripePrices?.earlyAdopter ||
       "price_live_early_adopter",
-    VITE_APP_ENV: env.VITE_APP_ENV || envConfig.name.toLowerCase(),
+    VITE_APP_ENV: resolvedViteAppEnv || envConfig.name.toLowerCase(),
     VITE_DOMAIN: env.VITE_DOMAIN || envConfig.domain,
     VITE_HOST_EXPERIENCE: env.VITE_HOST_EXPERIENCE || "",
     VITE_CORS_ORIGINS:
@@ -218,8 +225,61 @@ export default defineConfig(({ mode }) => {
     VITE_DEBUG_API_BASE: env.VITE_DEBUG_API_BASE || process.env.VITE_DEBUG_API_BASE || "",
   };
 
+  const buildEnvTrace = {
+    generatedAt: new Date().toISOString(),
+    viteMode: mode,
+    cwd: process.cwd(),
+    detectedEnvironment: getEnvironment(),
+    envConfigName: envConfig.name,
+    envConfigApiUrl: envConfig.apiUrl,
+    merge: {
+      VITE_APP_ENV_shell: process.env.VITE_APP_ENV,
+      VITE_APP_ENV_file: env.VITE_APP_ENV,
+      resolvedViteAppEnv,
+      VITE_API_BASE_URL_shell:
+        process.env.VITE_API_BASE_URL === undefined
+          ? undefined
+          : process.env.VITE_API_BASE_URL === ""
+            ? "(empty)"
+            : process.env.VITE_API_BASE_URL.slice(0, 120),
+      VITE_API_BASE_URL_file: env.VITE_API_BASE_URL
+        ? String(env.VITE_API_BASE_URL).slice(0, 120)
+        : "",
+    },
+    final: {
+      appEnv,
+      bakedVITE_API_BASE_URL: resolvedApiUrl,
+    },
+    cf: {
+      CF_PAGES: process.env.CF_PAGES,
+      CF_PAGES_BRANCH: process.env.CF_PAGES_BRANCH,
+      CF_PAGES_URL: process.env.CF_PAGES_URL,
+    },
+  };
+
+  console.log(
+    "[Audafact build] env trace:",
+    JSON.stringify(buildEnvTrace, null, 2),
+  );
+
+  function audafactBuildTracePlugin() {
+    return {
+      name: "audafact-build-trace",
+      closeBundle() {
+        const outDir = path.resolve(process.cwd(), "dist");
+        const tracePath = path.join(outDir, "build-env-trace.json");
+        try {
+          fs.mkdirSync(outDir, { recursive: true });
+          fs.writeFileSync(tracePath, JSON.stringify(buildEnvTrace, null, 2), "utf8");
+        } catch (e) {
+          console.warn("[Audafact build] could not write build-env-trace.json", e);
+        }
+      },
+    };
+  }
+
   return {
-    plugins: [agentDebugLogPlugin(), react()],
+    plugins: [agentDebugLogPlugin(), react(), audafactBuildTracePlugin()],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "src"),
