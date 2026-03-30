@@ -1,10 +1,7 @@
-// API Configuration — Worker routes live under /api/*. Vite may inject
-// VITE_API_BASE_URL from .env or CI; never use localhost in production builds.
-//
-// Debug: set VITE_DEBUG_API_BASE=true at build time (Cloudflare Pages env) for step logs.
-// Set VITE_KEEP_CONSOLE=true to keep all console.* in production bundles without verbose API logs.
+// API Configuration — Worker routes live under /api/*. Vite injects VITE_* from .env / CI (see vite.config.js).
+// Optional: VITE_DEBUG_API_BASE, VITE_KEEP_CONSOLE for verbose API resolution logs.
 
-/** True when VITE_DEBUG_API_BASE was set at build time (enables [Audafact API base] console warnings). */
+/** True when VITE_DEBUG_API_BASE was set at build time. */
 export function isApiBaseDebugEnabled(): boolean {
   const v = import.meta.env.VITE_DEBUG_API_BASE;
   if (typeof v !== "string") return false;
@@ -127,9 +124,16 @@ const devBrowserApiBaseViaViteProxy = (): string | undefined => {
   return normalizeApiBaseUrl(`${origin}${DEV_STAGING_PROXY_PREFIX}`);
 };
 
-/** Persist last resolution for staging debugging; console only if VITE_KEEP_CONSOLE (see vite.config.js). */
+/** Optional: VITE_DEBUG_API_BASE → sessionStorage + warnings; VITE_KEEP_CONSOLE → one-line info (vite.config.js). */
 function logApiBaseResolve(branch: string, result: string): void {
   if (typeof window === "undefined") return;
+  const debug = isApiBaseDebugEnabled();
+  const keepConsole =
+    String(import.meta.env.VITE_KEEP_CONSOLE || "")
+      .toLowerCase()
+      .trim() === "true";
+  if (!debug && !keepConsole) return;
+
   const h = normalizeBrowserHostname(window.location.hostname);
   const payload = {
     branch,
@@ -140,7 +144,7 @@ function logApiBaseResolve(branch: string, result: string): void {
     viteAppEnv: String(import.meta.env.VITE_APP_ENV ?? ""),
     viteApiBasePrefix: String(import.meta.env.VITE_API_BASE_URL ?? "").slice(
       0,
-      80
+      80,
     ),
     mode: String(import.meta.env.MODE),
     prod: import.meta.env.PROD,
@@ -150,28 +154,23 @@ function logApiBaseResolve(branch: string, result: string): void {
     regexStagingPages: /(^|\.)audafact-web-staging\.pages\.dev$/.test(h),
     t: Date.now(),
   };
-  try {
-    (window as Window & { __AUDAFACT_API_BASE_DEBUG__?: typeof payload }).__AUDAFACT_API_BASE_DEBUG__ =
-      payload;
-    sessionStorage.setItem("audafact_api_base_debug", JSON.stringify(payload));
-  } catch {
-    /* private mode / quota */
+
+  if (debug) {
+    try {
+      (window as Window & { __AUDAFACT_API_BASE_DEBUG__?: typeof payload }).__AUDAFACT_API_BASE_DEBUG__ =
+        payload;
+      sessionStorage.setItem("audafact_api_base_debug", JSON.stringify(payload));
+    } catch {
+      /* private mode / quota */
+    }
+    logApiBase("resolve", { ...payload, result });
   }
-  logApiBase("resolve", { ...payload, result });
-  if (
-    String(import.meta.env.VITE_KEEP_CONSOLE || "")
-      .toLowerCase()
-      .trim() === "true"
-  ) {
-    console.info("[Audafact API base]", payload);
+  if (keepConsole) {
+    console.info("[Audafact API base]", { ...payload, result });
   }
 }
 
-/**
- * Baked env, cached chunks, or rare hostname edge cases can still yield the Vite proxy base
- * (localhost:5173/.../api/staging) or the prod worker on a staging tab. Last-line defense for
- * public origins only (not localhost dev).
- */
+/** Last-line fix for bad baked API URLs on public tabs (e.g. loopback or prod worker on staging). */
 function coerceApiBaseForPublicPage(url: string): string {
   if (typeof window === "undefined") return url;
   if (isPageLocalhostLoopback()) return url;

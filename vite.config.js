@@ -2,10 +2,7 @@ import fs from "node:fs";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import {
-  getEnvironment,
-  getEnvironmentConfig,
-} from "./config/environments.js";
+import { getEnvironmentConfig } from "./config/environments.js";
 
 /** Append agent debug NDJSON lines (browser POSTs same-origin to avoid CORS on ingest). */
 function agentDebugLogPlugin() {
@@ -225,61 +222,8 @@ export default defineConfig(({ mode }) => {
     VITE_DEBUG_API_BASE: env.VITE_DEBUG_API_BASE || process.env.VITE_DEBUG_API_BASE || "",
   };
 
-  const buildEnvTrace = {
-    generatedAt: new Date().toISOString(),
-    viteMode: mode,
-    cwd: process.cwd(),
-    detectedEnvironment: getEnvironment(),
-    envConfigName: envConfig.name,
-    envConfigApiUrl: envConfig.apiUrl,
-    merge: {
-      VITE_APP_ENV_shell: process.env.VITE_APP_ENV,
-      VITE_APP_ENV_file: env.VITE_APP_ENV,
-      resolvedViteAppEnv,
-      VITE_API_BASE_URL_shell:
-        process.env.VITE_API_BASE_URL === undefined
-          ? undefined
-          : process.env.VITE_API_BASE_URL === ""
-            ? "(empty)"
-            : process.env.VITE_API_BASE_URL.slice(0, 120),
-      VITE_API_BASE_URL_file: env.VITE_API_BASE_URL
-        ? String(env.VITE_API_BASE_URL).slice(0, 120)
-        : "",
-    },
-    final: {
-      appEnv,
-      bakedVITE_API_BASE_URL: resolvedApiUrl,
-    },
-    cf: {
-      CF_PAGES: process.env.CF_PAGES,
-      CF_PAGES_BRANCH: process.env.CF_PAGES_BRANCH,
-      CF_PAGES_URL: process.env.CF_PAGES_URL,
-    },
-  };
-
-  console.log(
-    "[Audafact build] env trace:",
-    JSON.stringify(buildEnvTrace, null, 2),
-  );
-
-  function audafactBuildTracePlugin() {
-    return {
-      name: "audafact-build-trace",
-      closeBundle() {
-        const outDir = path.resolve(process.cwd(), "dist");
-        const tracePath = path.join(outDir, "build-env-trace.json");
-        try {
-          fs.mkdirSync(outDir, { recursive: true });
-          fs.writeFileSync(tracePath, JSON.stringify(buildEnvTrace, null, 2), "utf8");
-        } catch (e) {
-          console.warn("[Audafact build] could not write build-env-trace.json", e);
-        }
-      },
-    };
-  }
-
   return {
-    plugins: [agentDebugLogPlugin(), react(), audafactBuildTracePlugin()],
+    plugins: [agentDebugLogPlugin(), react()],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "src"),

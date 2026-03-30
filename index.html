@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <meta charset="UTF-8" />
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -16,7 +17,6 @@
     </script>
     <!-- End Google Tag Manager -->
 
-    <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
@@ -77,48 +77,6 @@
     <!-- End Google Tag Manager (noscript) -->
 
     <div id="root"></div>
-    <!--
-      Stale cached JS can still reference http://localhost:5173/api/staging or the prod worker.
-      This runs before the app bundle and rewrites those URLs when the page is on staging hosts.
-    -->
-    <script>
-      (function () {
-        var PROD_WORKER = "https://audafact-api.david-g-cortinas.workers.dev";
-        var STAGING_WORKER = "https://audafact-api-staging.david-g-cortinas.workers.dev";
-        var STAGING_API_BASE = STAGING_WORKER + "/api";
-        function isStagingHost() {
-          var h = (location.hostname || "").replace(/\.$/, "").toLowerCase();
-          if (/(^|\.)staging\.audafact\.com$/.test(h)) return true;
-          if (/(^|\.)audafact-web-staging\.pages\.dev$/.test(h)) return true;
-          if (h.indexOf("staging.audafact.com") !== -1) return true;
-          if (h.indexOf("audafact-web-staging.pages.dev") !== -1) return true;
-          return false;
-        }
-        function rewriteUrl(s) {
-          if (!isStagingHost() || typeof s !== "string") return s;
-          if (s.indexOf("http://localhost:") === 0 && s.indexOf("/api/staging") !== -1) {
-            return s.replace(/^http:\/\/localhost:\d+\/api\/staging/, STAGING_API_BASE);
-          }
-          if (s.indexOf(PROD_WORKER) === 0) {
-            return s.replace(PROD_WORKER, STAGING_WORKER);
-          }
-          return s;
-        }
-        var origFetch = window.fetch;
-        window.fetch = function (input, init) {
-          if (typeof input === "string") {
-            var u = rewriteUrl(input);
-            if (u !== input) return origFetch.call(this, u, init);
-          } else if (typeof Request !== "undefined" && input instanceof Request) {
-            var next = rewriteUrl(input.url);
-            if (next !== input.url) {
-              input = new Request(next, input);
-            }
-          }
-          return origFetch.call(this, input, init);
-        };
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
