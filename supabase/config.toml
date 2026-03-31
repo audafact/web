@@ -348,6 +348,10 @@ verify_jwt = false
 [functions.feedback-submission]
 verify_jwt = false
 
+# Database Webhook on public.users INSERT (no end-user JWT; optional DATABASE_WEBHOOK_SECRET)
+[functions.notify-new-user]
+verify_jwt = false
+
 [functions.meta-lead]
 enabled = true
 verify_jwt = true
