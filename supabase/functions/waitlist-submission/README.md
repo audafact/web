@@ -56,7 +56,7 @@ The function expects a POST request with the following payload:
 ```json
 {
   "success": true,
-  "message": "Successfully added to waitlist!",
+  "message": "Successfully signed up for beta access updates!",
   "turnstileVerified": true,
   "hubspotSubmitted": true
 }
