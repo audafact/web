@@ -68,6 +68,53 @@ function pickViteEnvPreferShell(key, loaded) {
   return loaded[key];
 }
 
+/** Absolute site origin for Open Graph (Facebook, Slack, iMessage require absolute og:image URLs). */
+function resolveOpenGraphOrigin(cfPagesUrl, domainFromEnv) {
+  let fromCf = (cfPagesUrl || "").trim().replace(/\/$/, "");
+  if (fromCf) {
+    if (!/^https?:\/\//i.test(fromCf)) fromCf = `https://${fromCf}`;
+    return fromCf;
+  }
+  const d = (domainFromEnv || "").trim();
+  if (!d || d.includes("${branch}")) return "https://audafact.com";
+  if (d.startsWith("localhost") || d.startsWith("127."))
+    return `http://${d}`;
+  return `https://${d}`;
+}
+
+const OG_DESCRIPTION =
+  "Audafact - Empowering creators to dig, dissect, and deploy audio artifacts with precision tools for cueing, looping, and sampling";
+
+function openGraphMetaPlugin(origin) {
+  const o = origin.replace(/\/$/, "");
+  const esc = (s) =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+  const d = esc(OG_DESCRIPTION);
+  const meta = `
+    <link rel="canonical" href="${o}/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Audafact" />
+    <meta property="og:title" content="Audafact" />
+    <meta property="og:description" content="${d}" />
+    <meta property="og:url" content="${o}/" />
+    <meta property="og:image" content="${o}/social-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Audafact" />
+    <meta name="twitter:description" content="${d}" />
+    <meta name="twitter:image" content="${o}/social-card.png" />`;
+  return {
+    name: "open-graph-meta",
+    transformIndexHtml(html) {
+      return html.replace("  </head>", `${meta}\n  </head>`);
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Load environment variables
   const env = loadEnv(mode, process.cwd(), "");
@@ -77,8 +124,14 @@ export default defineConfig(({ mode }) => {
     process.env.VITE_APP_ENV = resolvedViteAppEnv;
   }
 
-  // Get environment configuration
-  const envConfig = getEnvironmentConfig();
+  // Get environment configuration (branch substitution for preview Open Graph origin).
+  const envConfig = getEnvironmentConfig(
+    process.env.CF_PAGES_BRANCH || undefined,
+  );
+  const openGraphOrigin = resolveOpenGraphOrigin(
+    process.env.CF_PAGES_URL,
+    env.VITE_DOMAIN || envConfig.domain,
+  );
 
   const appEnv =
     resolvedViteAppEnv ||
@@ -223,7 +276,11 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
-    plugins: [agentDebugLogPlugin(), react()],
+    plugins: [
+      agentDebugLogPlugin(),
+      openGraphMetaPlugin(openGraphOrigin),
+      react(),
+    ],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "src"),
