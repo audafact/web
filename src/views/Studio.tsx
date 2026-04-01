@@ -4819,6 +4819,7 @@ const Studio = () => {
         </div>
       </div>
 
+      {/* Signup Modal */}
       {showEarlyCreatorModal && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 px-4">
           <div className="w-full max-w-xl audafact-card-enhanced p-6">
