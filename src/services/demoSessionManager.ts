@@ -11,22 +11,26 @@ export class DemoSessionManager {
     }
     return DemoSessionManager.instance;
   }
+
+  private getScopedKey(scope: string = 'guest'): string {
+    return `${DEMO_SESSION_KEY}:${scope}`;
+  }
   
-  saveDemoState(state: DemoSessionState): void {
+  saveDemoState(state: DemoSessionState, scope: string = 'guest'): void {
     try {
       const sessionData = {
         ...state,
         timestamp: Date.now()
       };
-      localStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(sessionData));
+      localStorage.setItem(this.getScopedKey(scope), JSON.stringify(sessionData));
     } catch (error) {
       console.error('Failed to save demo state:', error);
     }
   }
   
-  getDemoState(): DemoSessionState | null {
+  getDemoState(scope: string = 'guest'): DemoSessionState | null {
     try {
-      const stored = localStorage.getItem(DEMO_SESSION_KEY);
+      const stored = localStorage.getItem(this.getScopedKey(scope));
       if (!stored) return null;
       
       const state: DemoSessionState = JSON.parse(stored);
@@ -36,7 +40,7 @@ export class DemoSessionManager {
       const oneHour = 60 * 60 * 1000;
       
       if (now - state.timestamp > oneHour) {
-        this.clearDemoState();
+        this.clearDemoState(scope);
         return null;
       }
       
@@ -47,16 +51,16 @@ export class DemoSessionManager {
     }
   }
   
-  clearDemoState(): void {
+  clearDemoState(scope: string = 'guest'): void {
     try {
-      localStorage.removeItem(DEMO_SESSION_KEY);
+      localStorage.removeItem(this.getScopedKey(scope));
     } catch (error) {
       console.error('Failed to clear demo state:', error);
     }
   }
   
-  restoreDemoState(): boolean {
-    const state = this.getDemoState();
+  restoreDemoState(scope: string = 'guest'): boolean {
+    const state = this.getDemoState(scope);
     if (!state) return false;
     
     try {

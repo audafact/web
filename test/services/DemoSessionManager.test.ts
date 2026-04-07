@@ -57,7 +57,7 @@ describe('Demo Session Management', () => {
     };
     
     // Save with old timestamp
-    localStorage.setItem('demo_session_state', JSON.stringify(oldState));
+    localStorage.setItem('demo_session_state:guest', JSON.stringify(oldState));
     
     const restored = demoManager.getDemoState();
     expect(restored).toBeNull();
@@ -108,9 +108,39 @@ describe('Demo Session Management', () => {
     const demoManager = DemoSessionManager.getInstance();
     
     // Store invalid JSON
-    localStorage.setItem('demo_session_state', 'invalid json');
+    localStorage.setItem('demo_session_state:guest', 'invalid json');
     
     const restored = demoManager.getDemoState();
     expect(restored).toBeNull();
+  });
+
+  it('should isolate demo state by scope', () => {
+    const demoManager = DemoSessionManager.getInstance();
+    const guestState: DemoSessionState = {
+      currentTrack: { id: 'guest_track', name: 'Guest Track' },
+      playbackPosition: 5,
+      cuePoints: [],
+      loopRegions: [],
+      mode: 'preview',
+      volume: 1,
+      tempo: 120,
+      timestamp: Date.now()
+    };
+    const userState: DemoSessionState = {
+      currentTrack: { id: 'user_track', name: 'User Track' },
+      playbackPosition: 10,
+      cuePoints: [],
+      loopRegions: [],
+      mode: 'loop',
+      volume: 0.8,
+      tempo: 128,
+      timestamp: Date.now()
+    };
+
+    demoManager.saveDemoState(guestState, 'guest');
+    demoManager.saveDemoState(userState, 'user:user-1');
+
+    expect(demoManager.getDemoState('guest')?.currentTrack?.id).toBe('guest_track');
+    expect(demoManager.getDemoState('user:user-1')?.currentTrack?.id).toBe('user_track');
   });
 }); 

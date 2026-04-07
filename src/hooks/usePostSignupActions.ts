@@ -95,13 +95,15 @@ export const usePostSignupActions = () => {
 
   const saveDemoState = useCallback((state: any) => {
     const demoManager = DemoSessionManager.getInstance();
-    demoManager.saveDemoState(state);
-  }, []);
+    const scope = user?.id ? `user:${user.id}` : 'guest';
+    demoManager.saveDemoState(state, scope);
+  }, [user?.id]);
 
   const restoreDemoState = useCallback(() => {
     const demoManager = DemoSessionManager.getInstance();
-    return demoManager.restoreDemoState();
-  }, []);
+    const scope = user?.id ? `user:${user.id}` : 'guest';
+    return demoManager.restoreDemoState(scope);
+  }, [user?.id]);
 
   const clearIntentCache = useCallback(() => {
     const intentService = IntentManagementService.getInstance();
