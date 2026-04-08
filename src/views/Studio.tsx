@@ -72,7 +72,7 @@ interface AudioAsset {
   id: string;
   name: string;
   fileKey: string;
-  type: 'wav' | 'mp3';
+  type: 'wav' | 'mp3' | 'm4a';
   size: string;
   duration?: number;
   is_demo?: boolean;
@@ -94,7 +94,13 @@ const Studio = () => {
 
   const { modalState, closeSignupModal, showSignupModal: openSignupModal } = useSignupModal();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
-  const { user, tier, libraryTracks, loading: userLoading } = useUser();
+  const {
+    user,
+    tier,
+    libraryTracks,
+    demoCollectionTracks,
+    loading: userLoading,
+  } = useUser();
   const { trackEvent } = useAnalytics();
   const { accessTier, proAccessSource } = useUserAccess();
   const { isTapTempoActive } = useTapTempo();
@@ -889,26 +895,22 @@ const Studio = () => {
 
 
 
-  // Load library tracks for studio
+  // Load library tracks for studio (main catalog + gated demo collection)
   useEffect(() => {
     if (isGuestMode) {
       // For demo mode, use bundled tracks from DemoProvider
 
       setAvailableAssets([]); // No need to load additional assets in demo mode
-    } else if (user && libraryTracks.length > 0) {
-      // Use library tracks from useUser hook
-      const mapped: AudioAsset[] = LibraryService.transformToAudioAssets(libraryTracks);
-      setAvailableAssets(mapped);
     } else if (user) {
-      // User is logged in but no library tracks yet (still loading)
-
-      setAvailableAssets([]);
+      const main = LibraryService.transformToAudioAssets(libraryTracks);
+      const demo = LibraryService.transformToAudioAssets(demoCollectionTracks);
+      setAvailableAssets([...demo, ...main]);
     } else {
       // Anonymous users (not demo mode, not logged in) - no assets needed
 
       setAvailableAssets([]);
     }
-  }, [libraryTracks, isGuestMode, user]);
+  }, [libraryTracks, demoCollectionTracks, isGuestMode, user]);
 
   // No automatic restoration on load - user must explicitly choose "Start digging" or "Restore previous session"
 
@@ -2363,7 +2365,7 @@ const Studio = () => {
   const handleZoomIn = (trackId: string) => {
     setZoomLevels(prev => {
       const currentZoom = prev[trackId] || 1;
-      const newZoom = Math.min(currentZoom * 2, 8);
+      const newZoom = Math.min(currentZoom * 2, 16);
       return { ...prev, [trackId]: newZoom };
     });
   };
@@ -2381,7 +2383,7 @@ const Studio = () => {
   };
 
   const handleZoomChange = (trackId: string, level: number) => {
-    setZoomLevels(prev => ({ ...prev, [trackId]: Math.max(1, Math.min(8, level)) }));
+    setZoomLevels(prev => ({ ...prev, [trackId]: Math.max(1, Math.min(16, level)) }));
   };
 
   // Handle tempo changes
@@ -2564,7 +2566,16 @@ const Studio = () => {
         const file = e.dataTransfer.files[0];
         
         // Validate file type
-        const validAudioTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/aac', 'audio/ogg', 'audio/flac'];
+        const validAudioTypes = [
+          'audio/wav',
+          'audio/mp3',
+          'audio/mpeg',
+          'audio/mp4',
+          'audio/x-m4a',
+          'audio/aac',
+          'audio/ogg',
+          'audio/flac',
+        ];
         const isValidAudioFile = validAudioTypes.includes(file.type) || 
           file.name.toLowerCase().endsWith('.wav') || 
           file.name.toLowerCase().endsWith('.mp3') || 
@@ -2942,8 +2953,15 @@ const Studio = () => {
       }
       const buffer = await context.decodeAudioData(await blob.arrayBuffer());
       
-      // Create a File object from the blob
-      const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
+      const mime =
+        asset.type === "m4a"
+          ? "audio/mp4"
+          : asset.type === "mp3"
+            ? "audio/mpeg"
+            : "audio/wav";
+      const file = new File([blob], `${asset.name}.${asset.type}`, {
+        type: mime,
+      });
       
       // Use track tempo from library metadata if valid, otherwise default to 120
       const trackTempo = asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300 ? asset.bpm : 120;

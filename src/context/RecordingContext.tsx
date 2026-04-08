@@ -9,6 +9,13 @@ import { supabase } from '../services/supabase';
 import { ensureStereo, convertToWav, convertToMp3, downloadBlob } from '../lib/audioExport';
 import { getSignedUrl } from '../lib/storage';
 import { deleteByKey } from '../lib/storage';
+import {
+  getSessionScope,
+  getScopedSavedSessionsKey,
+  mergeSessionsById,
+  migrateLegacySavedSessions,
+  parseStoredArray,
+} from './sessionStorageScope';
 
 interface RecordingEvent {
   timestamp: number;
@@ -99,7 +106,9 @@ const RecordingContextInstance = createContext<RecordingContextValue | null>(nul
 export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const { trackStudioAction } = useAnalytics();
-  
+  const sessionScope = getSessionScope(user?.id);
+  const scopedSavedSessionsKey = getScopedSavedSessionsKey(sessionScope);
+
   // Performance recording state
   const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
   const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
@@ -118,10 +127,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
   
   // Sessions state
-  const [savedSessions, setSavedSessions] = useState<RecordingSession[]>(() => {
-    const saved = localStorage.getItem('audafact_savedSessions');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [savedSessions, setSavedSessions] = useState<RecordingSession[]>([]);
+  const [sessionsHydrated, setSessionsHydrated] = useState(false);
 
   // MediaRecorder ref for audio recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -153,9 +160,24 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     refreshSavedRecordings();
   }, [refreshSavedRecordings]);
 
-  // Hydrate savedSessions from DB when user logs in (merge DB + local)
+  // Load scoped local sessions on auth-scope change and migrate legacy key once.
   useEffect(() => {
-    if (!user?.id) return;
+    setSessionsHydrated(false);
+    try {
+      migrateLegacySavedSessions(localStorage, scopedSavedSessionsKey);
+      const loaded = parseStoredArray<RecordingSession>(localStorage.getItem(scopedSavedSessionsKey));
+      setSavedSessions(loaded);
+    } catch (error) {
+      console.error('Failed to load scoped saved sessions:', error);
+      setSavedSessions([]);
+    } finally {
+      setSessionsHydrated(true);
+    }
+  }, [scopedSavedSessionsKey]);
+
+  // Hydrate savedSessions from DB when user logs in (merge DB + current-scope local)
+  useEffect(() => {
+    if (!user?.id || !sessionsHydrated) return;
     let mounted = true;
     (async () => {
       try {
@@ -170,16 +192,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           session_name: s.session_name
         }));
         setSavedSessions(prev => {
-          const dbIds = new Set(dbAsRecording.map(x => x.id));
-          const localOnly = prev.filter(p => !dbIds.has(p.id));
-          return [...dbAsRecording, ...localOnly];
+          return mergeSessionsById(dbAsRecording, prev);
         });
       } catch (err) {
         console.error('Error hydrating sessions from DB:', err);
       }
     })();
     return () => { mounted = false; };
-  }, [user?.id]);
+  }, [user?.id, sessionsHydrated]);
 
   // Refresh saved recordings when a new one is saved
   useEffect(() => {
@@ -198,8 +218,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [audioRecordings]);
 
   useEffect(() => {
-    localStorage.setItem('audafact_savedSessions', JSON.stringify(savedSessions));
-  }, [savedSessions]);
+    if (!sessionsHydrated) return;
+    localStorage.setItem(scopedSavedSessionsKey, JSON.stringify(savedSessions));
+  }, [savedSessions, scopedSavedSessionsKey, sessionsHydrated]);
 
   // Combined recording functions
   const startPerformanceRecording = useCallback(async (appAudioContext?: AudioContext) => {
@@ -629,8 +650,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Also clear from localStorage
     localStorage.removeItem('audafact_performances');
     localStorage.removeItem('audafact_audioRecordings');
-    localStorage.removeItem('audafact_savedSessions');
-  }, []);
+    localStorage.removeItem(scopedSavedSessionsKey);
+  }, [scopedSavedSessionsKey]);
 
   const exportPerformance = useCallback(async (performanceId: string, options?: { filename?: string; format?: 'mp3' | 'wav' }) => {
     const performance = performances.find(p => p.id === performanceId);

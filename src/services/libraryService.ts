@@ -10,27 +10,35 @@ import { supabase } from "./supabase";
 import { LibraryTrack } from "../types/music";
 import { normalizeLegacyUrlToKey } from "@/utils/media";
 
+function normalizeGenreForLibrary(
+  genre: string | string[] | null | undefined
+): string {
+  if (genre == null) return "";
+  if (Array.isArray(genre)) return genre.length ? genre.join(", ") : "";
+  return genre;
+}
+
 /** DB row shape (reflects your table incl. new key columns) */
 export interface DatabaseLibraryTrack {
-  id: string;
+  id?: string;
   track_id: string;
   name: string;
   artist: string | null;
-  genre: string;
+  genre: string | string[];
   bpm: number | null;
   key: string | null;
   beat_times?: number[] | null;
   duration: number | null;
 
-  // legacy URL columns (kept for fallback)
-  file_url: string;
-  preview_url: string | null;
+  // legacy URL columns (kept for fallback; RPC rows may omit)
+  file_url?: string;
+  preview_url?: string | null;
 
   // NEW: object keys in R2 (preferred)
   file_key: string;
   preview_key: string | null;
 
-  type: "wav" | "mp3";
+  type: "wav" | "mp3" | "m4a";
   size: string | null;
 
   // optional metadata
@@ -69,7 +77,7 @@ export class LibraryService {
         id: t.track_id,
         name: t.name,
         artist: t.artist ?? undefined,
-        genre: t.genre,
+        genre: normalizeGenreForLibrary(t.genre),
         bpm: t.bpm ?? 0,
         key: t.key ?? undefined,
         beats:
@@ -96,7 +104,7 @@ export class LibraryService {
     id: string;
     name: string;
     fileKey: string;
-    type: "wav" | "mp3";
+    type: "wav" | "mp3" | "m4a";
     size: string;
     is_demo: boolean;
     bpm?: number;
