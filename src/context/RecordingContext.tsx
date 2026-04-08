@@ -108,7 +108,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { trackStudioAction } = useAnalytics();
   const sessionScope = getSessionScope(user?.id);
   const scopedSavedSessionsKey = getScopedSavedSessionsKey(sessionScope);
-  
+
   // Performance recording state
   const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
   const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);

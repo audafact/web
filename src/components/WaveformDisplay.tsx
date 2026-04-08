@@ -1509,7 +1509,7 @@ const WaveformDisplay = ({
         e.preventDefault();
         const current = pendingZoom ?? zoomLevelRef.current;
         const factor = Math.exp(-PINCH_SENSITIVITY * e.deltaY);
-        const unclamped = Math.max(1, Math.min(8, current * factor));
+        const unclamped = Math.max(1, Math.min(16, current * factor));
         const maxDelta = PINCH_ZOOM_CONFIG.maxDeltaPerTick;
         const bounded = Math.max(current - maxDelta, Math.min(current + maxDelta, unclamped));
         pendingZoom = Math.max(1, Math.min(16, bounded));

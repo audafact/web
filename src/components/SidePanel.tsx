@@ -322,7 +322,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
     null
   );
   const demoTabRestoredRef = useRef(false);
-  
+
   const [activeSessionsTab, setActiveSessionsTab] = useState<'saved' | 'shared' | null>(() => {
     const savedTab = localStorage.getItem('sidePanelActiveSessionsTab');
     return (savedTab as 'saved' | 'shared' | null) || 'saved'; // Default to saved sessions
@@ -1552,7 +1552,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     </div>
                   </div>
                 )}
-                
+
                 {/* My Tracks Content - Show for all users */}
                 {activeAudioTab === 'my-tracks' && (
                   <div id="my-tracks-content" role="tabpanel" aria-labelledby="my-tracks-tab" className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider">
