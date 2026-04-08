@@ -19,6 +19,7 @@ import { showSignupModal } from '../hooks/useSignupModal';
 import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
 import { deleteByKey } from '@/lib/storage';
 import { buildApiUrl, API_CONFIG } from '@/config/api';
+import { CRISTIAN_SIGLER_DEMO_SIDE_PANEL_LABEL } from '@/config/demoLibrary';
 import { supabase } from '@/services/supabase';
 import { useSingleAudio } from '@/hooks/useSingleAudio';
 import { ExportRecordingModal } from './ExportRecordingModal';
@@ -29,7 +30,7 @@ interface AudioAsset {
   id: string;
   name: string;
   fileKey: string;
-  type: 'wav' | 'mp3';
+  type: 'wav' | 'mp3' | 'm4a';
   size: string;
   duration?: number;
   fileUrl?: string;
@@ -60,6 +61,8 @@ const IconUser = () => (
     <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
   </svg>
 );
+type SidePanelAudioTab = 'my-tracks' | 'library' | 'demo-pack';
+
 const IconBookmark = () => (
   <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
@@ -276,6 +279,8 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const {
     tier,
     libraryTracks: userLibraryTracks,
+    demoCollectionTracks,
+    demoCollectionLoading,
     loading: userLoading,
     libraryCatalogBanner,
   } = useUser();
@@ -313,7 +318,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
   });
   
   // Active submenu items - always start with none selected so Audafact Library content is hidden until user clicks
-  const [activeAudioTab, setActiveAudioTab] = useState<'my-tracks' | 'library' | null>(null);
+  const [activeAudioTab, setActiveAudioTab] = useState<SidePanelAudioTab | null>(
+    null
+  );
+  const demoTabRestoredRef = useRef(false);
   
   const [activeSessionsTab, setActiveSessionsTab] = useState<'saved' | 'shared' | null>(() => {
     const savedTab = localStorage.getItem('sidePanelActiveSessionsTab');
@@ -523,6 +531,34 @@ const SidePanel: React.FC<SidePanelProps> = ({
       }
     }
   }, [pendingSession, savedSessions, user]);
+
+  useEffect(() => {
+    if (demoCollectionTracks.length === 0) {
+      demoTabRestoredRef.current = false;
+    }
+  }, [demoCollectionTracks.length]);
+
+  useEffect(() => {
+    if (
+      demoCollectionTracks.length === 0 ||
+      demoTabRestoredRef.current
+    ) {
+      return;
+    }
+    const saved = localStorage.getItem('sidePanelActiveAudioTab');
+    if (saved === 'demo-pack') {
+      setActiveAudioTab('demo-pack');
+      setAllowEmptyAudioTab(false);
+      demoTabRestoredRef.current = true;
+    }
+  }, [demoCollectionTracks.length]);
+
+  useEffect(() => {
+    if (activeAudioTab === 'demo-pack' && demoCollectionTracks.length === 0) {
+      setActiveAudioTab(null);
+      setAllowEmptyAudioTab(true);
+    }
+  }, [activeAudioTab, demoCollectionTracks.length]);
 
   const suggestedLibraryMatches = useMemo(() => {
     const libraryPool = tier.id === 'guest' ? guestLibraryTracks : userLibraryTracks;
@@ -749,7 +785,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
   };
 
   // Handle submenu item selection
-  const handleAudioTabSelect = (tab: 'my-tracks' | 'library') => {
+  const handleAudioTabSelect = (tab: SidePanelAudioTab) => {
     setActiveAudioTab(prev => {
       const next = prev === tab ? null : tab;
       // If collapsing (setting to null), allow empty so we don't auto-select the other tab
@@ -1143,6 +1179,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     ariaControls="my-tracks-content"
                     id="my-tracks-tab"
                   />
+                  {demoCollectionTracks.length > 0 && (
+                    <SidePanelSubMenuItem
+                      label={CRISTIAN_SIGLER_DEMO_SIDE_PANEL_LABEL}
+                      icon={<IconBookmark />}
+                      isActive={activeAudioTab === 'demo-pack'}
+                      onClick={() => handleAudioTabSelect('demo-pack')}
+                      role="tab"
+                      ariaSelected={activeAudioTab === 'demo-pack'}
+                      ariaControls="cristian-sigler-demo-pack-content"
+                      id="cristian-sigler-demo-pack-tab"
+                    />
+                  )}
                 </div>
                 
                 {/* Enhanced Library Content */}
@@ -1291,7 +1339,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type === 'wav' ? 'wav' : 'mp3',
+                                                type: track.type,
                                                 size: track.size,
                                                 bpm: track.bpm,
                                               },
@@ -1333,7 +1381,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type === 'wav' ? 'wav' : 'mp3',
+                                                type: track.type,
                                                 size: track.size,
                                                 bpm: track.bpm,
                                                 key: track.key ?? undefined,
@@ -1446,6 +1494,60 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             ))
                           )}
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeAudioTab === 'demo-pack' && demoCollectionTracks.length > 0 && (
+                  <div
+                    id="cristian-sigler-demo-pack-content"
+                    role="tabpanel"
+                    aria-labelledby="cristian-sigler-demo-pack-tab"
+                    className="px-4 py-4 bg-audafact-surface-1 border-t border-audafact-divider"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-md font-medium audafact-heading">
+                          {CRISTIAN_SIGLER_DEMO_SIDE_PANEL_LABEL}
+                        </h3>
+                      </div>
+                      <div className="space-y-3">
+                        {demoCollectionLoading ? (
+                          <div className="text-center py-4">
+                            <div className="loading-spinner mx-auto" />
+                            <p className="text-sm audafact-text-secondary mt-2">
+                              Loading tracks...
+                            </p>
+                          </div>
+                        ) : (
+                          demoCollectionTracks.map((track) => (
+                            <LibraryTrackItem
+                              key={track.id}
+                              track={track}
+                              onPreview={() => handlePreviewPlay(track, false)}
+                              isPreviewing={
+                                isPlaying && currentPreviewTrackId === track.id
+                              }
+                              onAddToStudio={() =>
+                                handleAddTrack(
+                                  {
+                                    id: track.id,
+                                    name: track.name,
+                                    fileKey: track.fileKey,
+                                    type: track.type,
+                                    size: track.size,
+                                    bpm: track.bpm,
+                                    key: track.key ?? undefined,
+                                  },
+                                  false
+                                )
+                              }
+                              canAddToStudio={tier.id !== 'guest'}
+                              isProOnly={track.isProOnly || false}
+                            />
+                          ))
+                        )}
                       </div>
                     </div>
                   </div>

@@ -18,6 +18,10 @@ import {
   LibraryService,
   DatabaseLibraryTrack,
 } from "../services/libraryService";
+import {
+  CRISTIAN_SIGLER_DEMO_COLLECTION_KEY,
+  isDemoLibraryAccount,
+} from "../config/demoLibrary";
 
 type ResolvedTier = "free" | "starter" | "pro";
 
@@ -25,6 +29,10 @@ export const useUser = () => {
   const { user } = useAuth();
   const [accessTier, setAccessTier] = useState<ResolvedTier | null>(null);
   const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([]);
+  const [demoCollectionTracks, setDemoCollectionTracks] = useState<
+    LibraryTrack[]
+  >([]);
+  const [demoCollectionLoading, setDemoCollectionLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +41,8 @@ export const useUser = () => {
       if (!user) {
         setAccessTier(null);
         setLibraryTracks([]);
+        setDemoCollectionTracks([]);
+        setDemoCollectionLoading(false);
         setLoading(false);
         return;
       }
@@ -40,6 +50,7 @@ export const useUser = () => {
       try {
         setLoading(true);
         setError(null);
+        setDemoCollectionTracks([]);
 
         const { data: userData, error: userError } = await supabase
           .from("users")
@@ -77,6 +88,28 @@ export const useUser = () => {
             }
           }
         }
+
+        if (isDemoLibraryAccount(user.email)) {
+          try {
+            setDemoCollectionLoading(true);
+            const { data: demoData, error: demoErr } = await supabase.rpc(
+              "get_demo_collection_tracks",
+              { p_slug: CRISTIAN_SIGLER_DEMO_COLLECTION_KEY }
+            );
+            if (demoErr) {
+              console.error("❌ Error fetching demo collection tracks:", demoErr);
+              setDemoCollectionTracks([]);
+            } else {
+              setDemoCollectionTracks(
+                LibraryService.transformDatabaseTracks(
+                  (demoData ?? []) as DatabaseLibraryTrack[]
+                )
+              );
+            }
+          } finally {
+            setDemoCollectionLoading(false);
+          }
+        }
       } catch (err) {
         console.error("❌ Exception fetching user data:", err);
         setError("Failed to fetch user data");
@@ -87,7 +120,7 @@ export const useUser = () => {
     };
 
     fetchUserData();
-  }, [user?.id]);
+  }, [user?.id, user?.email]);
 
   const tier = useMemo((): UserTier => {
     if (!user) {
@@ -141,7 +174,11 @@ export const useUser = () => {
   return {
     user,
     tier,
+    /** @deprecated use `tier.id`; kept for hooks that still read `userTier` */
+    userTier: tier.id,
     libraryTracks,
+    demoCollectionTracks,
+    demoCollectionLoading,
     libraryCatalogBanner,
     isGuest: tier.id === "guest",
     isFree: tier.id === "free",

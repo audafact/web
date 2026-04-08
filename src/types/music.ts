@@ -202,7 +202,7 @@ export interface LibraryTrack {
   duration: number;
   fileKey: string; // Transformed from database field file_key
   previewKey?: string; // Transformed from database field preview_key
-  type: "wav" | "mp3";
+  type: "wav" | "mp3" | "m4a";
   size: string;
   tags: string[];
   isProOnly?: boolean; // Transformed from database field is_pro_only
