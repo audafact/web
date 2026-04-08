@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useRecording } from '../context/RecordingContext';
 import { StorageService } from '../services/storageService';
@@ -273,7 +273,35 @@ const SidePanel: React.FC<SidePanelProps> = ({
   onSuggestionReferenceTrackChange,
 }) => {
 
-  const { savedSessions, performances, exportSession, exportPerformance, exportByFileKey, savePerformanceName, updateRecordingName, deleteSession, renameSession, deletePerformance, pendingExport, clearPendingExport, pendingSession, clearPendingSession, discardPerformance, savedRecordings, deleteSavedRecording } = useRecording();
+  const {
+    savedSessions,
+    performances,
+    exportSession,
+    exportPerformance,
+    exportByFileKey,
+    savePerformanceName,
+    updateRecordingName,
+    deleteSession,
+    renameSession,
+    deletePerformance,
+    pendingExport,
+    clearPendingExport,
+    pendingSession,
+    clearPendingSession,
+    discardPerformance,
+    savedRecordings,
+    deleteSavedRecording,
+    startPerformancePlayback,
+    stopPerformancePlayback,
+    playingPerformanceId,
+    engagedTrackIds,
+    setTrackEngaged,
+    isPerformanceLoopEnabled,
+    isOverdubEnabled,
+    setOverdubEnabled,
+    exportSharedSessionBundle,
+    importSharedSessionBundle,
+  } = useRecording();
   const { user } = useAuth();
   const { canPerformAction, getUpgradeMessage, canAccessFeature } = useAccessControl();
   const {
@@ -428,6 +456,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
   const [renameModalRecording, setRenameModalRecording] = useState<{ recordingId: string; currentName: string } | null>(null);
   const [renameModalSession, setRenameModalSession] = useState<{ sessionId: string; currentName: string } | null>(null);
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+  const [sharedBundle, setSharedBundle] = useState<{
+    session?: any;
+    performance?: { id?: string; events?: unknown[]; duration?: number; tracks?: string[] } | null;
+    importedSessionId?: string;
+    importedPerformanceId?: string;
+  } | null>(null);
+  const sharedBundleInputRef = useRef<HTMLInputElement>(null);
   const [downloadDropdownOpen, setDownloadDropdownOpen] = useState<string | null>(null);
   const [downloadDropdownPosition, setDownloadDropdownPosition] = useState({ top: 0, left: 0 });
   const downloadTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -491,19 +526,27 @@ const SidePanel: React.FC<SidePanelProps> = ({
       }),
       ...dbOnly
         .filter((r) => r.file_key)
-        .map((r) => ({
-          type: 'saved' as const,
-          id: r.id,
-          dbId: r.id,
-          fileKey: r.file_key!,
-          audioBlob: undefined as Blob | undefined,
-          label: r.original_name || defaultLabel(new Date(r.created_at)),
-          durationMs: (r.length || 0) * 1000,
-          durationStr: `${Math.floor((r.length || 0) / 60)}:${((r.length || 0) % 60).toFixed(0).padStart(2, '0')}`,
-          eventsCount: 0,
-          tracksCount: 0,
-          performance: null
-        }))
+        .map((r) => {
+          const events = Array.isArray(r.performance_events) ? r.performance_events : [];
+          const tracksCount = new Set(
+            events
+              .map((event: any) => (typeof event?.trackId === 'string' ? event.trackId : null))
+              .filter(Boolean)
+          ).size;
+          return {
+            type: 'saved' as const,
+            id: r.id,
+            dbId: r.id,
+            fileKey: r.file_key!,
+            audioBlob: undefined as Blob | undefined,
+            label: r.original_name || defaultLabel(new Date(r.created_at)),
+            durationMs: (r.length || 0) * 1000,
+            durationStr: `${Math.floor((r.length || 0) / 60)}:${((r.length || 0) % 60).toFixed(0).padStart(2, '0')}`,
+            eventsCount: events.length,
+            tracksCount,
+            performance: null
+          };
+        })
     ];
   }, [performances, savedRecordings]);
 
@@ -537,6 +580,21 @@ const SidePanel: React.FC<SidePanelProps> = ({
       demoTabRestoredRef.current = false;
     }
   }, [demoCollectionTracks.length]);
+
+  const importSharedBundle = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const imported = importSharedSessionBundle(parsed);
+      setSharedBundle({
+        ...parsed,
+        importedSessionId: imported?.sessionId,
+        importedPerformanceId: imported?.performanceId,
+      });
+    } catch (error) {
+      console.error('Failed to import shared bundle:', error);
+    }
+  }, [importSharedSessionBundle]);
 
   useEffect(() => {
     if (
@@ -2178,6 +2236,16 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         </button>
                                       </Tooltip>
                                     )}
+                                    <Tooltip content="Export Shared Bundle" position="top" delay={150}>
+                                      <button
+                                        onClick={() => exportSharedSessionBundle(session.id)}
+                                        className="p-1 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded transition-colors duration-200"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h6m-6 4h10M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                                        </svg>
+                                      </button>
+                                    </Tooltip>
                                     <Tooltip content="Delete Session" position="top" delay={150}>
                                       <button
                                         onClick={async () => await deleteSession(session.id)}
@@ -2205,17 +2273,84 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-md font-medium audafact-heading">Shared Sessions</h3>
+                        <button
+                          type="button"
+                          onClick={() => sharedBundleInputRef.current?.click()}
+                          className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                        >
+                          Import Bundle
+                        </button>
                       </div>
-
-                      <div className="text-center py-8 flex-1 flex flex-col justify-center">
-                        <div className="text-audafact-text-secondary mb-4">
-                          <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                          </svg>
+                      {!sharedBundle ? (
+                        <div className="text-center py-8 flex-1 flex flex-col justify-center">
+                          <div className="text-audafact-text-secondary mb-4">
+                            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                            </svg>
+                          </div>
+                          <p className="audafact-text-secondary mb-2">Import a shared bundle to preview it</p>
+                          <p className="text-xs audafact-text-secondary">Bundle contains session state + performance events + audio reference key</p>
                         </div>
-                        <p className="audafact-text-secondary mb-4">Shared sessions coming soon</p>
-                        <p className="text-xs audafact-text-secondary">Discover and import sessions shared by the community</p>
-                      </div>
+                      ) : (
+                        <div className="space-y-3 border border-audafact-divider rounded-lg p-3">
+                          <p className="text-sm audafact-text-primary">
+                            {sharedBundle.session?.session_name || 'Imported shared session'}
+                          </p>
+                          <p className="text-xs audafact-text-secondary">
+                            {Array.isArray(sharedBundle.performance?.events) ? sharedBundle.performance?.events.length : 0} events
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                              onClick={async () => {
+                                if (!onRestoreSession) return;
+                                const importedSession = savedSessions.find(s => s.id === sharedBundle.importedSessionId);
+                                if (importedSession) {
+                                  await onRestoreSession(importedSession as any);
+                                  return;
+                                }
+                                if (sharedBundle.session) {
+                                  await onRestoreSession(sharedBundle.session);
+                                }
+                              }}
+                            >
+                              Load Session
+                            </button>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                              onClick={async () => {
+                                const sharedPerformanceId = sharedBundle.importedPerformanceId ?? sharedBundle.performance?.id;
+                                if (sharedPerformanceId) {
+                                  await startPerformancePlayback(sharedPerformanceId, { loop: true, overdub: false });
+                                }
+                              }}
+                            >
+                              Auto Play
+                            </button>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                              onClick={() => setSharedBundle(null)}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <input
+                        ref={sharedBundleInputRef}
+                        type="file"
+                        accept="application/json"
+                        className="hidden"
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          await importSharedBundle(file);
+                          event.currentTarget.value = '';
+                        }}
+                      />
                     </div>
                   </div>
               )}
@@ -2321,6 +2456,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   : null;
                               const isThisPlaying = !!(canPlay && item.fileKey && isCurrentKey(item.fileKey));
                               const isThisLoading = !!(canPlay && item.fileKey && isLoading && isCurrentKey(item.fileKey));
+                              const performanceForPlayback = item.performance ?? performances.find(p => p.databaseId === item.dbId) ?? null;
+                              const canEventReplay = !!(performanceForPlayback && performanceForPlayback.events.length > 0);
+                              const isPerformancePlaying = playingPerformanceId === performanceForPlayback?.id;
                               return (
                                 <div
                                   key={`${item.type}-${item.id}`}
@@ -2344,9 +2482,22 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     </h4>
                                     <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
                                       {canPlay && playSrc && (
-                                        <Tooltip content={isThisPlaying ? "Pause" : "Play"} position="top" delay={150}>
+                                        <Tooltip content={canEventReplay ? (isPerformancePlaying ? "Stop performance replay" : "Replay performance") : (isThisPlaying ? "Pause" : "Play")} position="top" delay={150}>
                                           <button
-                                            onClick={() => toggle(playSrc)}
+                                            onClick={async () => {
+                                              if (canEventReplay && performanceForPlayback) {
+                                                if (isPerformancePlaying) {
+                                                  stopPerformancePlayback();
+                                                  return;
+                                                }
+                                                await startPerformancePlayback(performanceForPlayback.id, {
+                                                  loop: isPerformanceLoopEnabled,
+                                                  overdub: isOverdubEnabled,
+                                                });
+                                                return;
+                                              }
+                                              toggle(playSrc);
+                                            }}
                                             className="p-1.5 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
                                             disabled={isThisLoading}
                                           >
@@ -2355,7 +2506,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                                               </svg>
-                                            ) : isThisPlaying ? (
+                                            ) : (canEventReplay ? isPerformancePlaying : isThisPlaying) ? (
                                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                                 <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                                               </svg>
@@ -2451,6 +2602,58 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     {item.durationStr} • {item.eventsCount} events • {item.tracksCount} track{item.tracksCount !== 1 ? 's' : ''}
                                     {item.audioBlob && ' • Audio'}
                                   </p>
+                                  {canEventReplay && performanceForPlayback && (
+                                    <div className="mt-2 space-y-2">
+                                      <div className="flex items-center gap-2 text-[11px]">
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (isPerformancePlaying) {
+                                              stopPerformancePlayback();
+                                              return;
+                                            }
+                                            await startPerformancePlayback(performanceForPlayback.id, {
+                                              loop: true,
+                                              overdub: isOverdubEnabled,
+                                            });
+                                          }}
+                                          className="px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                                        >
+                                          {isPerformancePlaying ? 'Stop Loop' : 'Loop Replay'}
+                                        </button>
+                                        <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+                                          <input
+                                            type="checkbox"
+                                            checked={isOverdubEnabled}
+                                            onChange={(e) => setOverdubEnabled(e.target.checked)}
+                                          />
+                                          Overdub
+                                        </label>
+                                      </div>
+                                      {performanceForPlayback.tracks.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                          {performanceForPlayback.tracks.map((trackId: string) => {
+                                            const engaged = engagedTrackIds.includes(trackId);
+                                            return (
+                                              <button
+                                                key={`${item.id}-engaged-${trackId}`}
+                                                type="button"
+                                                onClick={() => setTrackEngaged(trackId, !engaged)}
+                                                className={`px-2 py-0.5 rounded border text-[10px] ${
+                                                  engaged
+                                                    ? 'border-audafact-accent-cyan text-audafact-accent-cyan'
+                                                    : 'border-audafact-divider audafact-text-secondary'
+                                                }`}
+                                                title={engaged ? 'Disengage from replay' : 'Engage in replay'}
+                                              >
+                                                {engaged ? 'Engaged' : 'Muted'} {trackId.slice(0, 6)}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                   {downloadDropdownOpen === item.id && createPortal(
                                     <div
                                       ref={downloadDropdownRef}

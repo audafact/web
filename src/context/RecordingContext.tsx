@@ -3,6 +3,12 @@ import { DatabaseService } from '../services/databaseService';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { getNumericLimitsForDbTier } from '../config/tierConfig';
 import { Recording, Session } from '../types/music';
+import {
+  PERFORMANCE_EVENT_SCHEMA_VERSION,
+  NewPerformanceEvent,
+  parsePerformanceEvents,
+  PerformanceEvent,
+} from '../types/performanceEvents';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
 import { supabase } from '../services/supabase';
@@ -17,18 +23,20 @@ import {
   parseStoredArray,
 } from './sessionStorageScope';
 
-interface RecordingEvent {
+type RecordingEvent = PerformanceEvent;
+
+interface RecordingSessionEvent {
   timestamp: number;
-  type: 'cue_trigger' | 'loop_play' | 'loop_stop' | 'volume_change' | 'speed_change' | 'filter_change';
+  type: string;
   trackId: string;
-  data: any;
+  data: unknown;
 }
 
 interface RecordingSession {
   id: string;
   startTime: number;
   endTime?: number;
-  events: RecordingEvent[];
+  events: RecordingSessionEvent[];
   tracks: string[];
   duration: number;
   session_name?: string;
@@ -44,6 +52,7 @@ interface Performance {
   audioBlob?: Blob; // Add audio blob to performances
   databaseId?: string; // Database recording ID if saved to database
   fileKey?: string; // R2 key for playback when blob unavailable (e.g. after refresh)
+  eventSchemaVersion?: number;
 }
 
 interface AudioRecording {
@@ -65,8 +74,16 @@ interface RecordingContextValue {
   performances: Performance[];
   startPerformanceRecording: (appAudioContext?: AudioContext) => void;
   stopPerformanceRecording: () => void;
-  addRecordingEvent: (event: Omit<RecordingEvent, 'timestamp'>) => void;
+  addRecordingEvent: (event: NewPerformanceEvent) => void;
   getRecordingDestination: () => MediaStreamAudioDestinationNode | null;
+  startPerformancePlayback: (performanceId: string, options?: { loop?: boolean; overdub?: boolean }) => Promise<void>;
+  stopPerformancePlayback: () => void;
+  playingPerformanceId: string | null;
+  engagedTrackIds: string[];
+  setTrackEngaged: (trackId: string, engaged: boolean) => void;
+  isPerformanceLoopEnabled: boolean;
+  isOverdubEnabled: boolean;
+  setOverdubEnabled: (enabled: boolean) => void;
   
   // Audio recording
   isRecordingAudio: boolean;
@@ -99,6 +116,8 @@ interface RecordingContextValue {
   savedRecordings: Recording[];
   refreshSavedRecordings: () => Promise<void>;
   deleteSavedRecording: (recordingId: string, options?: { fileKey?: string }) => Promise<void>;
+  exportSharedSessionBundle: (sessionId: string, options?: { performanceId?: string }) => void;
+  importSharedSessionBundle: (bundle: unknown) => { sessionId?: string; performanceId?: string } | null;
 }
 
 const RecordingContextInstance = createContext<RecordingContextValue | null>(null);
@@ -114,7 +133,21 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
   const [performances, setPerformances] = useState<Performance[]>(() => {
     const saved = localStorage.getItem('audafact_performances');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((item) => ({
+        ...item,
+        events: parsePerformanceEvents(item?.events),
+        eventSchemaVersion: typeof item?.eventSchemaVersion === 'number'
+          ? item.eventSchemaVersion
+          : PERFORMANCE_EVENT_SCHEMA_VERSION,
+      }));
+    } catch (error) {
+      console.error('Failed to parse local performances:', error);
+      return [];
+    }
   });
   const performanceStartTimeRef = useRef<number>(0);
   
@@ -135,11 +168,19 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const audioStreamRef = useRef<MediaStream | null>(null);
   const performanceEventsRef = useRef<RecordingEvent[]>([]);
   const performanceTracksRef = useRef<string[]>([]);
-  const audioCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioCheckIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const [pendingExport, setPendingExport] = useState<{ performanceId: string; canSave: boolean } | null>(null);
   const [pendingSession, setPendingSession] = useState<{ sessionId: string } | null>(null);
   const [savedRecordings, setSavedRecordings] = useState<Recording[]>([]);
+  const [playingPerformanceId, setPlayingPerformanceId] = useState<string | null>(null);
+  const [engagedTrackIds, setEngagedTrackIds] = useState<string[]>([]);
+  const [isPerformanceLoopEnabled, setIsPerformanceLoopEnabled] = useState(false);
+  const [isOverdubEnabled, setIsOverdubEnabled] = useState(false);
+  const playbackTimeoutsRef = useRef<number[]>([]);
+  const playbackAbortRef = useRef<{ cancelled: boolean } | null>(null);
+  const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const engagedTrackIdsRef = useRef<Set<string>>(new Set());
 
   const refreshSavedRecordings = useCallback(async () => {
     if (!user?.id) {
@@ -159,6 +200,33 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     refreshSavedRecordings();
   }, [refreshSavedRecordings]);
+
+  // Hydrate in-memory performances from saved recordings so event replay survives refresh/login.
+  useEffect(() => {
+    if (savedRecordings.length === 0) return;
+    setPerformances(prev => {
+      const existingDbIds = new Set(prev.map(p => p.databaseId).filter(Boolean));
+      const hydrated = savedRecordings
+        .filter((recording) => !existingDbIds.has(recording.id))
+        .map((recording): Performance => {
+          const events = parsePerformanceEvents(recording.performance_events);
+          return {
+            id: `db_performance_${recording.id}`,
+            startTime: recording.created_at ? new Date(recording.created_at).getTime() : Date.now(),
+            duration: Math.round((recording.length ?? 0) * 1000),
+            events,
+            tracks: Array.from(new Set(events.map(e => e.trackId))),
+            databaseId: recording.id,
+            fileKey: recording.file_key,
+            eventSchemaVersion: recording.event_schema_version ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
+          };
+        })
+        .filter((performance) => performance.events.length > 0 || performance.fileKey);
+
+      if (hydrated.length === 0) return prev;
+      return [...prev, ...hydrated];
+    });
+  }, [savedRecordings]);
 
   // Load scoped local sessions on auth-scope change and migrate legacy key once.
   useEffect(() => {
@@ -216,6 +284,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     localStorage.setItem('audafact_audioRecordings', JSON.stringify(audioRecordings));
   }, [audioRecordings]);
+
+  useEffect(() => {
+    engagedTrackIdsRef.current = new Set(engagedTrackIds);
+  }, [engagedTrackIds]);
 
   useEffect(() => {
     if (!sessionsHydrated) return;
@@ -301,7 +373,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           duration,
           events: performanceEventsRef.current,
           tracks: performanceTracksRef.current,
-          audioBlob: finalAudioBlob
+          audioBlob: finalAudioBlob,
+          eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
         };
         
         setPerformances(prev => [completedPerformance, ...prev]);
@@ -311,7 +384,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         let canSave = true;
         if (user?.id && finalAudioBlob) {
           try {
-            const { data: existingUser, error: userError } = await supabase
+            const { error: userError } = await supabase
               .from('users')
               .select('id')
               .eq('id', user.id)
@@ -385,7 +458,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                       content_hash: r2Result.content_hash,
                       size_bytes: r2Result.size_bytes,
                       content_type: r2Result.content_type,
-                      original_name: r2Result.original_name
+                      original_name: r2Result.original_name,
+                      performance_events: performanceEventsRef.current,
+                      event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
+                      performance_meta: { capture_model: 'audio_plus_events' },
                     });
                   }
                 } catch (uploadError) {
@@ -398,7 +474,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     session_id: undefined,
                     recording_url: `local://recording_${Date.now()}.wav`,
                     length: duration / 1000,
-                    notes
+                    notes,
+                    performance_events: performanceEventsRef.current,
+                    event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
+                    performance_meta: { capture_model: 'events_only_fallback' },
                   });
                 }
 
@@ -406,7 +485,12 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                   const fileKey = r2Key;
                   setPerformances(prev => prev.map(p =>
                     p.id === performanceId
-                      ? { ...p, databaseId: recordingRecord!.id, ...(fileKey && { fileKey }) }
+                      ? {
+                        ...p,
+                        databaseId: recordingRecord!.id,
+                        eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
+                        ...(fileKey && { fileKey }),
+                      }
                       : p
                   ));
                   window.dispatchEvent(new CustomEvent('recordingSaved', {
@@ -442,7 +526,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         startTime,
         events: [],
         tracks: [],
-        duration: 0
+        duration: 0,
+        eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
       };
       
       // Initialize refs for tracking events and tracks
@@ -484,16 +569,16 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [currentPerformance, trackStudioAction]);
 
-  const addRecordingEvent = useCallback((event: Omit<RecordingEvent, 'timestamp'>) => {
+  const addRecordingEvent = useCallback((event: NewPerformanceEvent) => {
     if (!isRecordingPerformance || !currentPerformance) {
       return;
     }
     
     const timestamp = Date.now() - performanceStartTimeRef.current;
-    const newEvent: RecordingEvent = {
+    const newEvent = {
       ...event,
       timestamp
-    };
+    } as RecordingEvent;
     
     // Update refs immediately
     performanceEventsRef.current = [...performanceEventsRef.current, newEvent];
@@ -775,6 +860,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           size_bytes: r2Result.size_bytes,
           content_type: r2Result.content_type,
           original_name: filename,
+          performance_events: performance.events,
+          event_schema_version: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
+          performance_meta: { capture_model: 'audio_plus_events' },
         });
       }
       if (!recordingRecord) {
@@ -785,6 +873,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           length: performance.duration / 1000,
           notes,
           original_name: filename,
+          performance_events: performance.events,
+          event_schema_version: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
+          performance_meta: { capture_model: 'events_only_fallback' },
         });
       }
       if (recordingRecord) {
@@ -952,6 +1043,211 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return recordingDestinationRef.current;
   }, []);
 
+  const clearPlaybackTimers = useCallback(() => {
+    playbackTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    playbackTimeoutsRef.current = [];
+  }, []);
+
+  const stopPerformancePlayback = useCallback(() => {
+    if (playbackAbortRef.current) {
+      playbackAbortRef.current.cancelled = true;
+    }
+    clearPlaybackTimers();
+    setPlayingPerformanceId(null);
+    setEngagedTrackIds([]);
+    setIsPerformanceLoopEnabled(false);
+    if (playbackAudioRef.current) {
+      try {
+        playbackAudioRef.current.pause();
+        playbackAudioRef.current.currentTime = 0;
+      } catch {
+        // no-op
+      }
+      playbackAudioRef.current = null;
+    }
+    window.dispatchEvent(new CustomEvent('audafact-performance-playback-stop'));
+  }, [clearPlaybackTimers]);
+
+  const playReferenceAudio = useCallback(async (performance: Performance) => {
+    if (performance.audioBlob instanceof Blob) {
+      const audio = new Audio(URL.createObjectURL(performance.audioBlob));
+      playbackAudioRef.current = audio;
+      await audio.play();
+      audio.onended = () => {
+        if (audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src);
+      };
+      return;
+    }
+    if (performance.fileKey) {
+      const signedUrl = await getSignedUrl(performance.fileKey);
+      const audio = new Audio(signedUrl);
+      playbackAudioRef.current = audio;
+      await audio.play();
+    }
+  }, []);
+
+  const runPerformancePlaybackPass = useCallback(async (
+    performance: Performance,
+    loop: boolean,
+    fallbackAudio: boolean,
+    abortToken: { cancelled: boolean }
+  ) => {
+    const sortedEvents = [...performance.events].sort((a, b) => a.timestamp - b.timestamp);
+    const durationMs = Math.max(performance.duration, sortedEvents[sortedEvents.length - 1]?.timestamp ?? 0, 1);
+
+    if (fallbackAudio) {
+      try {
+        await playReferenceAudio(performance);
+      } catch (error) {
+        console.warn('Reference audio playback failed:', error);
+      }
+    }
+
+    sortedEvents.forEach((event) => {
+      const timeoutId = window.setTimeout(() => {
+        if (abortToken.cancelled) return;
+        if (!engagedTrackIdsRef.current.has(event.trackId)) return;
+        window.dispatchEvent(new CustomEvent('audafact-performance-playback-event', { detail: event }));
+      }, Math.max(0, event.timestamp));
+      playbackTimeoutsRef.current.push(timeoutId);
+    });
+
+    const completionId = window.setTimeout(() => {
+      if (abortToken.cancelled) return;
+      if (loop) {
+        if (playbackAudioRef.current) {
+          try {
+            playbackAudioRef.current.pause();
+            playbackAudioRef.current.currentTime = 0;
+          } catch {
+            // no-op
+          }
+          playbackAudioRef.current = null;
+        }
+        clearPlaybackTimers();
+        runPerformancePlaybackPass(performance, loop, fallbackAudio, abortToken);
+        return;
+      }
+      setPlayingPerformanceId(null);
+      setEngagedTrackIds([]);
+      setIsPerformanceLoopEnabled(false);
+    }, durationMs + 20);
+    playbackTimeoutsRef.current.push(completionId);
+  }, [clearPlaybackTimers, playReferenceAudio]);
+
+  const startPerformancePlayback = useCallback(async (
+    performanceId: string,
+    options?: { loop?: boolean; overdub?: boolean }
+  ) => {
+    const performance = performances.find((item) => item.id === performanceId);
+    if (!performance) return;
+
+    stopPerformancePlayback();
+    const engaged = new Set(performance.tracks);
+    const loop = !!options?.loop;
+    const fallbackAudio = !!(performance.audioBlob || performance.fileKey);
+
+    setPlayingPerformanceId(performance.id);
+    setEngagedTrackIds(Array.from(engaged));
+    setIsPerformanceLoopEnabled(loop);
+    setIsOverdubEnabled(!!options?.overdub);
+    const abortToken = { cancelled: false };
+    playbackAbortRef.current = abortToken;
+
+    await runPerformancePlaybackPass(performance, loop, fallbackAudio, abortToken);
+  }, [performances, runPerformancePlaybackPass, stopPerformancePlayback]);
+
+  const setTrackEngaged = useCallback((trackId: string, engaged: boolean) => {
+    setEngagedTrackIds(prev => {
+      if (engaged) {
+        return prev.includes(trackId) ? prev : [...prev, trackId];
+      }
+      return prev.filter(id => id !== trackId);
+    });
+  }, []);
+
+  const exportSharedSessionBundle = useCallback((sessionId: string, options?: { performanceId?: string }) => {
+    const session = savedSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const performance =
+      (options?.performanceId
+        ? performances.find((p) => p.id === options.performanceId)
+        : performances[0]) ?? null;
+    const bundle = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      session,
+      performance: performance ? {
+        id: performance.id,
+        startTime: performance.startTime,
+        duration: performance.duration,
+        tracks: performance.tracks,
+        events: performance.events,
+        eventSchemaVersion: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
+        fileKey: performance.fileKey,
+      } : null,
+    };
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audafact_shared_session_${sessionId}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [savedSessions, performances]);
+
+  const importSharedSessionBundle = useCallback((bundle: unknown) => {
+    if (!bundle || typeof bundle !== 'object') return null;
+    const parsed = bundle as {
+      session?: RecordingSession;
+      performance?: {
+        id?: string;
+        startTime?: number;
+        duration?: number;
+        tracks?: string[];
+        events?: unknown;
+        eventSchemaVersion?: number;
+        fileKey?: string;
+      } | null;
+    };
+
+    let importedSessionId: string | undefined;
+    let importedPerformanceId: string | undefined;
+
+    if (parsed.session && typeof parsed.session === 'object') {
+      const sessionId = parsed.session.id || `shared_session_${Date.now()}`;
+      importedSessionId = sessionId;
+      setSavedSessions(prev => {
+        const exists = prev.some(s => s.id === sessionId);
+        if (exists) return prev;
+        return [{ ...parsed.session!, id: sessionId }, ...prev];
+      });
+    }
+
+    if (parsed.performance && typeof parsed.performance === 'object') {
+      const performanceId = parsed.performance.id || `shared_performance_${Date.now()}`;
+      importedPerformanceId = performanceId;
+      const events = parsePerformanceEvents(parsed.performance.events);
+      setPerformances(prev => {
+        if (prev.some(p => p.id === performanceId)) return prev;
+        return [{
+          id: performanceId,
+          startTime: parsed.performance?.startTime ?? Date.now(),
+          duration: parsed.performance?.duration ?? 0,
+          tracks: parsed.performance?.tracks ?? Array.from(new Set(events.map(event => event.trackId))),
+          events,
+          fileKey: parsed.performance?.fileKey,
+          eventSchemaVersion: parsed.performance?.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
+        }, ...prev];
+      });
+    }
+
+    return { sessionId: importedSessionId, performanceId: importedPerformanceId };
+  }, []);
+
   const clearPendingExport = useCallback(() => {
     setPendingExport(null);
   }, []);
@@ -964,6 +1260,12 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setPerformances(prev => prev.filter(p => p.id !== performanceId));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      stopPerformancePlayback();
+    };
+  }, [stopPerformancePlayback]);
+
   const value: RecordingContextValue = {
     // Performance recording
     isRecordingPerformance,
@@ -973,6 +1275,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     stopPerformanceRecording,
     addRecordingEvent,
     getRecordingDestination,
+    startPerformancePlayback,
+    stopPerformancePlayback,
+    playingPerformanceId,
+    engagedTrackIds,
+    setTrackEngaged,
+    isPerformanceLoopEnabled,
+    isOverdubEnabled,
+    setOverdubEnabled: setIsOverdubEnabled,
     
     // Audio recording
     isRecordingAudio,
@@ -1004,7 +1314,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     discardPerformance,
     savedRecordings,
     refreshSavedRecordings,
-    deleteSavedRecording
+    deleteSavedRecording,
+    exportSharedSessionBundle,
+    importSharedSessionBundle,
   };
 
   return (

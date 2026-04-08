@@ -4,6 +4,7 @@ import { isIOSWebAudioTarget } from '../context/AudioContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { useUser } from '../hooks/useUser';
+import { PerformanceEvent } from '../types/performanceEvents';
 
 // Utility function to format cue point timestamps
 const formatCueTimestamp = (seconds: number): string => {
@@ -356,21 +357,7 @@ const TrackControls = ({
     if (onLowpassFreqChange) {
       onLowpassFreqChange(clampedFreq);
     }
-    
-    // Record filter change event
-    if (trackId) {
-      addRecordingEvent({
-        type: 'filter_change',
-        trackId,
-        data: { 
-          filterType: 'lowpass',
-          oldFreq: internalLowpassFreq,
-          newFreq: clampedFreq,
-          mode
-        }
-      });
-    }
-  }, [audioContext, onLowpassFreqChange, trackId, addRecordingEvent, internalLowpassFreq, mode]);
+  }, [audioContext, onLowpassFreqChange]);
 
   const handleHighpassFreqChange = useCallback((freq: number) => {
     const clampedFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
@@ -390,21 +377,7 @@ const TrackControls = ({
     if (onHighpassFreqChange) {
       onHighpassFreqChange(clampedFreq);
     }
-    
-    // Record filter change event
-    if (trackId) {
-      addRecordingEvent({
-        type: 'filter_change',
-        trackId,
-        data: { 
-          filterType: 'highpass',
-          oldFreq: internalHighpassFreq,
-          newFreq: clampedFreq,
-          mode
-        }
-      });
-    }
-  }, [audioContext, onHighpassFreqChange, trackId, addRecordingEvent, internalHighpassFreq, mode]);
+  }, [audioContext, onHighpassFreqChange]);
 
   const handleLowpassInputBlur = useCallback(() => {
     lowpassInputFocusedRef.current = false;
@@ -1280,6 +1253,51 @@ const TrackControls = ({
       audioSourceRef.current.playbackRate.value = currentSpeedRef.current;
     }
   }, [speed]);
+
+  useEffect(() => {
+    const handlePerformancePlaybackEvent = (evt: Event) => {
+      const customEvent = evt as CustomEvent<PerformanceEvent>;
+      const playbackEvent = customEvent.detail;
+      if (!playbackEvent || !trackId || playbackEvent.trackId !== trackId) return;
+
+      if (playbackEvent.type === 'cue_trigger' && mode === 'cue') {
+        playCuePointRef.current?.(playbackEvent.data.cueIndex);
+        return;
+      }
+
+      if (playbackEvent.type === 'loop_play' && mode === 'loop' && !isPlaying) {
+        togglePlayback();
+        return;
+      }
+
+      if (playbackEvent.type === 'loop_stop' && mode === 'loop' && isPlaying) {
+        togglePlayback();
+        return;
+      }
+
+      if (playbackEvent.type === 'volume_change') {
+        onVolumeChange?.(playbackEvent.data.newVolume);
+        return;
+      }
+
+      if (playbackEvent.type === 'speed_change') {
+        handleSpeedSliderChange(playbackEvent.data.newSpeed, false);
+      }
+    };
+
+    const handlePlaybackStop = () => {
+      if (mode === 'loop' && isPlaying) {
+        togglePlayback();
+      }
+    };
+
+    window.addEventListener('audafact-performance-playback-event', handlePerformancePlaybackEvent as EventListener);
+    window.addEventListener('audafact-performance-playback-stop', handlePlaybackStop as EventListener);
+    return () => {
+      window.removeEventListener('audafact-performance-playback-event', handlePerformancePlaybackEvent as EventListener);
+      window.removeEventListener('audafact-performance-playback-stop', handlePlaybackStop as EventListener);
+    };
+  }, [trackId, mode, isPlaying, onVolumeChange, handleSpeedSliderChange]);
 
 
   
