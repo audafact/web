@@ -2365,7 +2365,7 @@ const Studio = () => {
   const handleZoomIn = (trackId: string) => {
     setZoomLevels(prev => {
       const currentZoom = prev[trackId] || 1;
-      const newZoom = Math.min(currentZoom * 2, 8);
+      const newZoom = Math.min(currentZoom * 2, 16);
       return { ...prev, [trackId]: newZoom };
     });
   };
@@ -2383,7 +2383,7 @@ const Studio = () => {
   };
 
   const handleZoomChange = (trackId: string, level: number) => {
-    setZoomLevels(prev => ({ ...prev, [trackId]: Math.max(1, Math.min(8, level)) }));
+    setZoomLevels(prev => ({ ...prev, [trackId]: Math.max(1, Math.min(16, level)) }));
   };
 
   // Handle tempo changes

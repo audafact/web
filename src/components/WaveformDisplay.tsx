@@ -1466,7 +1466,7 @@ const WaveformDisplay = ({
     if (!PINCH_ZOOM_CONFIG.enabled) return;
     const el = scrollContainerRef.current;
     if (!el) return;
-    const discreteSteps = [1, 2, 4, 8];
+    const discreteSteps = [1, 2, 4, 8, 16];
     const applyDiscreteStep = (direction: 'in' | 'out') => {
       const now = Date.now();
       if (now - pinchLastStepAtRef.current < PINCH_ZOOM_CONFIG.discreteCooldownMs) return;
@@ -1512,7 +1512,7 @@ const WaveformDisplay = ({
         const unclamped = Math.max(1, Math.min(8, current * factor));
         const maxDelta = PINCH_ZOOM_CONFIG.maxDeltaPerTick;
         const bounded = Math.max(current - maxDelta, Math.min(current + maxDelta, unclamped));
-        pendingZoom = Math.max(1, Math.min(8, bounded));
+        pendingZoom = Math.max(1, Math.min(16, bounded));
         if (throttleId === null) {
           throttleId = setTimeout(flushZoom, PINCH_ZOOM_CONFIG.throttleMs);
         }
