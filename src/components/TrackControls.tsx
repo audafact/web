@@ -242,7 +242,7 @@ const TrackControls = ({
   const animationFrameRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
   const currentVolumeRef = useRef<number>(volume);
-  const currentSpeedRef = useRef<number>(1);
+  const currentSpeedRef = useRef<number>(playbackSpeed);
   const activeCueIndexRef = useRef<number | null>(null);
   const cueStartTimeRef = useRef<number>(0);
   // Track the actual starting position when playback begins
@@ -334,6 +334,14 @@ const TrackControls = ({
       setSpeedInputValue(formatSpeedDisplay(speed));
     }
   }, [speed]);
+
+  // Keep local speed + ref aligned with parent (e.g. restored session) so WebAudio uses the same rate as the UI.
+  useEffect(() => {
+    if (speedInputFocusedRef.current) return;
+    setSpeed(playbackSpeed);
+    currentSpeedRef.current = playbackSpeed;
+    setSpeedInputValue(formatSpeedDisplay(playbackSpeed));
+  }, [playbackSpeed]);
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
