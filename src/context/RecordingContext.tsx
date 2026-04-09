@@ -22,6 +22,7 @@ import {
   migrateLegacySavedSessions,
   parseStoredArray,
 } from './sessionStorageScope';
+import { schedulePerformanceEventsPass } from '../lib/performancePlaybackSchedule';
 
 type RecordingEvent = PerformanceEvent;
 
@@ -53,6 +54,8 @@ interface Performance {
   databaseId?: string; // Database recording ID if saved to database
   fileKey?: string; // R2 key for playback when blob unavailable (e.g. after refresh)
   eventSchemaVersion?: number;
+  /** Loop cycle length (defaults to duration); used for modulo overdub playback */
+  cycleLengthMs?: number;
 }
 
 interface AudioRecording {
@@ -72,11 +75,32 @@ interface RecordingContextValue {
   isRecordingPerformance: boolean;
   currentPerformance: Performance | null;
   performances: Performance[];
-  startPerformanceRecording: (appAudioContext?: AudioContext) => void;
+  startPerformanceRecording: (
+    appAudioContext?: AudioContext,
+    options?: { recordEvents?: boolean; recordMix?: boolean; continueOverdub?: boolean }
+  ) => void;
   stopPerformanceRecording: () => void;
   addRecordingEvent: (event: NewPerformanceEvent) => void;
   getRecordingDestination: () => MediaStreamAudioDestinationNode | null;
-  startPerformancePlayback: (performanceId: string, options?: { loop?: boolean; overdub?: boolean }) => Promise<void>;
+  registerStudioAudioContext: (ctx: AudioContext | null) => void;
+  /** Tracks in this set are excluded from event recording (empty = all tracks record) */
+  unarmedRecordingTrackIds: string[];
+  toggleRecordingArmForTrack: (trackId: string) => void;
+  clearRecordingArmExclusions: () => void;
+  startPerformancePlayback: (
+    performanceId: string,
+    options?: {
+      loop?: boolean;
+      audioContext?: AudioContext | null;
+      /** Play master mix under event replay (default false; avoids double playback) */
+      referenceAudio?: boolean;
+      /** Play stored mix only; no event dispatch */
+      referenceOnly?: boolean;
+      trackIdFilter?: string | null;
+    }
+  ) => Promise<void>;
+  startReferenceOnlyPlayback: (performanceId: string, options?: { loop?: boolean }) => Promise<void>;
+  startLanePlayback: (performanceId: string, trackId: string, options?: { loop?: boolean }) => Promise<void>;
   stopPerformancePlayback: () => void;
   playingPerformanceId: string | null;
   engagedTrackIds: string[];
@@ -84,6 +108,10 @@ interface RecordingContextValue {
   isPerformanceLoopEnabled: boolean;
   isOverdubEnabled: boolean;
   setOverdubEnabled: (enabled: boolean) => void;
+  recordEventsEnabled: boolean;
+  setRecordEventsEnabled: (v: boolean) => void;
+  recordMixEnabled: boolean;
+  setRecordMixEnabled: (v: boolean) => void;
   
   // Audio recording
   isRecordingAudio: boolean;
@@ -174,6 +202,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [pendingSession, setPendingSession] = useState<{ sessionId: string } | null>(null);
   const [savedRecordings, setSavedRecordings] = useState<Recording[]>([]);
   const [playingPerformanceId, setPlayingPerformanceId] = useState<string | null>(null);
+  const playingPerformanceIdRef = useRef<string | null>(null);
   const [engagedTrackIds, setEngagedTrackIds] = useState<string[]>([]);
   const [isPerformanceLoopEnabled, setIsPerformanceLoopEnabled] = useState(false);
   const [isOverdubEnabled, setIsOverdubEnabled] = useState(false);
@@ -181,6 +210,16 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const playbackAbortRef = useRef<{ cancelled: boolean } | null>(null);
   const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
   const engagedTrackIdsRef = useRef<Set<string>>(new Set());
+  const studioAudioContextRef = useRef<AudioContext | null>(null);
+  const recordEventsEnabledRef = useRef(true);
+  const recordMixEnabledRef = useRef(true);
+  const unarmedRecordingTrackIdsRef = useRef<Set<string>>(new Set());
+  const overdubTimestampOffsetRef = useRef(0);
+  const playbackScheduleCancelRef = useRef<(() => void) | null>(null);
+
+  const [unarmedRecordingTrackIds, setUnarmedRecordingTrackIds] = useState<string[]>([]);
+  const [recordEventsEnabled, setRecordEventsEnabled] = useState(true);
+  const [recordMixEnabled, setRecordMixEnabled] = useState(true);
 
   const refreshSavedRecordings = useCallback(async () => {
     if (!user?.id) {
@@ -290,70 +329,36 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [engagedTrackIds]);
 
   useEffect(() => {
+    recordEventsEnabledRef.current = recordEventsEnabled;
+  }, [recordEventsEnabled]);
+
+  useEffect(() => {
+    recordMixEnabledRef.current = recordMixEnabled;
+  }, [recordMixEnabled]);
+
+  useEffect(() => {
+    unarmedRecordingTrackIdsRef.current = new Set(unarmedRecordingTrackIds);
+  }, [unarmedRecordingTrackIds]);
+
+  useEffect(() => {
+    playingPerformanceIdRef.current = playingPerformanceId;
+  }, [playingPerformanceId]);
+
+  useEffect(() => {
     if (!sessionsHydrated) return;
     localStorage.setItem(scopedSavedSessionsKey, JSON.stringify(savedSessions));
   }, [savedSessions, scopedSavedSessionsKey, sessionsHydrated]);
 
-  // Combined recording functions
-  const startPerformanceRecording = useCallback(async (appAudioContext?: AudioContext) => {
-    try {
-      const performanceId = `performance_${Date.now()}`;
-      const startTime = Date.now();
-      performanceStartTimeRef.current = startTime;
-      
-      if (!appAudioContext) {
-        console.error('No audio context provided for recording');
-        alert('Audio context is required for recording. Please ensure audio is initialized.');
-        return;
-      }
-      
-      // Create a MediaStreamDestination to capture audio from the app
-      const destination = appAudioContext.createMediaStreamDestination();
-      recordingDestinationRef.current = destination;
-      
-      // Create MediaRecorder with the captured audio stream
-      let mimeType = '';
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        mimeType = 'audio/webm;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/webm';
-      } else if (MediaRecorder.isTypeSupported('audio/mp4;codecs=mp4a.40.2')) {
-        mimeType = 'audio/mp4;codecs=mp4a.40.2';
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4';
-      }
-      
-
-      
-      const mediaRecorder = new MediaRecorder(destination.stream, mimeType ? { mimeType } : undefined);
-      
-      // Add error handling for MediaRecorder
-      mediaRecorder.onerror = (event) => {
-        console.error('MediaRecorder error:', event);
-      };
-      
-      mediaRecorderRef.current = mediaRecorder;
-      audioStreamRef.current = destination.stream;
-      
-      const chunks: Blob[] = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-      
-
-      
-      mediaRecorder.onstop = async () => {
+  const finalizePerformanceCapture = useCallback(
+    async (performanceId: string, startTime: number, mimeType: string, chunks: Blob[]) => {
+      let finalAudioBlob: Blob | undefined;
+      if (chunks.length > 0) {
         const originalBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-        
-        // Convert to WAV format for better compatibility
-        let finalAudioBlob = originalBlob;
+        finalAudioBlob = originalBlob;
         try {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const decodeCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
           const arrayBuffer = await originalBlob.arrayBuffer();
-          let audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          let audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
           audioBuffer = ensureStereo(audioBuffer);
           const wavBlob = convertToWav(audioBuffer);
           if (wavBlob) {
@@ -362,219 +367,314 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } catch (error) {
           console.warn('Failed to convert audio format, using original:', error);
         }
-        
-        const endTime = Date.now();
-        const duration = endTime - startTime;
-        
-        const completedPerformance: Performance = {
-          id: performanceId,
-          startTime,
-          endTime,
-          duration,
-          events: performanceEventsRef.current,
-          tracks: performanceTracksRef.current,
-          audioBlob: finalAudioBlob,
-          eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
-        };
-        
-        setPerformances(prev => [completedPerformance, ...prev]);
-        setCurrentPerformance(null);
-        setIsRecordingPerformance(false);
+      }
 
-        let canSave = true;
-        if (user?.id && finalAudioBlob) {
-          try {
-            const { error: userError } = await supabase
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      const eventCount = performanceEventsRef.current.length;
+
+      const completedPerformance: Performance = {
+        id: performanceId,
+        startTime,
+        endTime,
+        duration,
+        cycleLengthMs: duration,
+        events: performanceEventsRef.current,
+        tracks: performanceTracksRef.current,
+        audioBlob: finalAudioBlob,
+        eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
+      };
+
+      setPerformances((prev) => [completedPerformance, ...prev]);
+      setCurrentPerformance(null);
+      setIsRecordingPerformance(false);
+      overdubTimestampOffsetRef.current = 0;
+
+      let canSave = true;
+      if (user?.id && (finalAudioBlob || eventCount > 0)) {
+        try {
+          const { error: userError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', user.id)
+            .single();
+
+          if (userError && userError.code === 'PGRST116') {
+            const { error: createUserError } = await supabase
               .from('users')
-              .select('id')
-              .eq('id', user.id)
-              .single();
+              .insert({ id: user.id, access_tier: 'free' });
+            if (createUserError) console.error('Failed to create user record:', createUserError);
+          } else if (userError) {
+            console.error('Error checking user record:', userError);
+          }
 
-            if (userError && userError.code === 'PGRST116') {
-              const { error: createUserError } = await supabase
-                .from('users')
-                .insert({ id: user.id, access_tier: 'free' });
-              if (createUserError) console.error('Failed to create user record:', createUserError);
-            } else if (userError) {
-              console.error('Error checking user record:', userError);
-            }
+          const { count: recordingCount, error: countError } = await supabase
+            .from('recordings')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id);
 
-            // Use head: true for reliable count (avoids pagination/parsing quirks)
-            const { count: recordingCount, error: countError } = await supabase
+          let currentRecordingCount: number;
+          if (!countError && recordingCount != null) {
+            currentRecordingCount = recordingCount;
+          } else {
+            const { data: recordingRows } = await supabase
               .from('recordings')
-              .select('*', { count: 'exact', head: true })
+              .select('id')
               .eq('user_id', user.id);
+            currentRecordingCount = recordingRows?.length ?? 0;
+          }
 
-            let currentRecordingCount: number;
-            if (!countError && recordingCount != null) {
-              currentRecordingCount = recordingCount;
-            } else {
-              // Fallback: fetch and count when head count unavailable or errored
-              const { data: recordingRows } = await supabase
-                .from('recordings')
-                .select('id')
-                .eq('user_id', user.id);
-              currentRecordingCount = recordingRows?.length ?? 0;
-            }
+          const { data: userData, error: userTierError } = await supabase
+            .from('users')
+            .select('access_tier')
+            .eq('id', user.id)
+            .single();
+          const rawTier = userTierError ? 'free' : (userData?.access_tier || 'free');
+          const normalized =
+            rawTier === 'pro' || rawTier === 'enterprise'
+              ? 'pro'
+              : rawTier === 'starter'
+                ? 'starter'
+                : 'free';
+          const maxRecordings = getNumericLimitsForDbTier(normalized).maxRecordings;
+          canSave = currentRecordingCount < maxRecordings;
 
-            {
-              const { data: userData, error: userTierError } = await supabase
-                .from('users')
-                .select('access_tier')
-                .eq('id', user.id)
-                .single();
-              const rawTier = userTierError ? 'free' : (userData?.access_tier || 'free');
-              const normalized =
-                rawTier === 'pro' || rawTier === 'enterprise'
-                  ? 'pro'
-                  : rawTier === 'starter'
-                    ? 'starter'
-                    : 'free';
-              const maxRecordings = getNumericLimitsForDbTier(normalized).maxRecordings;
-              canSave = currentRecordingCount < maxRecordings;
+          if (canSave) {
+            const notes = `Performance recording with ${eventCount} events`;
+            let recordingRecord: Awaited<ReturnType<typeof DatabaseService.createRecording>> = null;
+            let r2Key: string | undefined;
+            const captureModel =
+              finalAudioBlob && eventCount > 0
+                ? 'audio_plus_events'
+                : finalAudioBlob
+                  ? 'audio_only'
+                  : 'events_only';
 
-              if (canSave) {
-                const notes = `Performance recording with ${performanceEventsRef.current.length} events`;
-                let recordingRecord: Awaited<ReturnType<typeof DatabaseService.createRecording>> = null;
-                let r2Key: string | undefined;
+            if (finalAudioBlob) {
+              try {
+                const r2Result = await StorageService.uploadRecordingBlob(
+                  finalAudioBlob,
+                  user.id,
+                  undefined,
+                  notes
+                );
 
-                try {
-                  const r2Result = await StorageService.uploadRecordingBlob(
-                    finalAudioBlob,
-                    user.id,
-                    undefined,
-                    notes
-                  );
-
-                  if (r2Result) {
-                    r2Key = r2Result.key;
-                    recordingRecord = await DatabaseService.createRecording({
-                      user_id: user.id,
-                      session_id: undefined,
-                      recording_url: `https://media.audafact.com/${r2Result.key}`,
-                      length: duration / 1000,
-                      notes,
-                      file_key: r2Result.key,
-                      content_hash: r2Result.content_hash,
-                      size_bytes: r2Result.size_bytes,
-                      content_type: r2Result.content_type,
-                      original_name: r2Result.original_name,
-                      performance_events: performanceEventsRef.current,
-                      event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
-                      performance_meta: { capture_model: 'audio_plus_events' },
-                    });
-                  }
-                } catch (uploadError) {
-                  console.warn('R2 upload failed, falling back to local:', uploadError);
-                }
-
-                if (!recordingRecord) {
+                if (r2Result) {
+                  r2Key = r2Result.key;
                   recordingRecord = await DatabaseService.createRecording({
                     user_id: user.id,
                     session_id: undefined,
-                    recording_url: `local://recording_${Date.now()}.wav`,
+                    recording_url: `https://media.audafact.com/${r2Result.key}`,
                     length: duration / 1000,
                     notes,
+                    file_key: r2Result.key,
+                    content_hash: r2Result.content_hash,
+                    size_bytes: r2Result.size_bytes,
+                    content_type: r2Result.content_type,
+                    original_name: r2Result.original_name,
                     performance_events: performanceEventsRef.current,
                     event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
-                    performance_meta: { capture_model: 'events_only_fallback' },
+                    performance_meta: { capture_model: captureModel },
                   });
                 }
+              } catch (uploadError) {
+                console.warn('R2 upload failed, falling back to local:', uploadError);
+              }
+            }
 
-                if (recordingRecord) {
-                  const fileKey = r2Key;
-                  setPerformances(prev => prev.map(p =>
-                    p.id === performanceId
-                      ? {
+            if (!recordingRecord) {
+              recordingRecord = await DatabaseService.createRecording({
+                user_id: user.id,
+                session_id: undefined,
+                recording_url: `local://recording_${Date.now()}.wav`,
+                length: duration / 1000,
+                notes,
+                performance_events: performanceEventsRef.current,
+                event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
+                performance_meta: { capture_model: captureModel },
+              });
+            }
+
+            if (recordingRecord) {
+              const fileKey = r2Key;
+              setPerformances((prev) =>
+                prev.map((p) =>
+                  p.id === performanceId
+                    ? {
                         ...p,
                         databaseId: recordingRecord!.id,
                         eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
                         ...(fileKey && { fileKey }),
                       }
-                      : p
-                  ));
-                  window.dispatchEvent(new CustomEvent('recordingSaved', {
-                    detail: { userId: user.id, recordingCount: 1 }
-                  }));
-                }
-              }
+                    : p
+                )
+              );
+              window.dispatchEvent(
+                new CustomEvent('recordingSaved', {
+                  detail: { userId: user.id, recordingCount: 1 },
+                })
+              );
             }
-          } catch (error) {
-            console.error('Failed to save recording to database:', error);
-            canSave = false;
+          }
+        } catch (error) {
+          console.error('Failed to save recording to database:', error);
+          canSave = false;
+        }
+      }
+      setPendingExport({ performanceId, canSave });
+      window.dispatchEvent(new CustomEvent('recordingCompleted'));
+
+      mediaRecorderRef.current = null;
+      audioStreamRef.current = null;
+      recordingDestinationRef.current = null;
+
+      if (audioCheckIntervalRef.current) {
+        clearTimeout(audioCheckIntervalRef.current);
+        audioCheckIntervalRef.current = null;
+      }
+    },
+    [user]
+  );
+
+  // Combined recording functions
+  const startPerformanceRecording = useCallback(
+    async (
+      appAudioContext?: AudioContext,
+      options?: { recordEvents?: boolean; recordMix?: boolean; continueOverdub?: boolean }
+    ) => {
+      try {
+        const recEvents = options?.recordEvents !== false;
+        const recMix =
+          options?.recordMix !== undefined ? options.recordMix : Boolean(appAudioContext);
+        recordEventsEnabledRef.current = recEvents;
+        recordMixEnabledRef.current = recMix;
+        setRecordEventsEnabled(recEvents);
+        setRecordMixEnabled(recMix);
+
+        if (!recEvents && !recMix) {
+          alert('Enable at least one of: Log events or Record mix.');
+          return;
+        }
+
+        if (recMix && !appAudioContext) {
+          console.error('No audio context provided for recording');
+          alert('Audio context is required when recording the mix.');
+          return;
+        }
+
+        const performanceId = `performance_${Date.now()}`;
+        const startTime = Date.now();
+        performanceStartTimeRef.current = startTime;
+
+        overdubTimestampOffsetRef.current = 0;
+        if (options?.continueOverdub && playingPerformanceIdRef.current) {
+          const base = performances.find((x) => x.id === playingPerformanceIdRef.current);
+          if (base?.events?.length) {
+            const maxTs = Math.max(...base.events.map((e) => e.timestamp));
+            overdubTimestampOffsetRef.current = Math.max(maxTs + 1, base.duration);
           }
         }
-        setPendingExport({ performanceId, canSave });
-        window.dispatchEvent(new CustomEvent('recordingCompleted'));
 
-        // Clear refs and stop audio monitoring
-        mediaRecorderRef.current = null;
-        audioStreamRef.current = null;
-        recordingDestinationRef.current = null;
-        
-        // Stop audio level monitoring
-        if (audioCheckIntervalRef.current) {
-          clearTimeout(audioCheckIntervalRef.current);
-          audioCheckIntervalRef.current = null;
+        const newPerformance: Performance = {
+          id: performanceId,
+          startTime,
+          events: [],
+          tracks: [],
+          duration: 0,
+          eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
+        };
+
+        performanceEventsRef.current = [];
+        performanceTracksRef.current = [];
+        setCurrentPerformance(newPerformance);
+        setIsRecordingPerformance(true);
+
+        if (!recMix) {
+          recordingDestinationRef.current = null;
+          mediaRecorderRef.current = null;
+          audioStreamRef.current = null;
+          trackStudioAction('recording_started', {});
+          return;
         }
-        
 
-      };
-      
-      const newPerformance: Performance = {
-        id: performanceId,
-        startTime,
-        events: [],
-        tracks: [],
-        duration: 0,
-        eventSchemaVersion: PERFORMANCE_EVENT_SCHEMA_VERSION,
-      };
-      
-      // Initialize refs for tracking events and tracks
-      performanceEventsRef.current = [];
-      performanceTracksRef.current = [];
-      
-      setCurrentPerformance(newPerformance);
-      setIsRecordingPerformance(true);
-      
-      // Start recording
-      mediaRecorder.start();
-      trackStudioAction('recording_started', {});
-    } catch (error) {
-      console.error('Failed to start performance recording:', error);
-      alert('Failed to start recording. Please check microphone permissions.');
-    }
-  }, [currentPerformance, trackStudioAction]);
+        const destination = appAudioContext!.createMediaStreamDestination();
+        recordingDestinationRef.current = destination;
+
+        let mimeType = '';
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4;codecs=mp4a.40.2')) {
+          mimeType = 'audio/mp4;codecs=mp4a.40.2';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        }
+
+        const mediaRecorder = new MediaRecorder(destination.stream, mimeType ? { mimeType } : undefined);
+
+        mediaRecorder.onerror = (event) => {
+          console.error('MediaRecorder error:', event);
+        };
+
+        mediaRecorderRef.current = mediaRecorder;
+        audioStreamRef.current = destination.stream;
+
+        const chunks: Blob[] = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          await finalizePerformanceCapture(performanceId, startTime, mimeType, chunks);
+        };
+
+        mediaRecorder.start();
+        trackStudioAction('recording_started', {});
+      } catch (error) {
+        console.error('Failed to start performance recording:', error);
+        alert('Failed to start recording. Please check microphone permissions.');
+      }
+    },
+    [finalizePerformanceCapture, performances, trackStudioAction]
+  );
 
   const stopPerformanceRecording = useCallback(() => {
-    if (!currentPerformance || !mediaRecorderRef.current) return;
-    
-    trackStudioAction('recording_stopped', {});
-    
-    try {
-      // Stop the MediaRecorder
-      mediaRecorderRef.current.stop();
-      
-      // Stop the audio stream
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach(track => track.stop());
-        audioStreamRef.current = null;
-      }
-      
-      mediaRecorderRef.current = null;
-      
+    if (!currentPerformance) return;
 
+    trackStudioAction('recording_stopped', {});
+
+    try {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach((track) => track.stop());
+          audioStreamRef.current = null;
+        }
+      } else {
+        void finalizePerformanceCapture(currentPerformance.id, currentPerformance.startTime, '', []);
+      }
     } catch (error) {
       console.error('Error stopping performance recording:', error);
     }
-  }, [currentPerformance, trackStudioAction]);
+  }, [currentPerformance, trackStudioAction, finalizePerformanceCapture]);
 
   const addRecordingEvent = useCallback((event: NewPerformanceEvent) => {
     if (!isRecordingPerformance || !currentPerformance) {
       return;
     }
-    
-    const timestamp = Date.now() - performanceStartTimeRef.current;
+    if (!recordEventsEnabledRef.current) {
+      return;
+    }
+    if (unarmedRecordingTrackIdsRef.current.has(event.trackId)) {
+      return;
+    }
+
+    const raw = Date.now() - performanceStartTimeRef.current;
+    const timestamp = raw + overdubTimestampOffsetRef.current;
     const newEvent = {
       ...event,
       timestamp
@@ -604,7 +704,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [isRecordingPerformance, currentPerformance]);
 
-    // Audio recording functions (deprecated - now combined with performance recording)
+  // Audio recording functions (deprecated - now combined with performance recording)
   const startAudioRecording = useCallback(async (tempo: number, countInBeats: number = 4) => {
     console.warn('startAudioRecording is deprecated. Use startPerformanceRecording instead.');
     await startPerformanceRecording();
@@ -1043,7 +1143,28 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return recordingDestinationRef.current;
   }, []);
 
+  const registerStudioAudioContext = useCallback((ctx: AudioContext | null) => {
+    studioAudioContextRef.current = ctx;
+  }, []);
+
+  const toggleRecordingArmForTrack = useCallback((trackId: string) => {
+    setUnarmedRecordingTrackIds((prev) => {
+      const s = new Set(prev);
+      if (s.has(trackId)) s.delete(trackId);
+      else s.add(trackId);
+      unarmedRecordingTrackIdsRef.current = s;
+      return [...s];
+    });
+  }, []);
+
+  const clearRecordingArmExclusions = useCallback(() => {
+    unarmedRecordingTrackIdsRef.current = new Set();
+    setUnarmedRecordingTrackIds([]);
+  }, []);
+
   const clearPlaybackTimers = useCallback(() => {
+    playbackScheduleCancelRef.current?.();
+    playbackScheduleCancelRef.current = null;
     playbackTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     playbackTimeoutsRef.current = [];
   }, []);
@@ -1060,6 +1181,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       try {
         playbackAudioRef.current.pause();
         playbackAudioRef.current.currentTime = 0;
+        playbackAudioRef.current.loop = false;
       } catch {
         // no-op
       }
@@ -1068,13 +1190,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     window.dispatchEvent(new CustomEvent('audafact-performance-playback-stop'));
   }, [clearPlaybackTimers]);
 
-  const playReferenceAudio = useCallback(async (performance: Performance) => {
+  const playReferenceAudio = useCallback(async (performance: Performance, opts?: { loop?: boolean }) => {
     if (performance.audioBlob instanceof Blob) {
       const audio = new Audio(URL.createObjectURL(performance.audioBlob));
       playbackAudioRef.current = audio;
+      audio.loop = !!opts?.loop;
       await audio.play();
       audio.onended = () => {
-        if (audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src);
+        if (!audio.loop && audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src);
       };
       return;
     }
@@ -1082,80 +1205,172 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const signedUrl = await getSignedUrl(performance.fileKey);
       const audio = new Audio(signedUrl);
       playbackAudioRef.current = audio;
+      audio.loop = !!opts?.loop;
       await audio.play();
     }
   }, []);
 
-  const runPerformancePlaybackPass = useCallback(async (
-    performance: Performance,
-    loop: boolean,
-    fallbackAudio: boolean,
-    abortToken: { cancelled: boolean }
-  ) => {
-    const sortedEvents = [...performance.events].sort((a, b) => a.timestamp - b.timestamp);
-    const durationMs = Math.max(performance.duration, sortedEvents[sortedEvents.length - 1]?.timestamp ?? 0, 1);
-
-    if (fallbackAudio) {
-      try {
-        await playReferenceAudio(performance);
-      } catch (error) {
-        console.warn('Reference audio playback failed:', error);
+  const runPerformancePlaybackPass = useCallback(
+    (
+      performance: Performance,
+      opts: {
+        loop: boolean;
+        /** Play master mix while dispatching events (usually false to avoid double audio) */
+        referenceAudioWithEvents: boolean;
+        trackIdFilter: string | null;
+        audioContext: AudioContext | null;
+        abortToken: { cancelled: boolean };
       }
-    }
+    ) => {
+      const hasEvents = performance.events.length > 0;
+      const hasAudio = !!(performance.audioBlob || performance.fileKey);
 
-    sortedEvents.forEach((event) => {
-      const timeoutId = window.setTimeout(() => {
-        if (abortToken.cancelled) return;
-        if (!engagedTrackIdsRef.current.has(event.trackId)) return;
-        window.dispatchEvent(new CustomEvent('audafact-performance-playback-event', { detail: event }));
-      }, Math.max(0, event.timestamp));
-      playbackTimeoutsRef.current.push(timeoutId);
-    });
-
-    const completionId = window.setTimeout(() => {
-      if (abortToken.cancelled) return;
-      if (loop) {
-        if (playbackAudioRef.current) {
+      if (!hasEvents && hasAudio) {
+        void (async () => {
           try {
-            playbackAudioRef.current.pause();
-            playbackAudioRef.current.currentTime = 0;
-          } catch {
-            // no-op
+            await playReferenceAudio(performance, { loop: opts.loop });
+            const el = playbackAudioRef.current;
+            if (el && !opts.loop) {
+              el.onended = () => {
+                if (opts.abortToken.cancelled) return;
+                setPlayingPerformanceId(null);
+                setEngagedTrackIds([]);
+                setIsPerformanceLoopEnabled(false);
+              };
+            }
+          } catch (e) {
+            console.warn('Reference-only playback failed:', e);
           }
-          playbackAudioRef.current = null;
-        }
-        clearPlaybackTimers();
-        runPerformancePlaybackPass(performance, loop, fallbackAudio, abortToken);
+        })();
         return;
       }
-      setPlayingPerformanceId(null);
-      setEngagedTrackIds([]);
-      setIsPerformanceLoopEnabled(false);
-    }, durationMs + 20);
-    playbackTimeoutsRef.current.push(completionId);
-  }, [clearPlaybackTimers, playReferenceAudio]);
 
-  const startPerformancePlayback = useCallback(async (
-    performanceId: string,
-    options?: { loop?: boolean; overdub?: boolean }
-  ) => {
-    const performance = performances.find((item) => item.id === performanceId);
-    if (!performance) return;
+      if (opts.referenceAudioWithEvents && hasAudio) {
+        void playReferenceAudio(performance, { loop: opts.loop });
+      }
 
-    stopPerformancePlayback();
-    const engaged = new Set(performance.tracks);
-    const loop = !!options?.loop;
-    const fallbackAudio = !!(performance.audioBlob || performance.fileKey);
+      const cycleLen = performance.cycleLengthMs ?? performance.duration;
+      const sorted = [...performance.events].sort((a, b) => a.timestamp - b.timestamp);
+      const filtered = opts.trackIdFilter
+        ? sorted.filter((e) => e.trackId === opts.trackIdFilter)
+        : sorted;
+      const lastTs = filtered.length ? Math.max(...filtered.map((e) => e.timestamp)) : 0;
+      const passDurationMs =
+        opts.loop && cycleLen > 0
+          ? cycleLen
+          : Math.max(performance.duration, lastTs, 1);
 
-    setPlayingPerformanceId(performance.id);
-    setEngagedTrackIds(Array.from(engaged));
-    setIsPerformanceLoopEnabled(loop);
-    setIsOverdubEnabled(!!options?.overdub);
-    const abortToken = { cancelled: false };
-    playbackAbortRef.current = abortToken;
+      const schedulePass = () => {
+        if (opts.abortToken.cancelled) return;
+        playbackScheduleCancelRef.current?.();
+        const { cancelScheduled } = schedulePerformanceEventsPass({
+          events: filtered,
+          engagedTrackIds: engagedTrackIdsRef.current,
+          trackIdFilter: null,
+          loop: opts.loop,
+          cycleLengthMs: opts.loop ? cycleLen : undefined,
+          passDurationMs,
+          audioContext: opts.audioContext,
+          onFire: (event) => {
+            window.dispatchEvent(new CustomEvent('audafact-performance-playback-event', { detail: event }));
+          },
+          onPassComplete: () => {
+            if (opts.abortToken.cancelled) return;
+            if (opts.loop) {
+              if (playbackAudioRef.current && opts.referenceAudioWithEvents) {
+                try {
+                  playbackAudioRef.current.currentTime = 0;
+                } catch {
+                  // no-op
+                }
+              }
+              schedulePass();
+            } else {
+              setPlayingPerformanceId(null);
+              setEngagedTrackIds([]);
+              setIsPerformanceLoopEnabled(false);
+            }
+          },
+          abortToken: opts.abortToken,
+        });
+        playbackScheduleCancelRef.current = cancelScheduled;
+      };
 
-    await runPerformancePlaybackPass(performance, loop, fallbackAudio, abortToken);
-  }, [performances, runPerformancePlaybackPass, stopPerformancePlayback]);
+      schedulePass();
+    },
+    [playReferenceAudio]
+  );
+
+  const startPerformancePlayback = useCallback(
+    async (
+      performanceId: string,
+      options?: {
+        loop?: boolean;
+        audioContext?: AudioContext | null;
+        referenceAudio?: boolean;
+        referenceOnly?: boolean;
+        trackIdFilter?: string | null;
+      }
+    ) => {
+      const performance = performances.find((item) => item.id === performanceId);
+      if (!performance) return;
+
+      stopPerformancePlayback();
+      const loop = !!options?.loop;
+      const referenceOnly = !!options?.referenceOnly;
+      const referenceAudioWithEvents = !!options?.referenceAudio;
+      const trackIdFilter = options?.trackIdFilter ?? null;
+      const audioContext = options?.audioContext ?? studioAudioContextRef.current ?? null;
+
+      const engaged =
+        trackIdFilter != null && trackIdFilter !== ''
+          ? new Set<string>([trackIdFilter])
+          : new Set(performance.tracks.length ? performance.tracks : [...new Set(performance.events.map((e) => e.trackId))]);
+      engagedTrackIdsRef.current = engaged;
+      setEngagedTrackIds([...engaged]);
+
+      setPlayingPerformanceId(performance.id);
+      setIsPerformanceLoopEnabled(loop);
+
+      const abortToken = { cancelled: false };
+      playbackAbortRef.current = abortToken;
+
+      if (referenceOnly) {
+        const hasAudio = !!(performance.audioBlob || performance.fileKey);
+        if (!hasAudio) return;
+        await playReferenceAudio(performance, { loop });
+        return;
+      }
+
+      runPerformancePlaybackPass(performance, {
+        loop,
+        referenceAudioWithEvents,
+        trackIdFilter,
+        audioContext,
+        abortToken,
+      });
+    },
+    [performances, runPerformancePlaybackPass, stopPerformancePlayback, playReferenceAudio]
+  );
+
+  const startReferenceOnlyPlayback = useCallback(
+    async (performanceId: string, options?: { loop?: boolean }) => {
+      await startPerformancePlayback(performanceId, { referenceOnly: true, loop: !!options?.loop });
+    },
+    [startPerformancePlayback]
+  );
+
+  const startLanePlayback = useCallback(
+    async (performanceId: string, trackId: string, options?: { loop?: boolean }) => {
+      await startPerformancePlayback(performanceId, {
+        trackIdFilter: trackId,
+        loop: options?.loop ?? true,
+        referenceAudio: false,
+        referenceOnly: false,
+      });
+    },
+    [startPerformancePlayback]
+  );
 
   const setTrackEngaged = useCallback((trackId: string, engaged: boolean) => {
     setEngagedTrackIds(prev => {
@@ -1275,7 +1490,13 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     stopPerformanceRecording,
     addRecordingEvent,
     getRecordingDestination,
+    registerStudioAudioContext,
+    unarmedRecordingTrackIds,
+    toggleRecordingArmForTrack,
+    clearRecordingArmExclusions,
     startPerformancePlayback,
+    startReferenceOnlyPlayback,
+    startLanePlayback,
     stopPerformancePlayback,
     playingPerformanceId,
     engagedTrackIds,
@@ -1283,7 +1504,11 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     isPerformanceLoopEnabled,
     isOverdubEnabled,
     setOverdubEnabled: setIsOverdubEnabled,
-    
+    recordEventsEnabled,
+    setRecordEventsEnabled,
+    recordMixEnabled,
+    setRecordMixEnabled,
+
     // Audio recording
     isRecordingAudio,
     currentAudioRecording,

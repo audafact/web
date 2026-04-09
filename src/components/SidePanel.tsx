@@ -292,6 +292,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
     savedRecordings,
     deleteSavedRecording,
     startPerformancePlayback,
+    startReferenceOnlyPlayback,
     stopPerformancePlayback,
     playingPerformanceId,
     engagedTrackIds,
@@ -500,7 +501,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   // Merge performances (in-memory) with savedRecordings (from DB) for display
   const mergedRecordings = useMemo(() => {
-    const fromPerformance = performances.filter((p) => p.audioBlob || p.fileKey);
+    // Include takes with performance events even when there is no mix file (events-only capture).
+    const fromPerformance = performances.filter(
+      (p) => p.events.length > 0 || !!p.audioBlob || !!p.fileKey
+    );
     const dbOnly = savedRecordings.filter(
       (r) => !performances.some((p) => p.databaseId === r.id)
     );
@@ -525,7 +529,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
         };
       }),
       ...dbOnly
-        .filter((r) => r.file_key)
+        .filter((r) => {
+          const ev = Array.isArray(r.performance_events) ? r.performance_events : [];
+          return !!r.file_key || ev.length > 0;
+        })
         .map((r) => {
           const events = Array.isArray(r.performance_events) ? r.performance_events : [];
           const tracksCount = new Set(
@@ -2323,7 +2330,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               onClick={async () => {
                                 const sharedPerformanceId = sharedBundle.importedPerformanceId ?? sharedBundle.performance?.id;
                                 if (sharedPerformanceId) {
-                                  await startPerformancePlayback(sharedPerformanceId, { loop: true, overdub: false });
+                                  await startPerformancePlayback(sharedPerformanceId, { loop: true });
                                 }
                               }}
                             >
@@ -2459,6 +2466,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               const performanceForPlayback = item.performance ?? performances.find(p => p.databaseId === item.dbId) ?? null;
                               const canEventReplay = !!(performanceForPlayback && performanceForPlayback.events.length > 0);
                               const isPerformancePlaying = playingPerformanceId === performanceForPlayback?.id;
+                              const showMainPlayControl = !!((canPlay && playSrc) || canEventReplay);
                               return (
                                 <div
                                   key={`${item.type}-${item.id}`}
@@ -2481,7 +2489,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                       {item.label}
                                     </h4>
                                     <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
-                                      {canPlay && playSrc && (
+                                      {showMainPlayControl && (
                                         <Tooltip content={canEventReplay ? (isPerformancePlaying ? "Stop performance replay" : "Replay performance") : (isThisPlaying ? "Pause" : "Play")} position="top" delay={150}>
                                           <button
                                             onClick={async () => {
@@ -2492,14 +2500,13 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 }
                                                 await startPerformancePlayback(performanceForPlayback.id, {
                                                   loop: isPerformanceLoopEnabled,
-                                                  overdub: isOverdubEnabled,
                                                 });
                                                 return;
                                               }
-                                              toggle(playSrc);
+                                              if (playSrc) toggle(playSrc);
                                             }}
                                             className="p-1.5 text-audafact-text-secondary hover:text-audafact-accent-green hover:bg-audafact-surface-2 rounded transition-colors duration-200"
-                                            disabled={isThisLoading}
+                                            disabled={!!(canPlay && playSrc && isThisLoading)}
                                           >
                                             {isThisLoading ? (
                                               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -2604,7 +2611,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   </p>
                                   {canEventReplay && performanceForPlayback && (
                                     <div className="mt-2 space-y-2">
-                                      <div className="flex items-center gap-2 text-[11px]">
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
                                         <button
                                           type="button"
                                           onClick={async () => {
@@ -2614,13 +2621,26 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                             }
                                             await startPerformancePlayback(performanceForPlayback.id, {
                                               loop: true,
-                                              overdub: isOverdubEnabled,
                                             });
                                           }}
                                           className="px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
                                         >
                                           {isPerformancePlaying ? 'Stop Loop' : 'Loop Replay'}
                                         </button>
+                                        {canPlay && (
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              await startReferenceOnlyPlayback(performanceForPlayback.id, {
+                                                loop: isPerformanceLoopEnabled,
+                                              });
+                                            }}
+                                            className="px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                                            title="Play stored mix only (no event replay). Stops any current replay first."
+                                          >
+                                            Reference only
+                                          </button>
+                                        )}
                                         <label className="inline-flex items-center gap-1 cursor-pointer select-none">
                                           <input
                                             type="checkbox"

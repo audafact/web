@@ -1,5 +1,6 @@
 export type PerformanceEventType =
   | "cue_trigger"
+  | "cue_release"
   | "loop_play"
   | "loop_stop"
   | "volume_change"
@@ -17,6 +18,15 @@ export interface CueTriggerEvent extends BasePerformanceEvent {
     cueTime: number;
     mode: "preview" | "loop" | "cue";
     chopTriggerStyle?: "cue" | "hold" | "one-shot";
+  };
+}
+
+/** End of Hold-style gate (keyup / pointer up); omit for Cue / One-Shot */
+export interface CueReleaseEvent extends BasePerformanceEvent {
+  type: "cue_release";
+  data: {
+    cueIndex: number;
+    mode: "preview" | "loop" | "cue";
   };
 }
 
@@ -57,6 +67,7 @@ export interface SpeedChangeEvent extends BasePerformanceEvent {
 
 export type PerformanceEvent =
   | CueTriggerEvent
+  | CueReleaseEvent
   | LoopPlayEvent
   | LoopStopEvent
   | VolumeChangeEvent
@@ -64,7 +75,7 @@ export type PerformanceEvent =
 
 export type NewPerformanceEvent = Omit<PerformanceEvent, "timestamp">;
 
-export const PERFORMANCE_EVENT_SCHEMA_VERSION = 1;
+export const PERFORMANCE_EVENT_SCHEMA_VERSION = 2;
 
 export const isPerformanceEvent = (value: unknown): value is PerformanceEvent => {
   if (!value || typeof value !== "object") return false;
@@ -75,6 +86,7 @@ export const isPerformanceEvent = (value: unknown): value is PerformanceEvent =>
   if (!event.data || typeof event.data !== "object") return false;
   return (
     event.type === "cue_trigger" ||
+    event.type === "cue_release" ||
     event.type === "loop_play" ||
     event.type === "loop_stop" ||
     event.type === "volume_change" ||

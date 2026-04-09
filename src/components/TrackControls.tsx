@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { isIOSWebAudioTarget } from '../context/AudioContext';
 import { useRecording } from '../context/RecordingContext';
@@ -179,14 +179,35 @@ const TrackControls = ({
   cueDragState = null,
   chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
-  const { addRecordingEvent } = useRecording();
+  const {
+    addRecordingEvent,
+    unarmedRecordingTrackIds,
+    toggleRecordingArmForTrack,
+    performances,
+    startLanePlayback,
+    stopPerformancePlayback,
+    playingPerformanceId,
+    engagedTrackIds,
+  } = useRecording();
   const { trackEvent } = useAnalytics();
   const { tier } = useUser();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
-  
 
-  
+  const perfForLane = useMemo(() => {
+    if (!trackId) return null;
+    return performances.find((p) => p.events.some((e) => e.trackId === trackId)) ?? null;
+  }, [performances, trackId]);
+
+  const isArmedForRecord = !trackId || !unarmedRecordingTrackIds.includes(trackId);
+  const isLaneLoopPlaying = !!(
+    trackId &&
+    perfForLane &&
+    playingPerformanceId === perfForLane.id &&
+    engagedTrackIds.length === 1 &&
+    engagedTrackIds[0] === trackId
+  );
+
   // Reconnect audio sources when recording destination changes
   useEffect(() => {
     if (recordingDestination && audioSourceRef.current && isPlaying && audioContext) {
@@ -848,6 +869,22 @@ const TrackControls = ({
     }
   }, [onPlaybackStateChange]);
 
+  /** Stop Hold playback for this pad and optionally log `cue_release` (live performance only). */
+  const endHoldAtCueIndex = useCallback(
+    (cueIndex: number, recordRelease: boolean) => {
+      if (holdTriggeredByRef.current !== cueIndex) return;
+      stopChopPlayback();
+      if (recordRelease && trackId) {
+        addRecordingEvent({
+          type: 'cue_release',
+          trackId,
+          data: { cueIndex, mode: 'cue' },
+        });
+      }
+    },
+    [trackId, addRecordingEvent, stopChopPlayback]
+  );
+
   // Handle keyboard events for cue points
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
@@ -907,13 +944,13 @@ const TrackControls = ({
         '6': 5, '7': 6, '8': 7, '9': 8, '0': 9
       };
       const cueIndex = keyMap[event.key];
-      if (cueIndex !== undefined && holdTriggeredByRef.current === cueIndex) {
-        stopChopPlaybackRef.current();
+      if (cueIndex !== undefined) {
+        endHoldAtCueIndex(cueIndex, true);
       }
     };
     window.addEventListener('keyup', handleKeyUp);
     return () => window.removeEventListener('keyup', handleKeyUp);
-  }, [mode, chopTriggerStyle, isSelected]);
+  }, [mode, chopTriggerStyle, isSelected, endHoldAtCueIndex]);
 
   useEffect(() => {
     stopChopPlaybackRef.current = stopChopPlayback;
@@ -1057,14 +1094,20 @@ const TrackControls = ({
     };
   }, [togglePlaybackFunctionRef, togglePlayback]);
 
+  type PlayCuePointOptions = {
+    chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
+    /** When false (e.g. performance replay), do not append a recording event */
+    recordEvent?: boolean;
+  };
+
   // Play from a specific cue point (behavior depends on chopTriggerStyle)
-  const playCuePoint = async (index: number) => {
+  const playCuePoint = async (index: number, options?: PlayCuePointOptions) => {
     
     if (!audioContext || !audioBuffer || index >= cuePoints.length) {
       return;
     }
 
-    const style = chopTriggerStyle;
+    const style = options?.chopTriggerStyle ?? chopTriggerStyle;
     const cueTime = getCurrentCueTimestamp(cuePoints, cueDragState, index);
 
     // One-Shot: invalid trigger if this node is at or past the next node (no valid slice)
@@ -1143,7 +1186,8 @@ const TrackControls = ({
       lastUpdateTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
       
-      if (trackId) {
+      const shouldRecord = options?.recordEvent !== false;
+      if (trackId && shouldRecord) {
         addRecordingEvent({
           type: 'cue_trigger',
           trackId,
@@ -1261,7 +1305,24 @@ const TrackControls = ({
       if (!playbackEvent || !trackId || playbackEvent.trackId !== trackId) return;
 
       if (playbackEvent.type === 'cue_trigger' && mode === 'cue') {
-        playCuePointRef.current?.(playbackEvent.data.cueIndex);
+        const data = playbackEvent.data;
+        const recordedStyle = data.chopTriggerStyle;
+        const styleOverride =
+          recordedStyle && ['cue', 'hold', 'one-shot'].includes(recordedStyle)
+            ? recordedStyle
+            : undefined;
+        void playCuePointRef.current?.(data.cueIndex, {
+          chopTriggerStyle: styleOverride,
+          recordEvent: false,
+        });
+        return;
+      }
+
+      if (playbackEvent.type === 'cue_release' && mode === 'cue') {
+        const idx = playbackEvent.data.cueIndex;
+        if (holdTriggeredByRef.current === idx) {
+          stopChopPlaybackRef.current();
+        }
         return;
       }
 
@@ -1286,8 +1347,13 @@ const TrackControls = ({
     };
 
     const handlePlaybackStop = () => {
-      if (mode === 'loop' && isPlaying) {
-        togglePlayback();
+      if (!isPlaying) return;
+      if (mode === 'loop') {
+        void togglePlayback();
+        return;
+      }
+      if (mode === 'cue') {
+        stopChopPlaybackRef.current();
       }
     };
 
@@ -1372,6 +1438,42 @@ const TrackControls = ({
           </div>
         )}
       </div>
+
+      {trackId && (
+        <div className="flex flex-wrap items-center gap-2 py-1.5 border-t border-audafact-divider/60">
+          <span className="text-[10px] uppercase tracking-wide audafact-text-secondary">Performance</span>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => toggleRecordingArmForTrack(trackId)}
+            className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+              isArmedForRecord
+                ? 'border-audafact-accent-cyan text-audafact-accent-cyan'
+                : 'border-audafact-divider audafact-text-secondary'
+            }`}
+            title={isArmedForRecord ? 'Events from this track will be logged when recording' : 'This lane is muted for new events'}
+          >
+            {isArmedForRecord ? 'Armed' : 'Muted'}
+          </button>
+          {perfForLane && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={async () => {
+                if (isLaneLoopPlaying) {
+                  stopPerformancePlayback();
+                  return;
+                }
+                await startLanePlayback(perfForLane.id, trackId, { loop: true });
+              }}
+              className="px-2 py-0.5 rounded text-xs border border-audafact-divider audafact-text-secondary hover:bg-audafact-surface-2"
+              title="Loop replay for this track only (event playback)"
+            >
+              {isLaneLoopPlaying ? 'Stop loop' : 'Loop lane'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Volume and Speed Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
@@ -1617,8 +1719,8 @@ const TrackControls = ({
                   key={`cue-top-${index}`}
                   type="button"
                   onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
-                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
-                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerUp={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
+                  onPointerLeave={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
                   onContextMenu={(e) => e.preventDefault()}
                   style={{ WebkitTouchCallout: 'none' }}
                   disabled={disabled}
@@ -1657,8 +1759,8 @@ const TrackControls = ({
                   key={`cue-bottom-${index}`}
                   type="button"
                   onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
-                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
-                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerUp={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
+                  onPointerLeave={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
                   onContextMenu={(e) => e.preventDefault()}
                   style={{ WebkitTouchCallout: 'none' }}
                   disabled={disabled}
