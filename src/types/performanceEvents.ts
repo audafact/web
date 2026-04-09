@@ -98,3 +98,13 @@ export const parsePerformanceEvents = (value: unknown): PerformanceEvent[] => {
   if (!Array.isArray(value)) return [];
   return value.filter(isPerformanceEvent);
 };
+
+/** JSON-safe deep clone for PostgREST jsonb (strips non-serializable fields). */
+export function clonePerformanceEventsForDb(events: PerformanceEvent[] | undefined): PerformanceEvent[] {
+  if (!events?.length) return [];
+  try {
+    return JSON.parse(JSON.stringify(events)) as PerformanceEvent[];
+  } catch {
+    return [];
+  }
+}

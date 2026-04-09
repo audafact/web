@@ -270,17 +270,74 @@ export class DatabaseService {
   static async createRecording(
     recording: Omit<Recording, "id" | "created_at">
   ): Promise<Recording | null> {
+    const logRecordingError = (err: {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    }) =>
+      console.error(
+        "Error creating recording:",
+        err?.message ?? err,
+        err?.details,
+        err?.hint,
+        err?.code
+      );
+
+    const isMissingPerformanceEventColumns = (error: {
+      code?: string;
+      message?: string;
+    }) =>
+      error.code === "PGRST204" &&
+      /performance_events|event_schema_version|performance_meta/i.test(
+        error.message ?? ""
+      );
+
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("recordings")
         .insert(recording)
-        .select()
-        .single();
+        .select();
+
+      if (
+        error &&
+        isMissingPerformanceEventColumns(error) &&
+        (recording.performance_events != null ||
+          recording.event_schema_version != null ||
+          recording.performance_meta != null)
+      ) {
+        console.warn(
+          "[Audafact] recordings table is missing performance event columns. Apply web/supabase/migrations/20260407153000_add_performance_events_to_recordings.sql (e.g. supabase db push). Saving without event_log / performance_meta in DB for now."
+        );
+        const {
+          performance_events: _pe,
+          event_schema_version: _esv,
+          performance_meta: _pm,
+          ...legacyRecording
+        } = recording;
+        ({ data, error } = await supabase
+          .from("recordings")
+          .insert(legacyRecording)
+          .select());
+      }
 
       if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error("Error creating recording:", error);
+      const row = Array.isArray(data) ? data[0] : null;
+      if (!row) {
+        console.error(
+          "Error creating recording: insert returned no rows (check RLS RETURNING / schema)."
+        );
+        return null;
+      }
+      return row as Recording;
+    } catch (error: unknown) {
+      const err = error as {
+        message?: string;
+        details?: string;
+        hint?: string;
+        code?: string;
+      };
+      logRecordingError(err);
       return null;
     }
   }
