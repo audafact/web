@@ -13,11 +13,17 @@ interface RecordingControlsProps {
 }
 
 const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', onSave, audioContext }) => {
-  const { 
-    isRecordingPerformance, 
-    currentPerformance, 
-    startPerformanceRecording, 
-    stopPerformanceRecording
+  const {
+    isRecordingPerformance,
+    currentPerformance,
+    startPerformanceRecording,
+    stopPerformanceRecording,
+    recordEventsEnabled,
+    setRecordEventsEnabled,
+    recordMixEnabled,
+    setRecordMixEnabled,
+    isOverdubEnabled,
+    playingPerformanceId,
   } = useRecording();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { tier } = useUser();
@@ -99,7 +105,11 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
               <span>
                 {currentPerformance.events.length === 0
                   ? 'Waiting for first trigger...'
-                  : 'Recording Performance & Audio...'}
+                  : recordMixEnabled && recordEventsEnabled
+                    ? 'Recording mix & events…'
+                    : recordMixEnabled
+                      ? 'Recording mix…'
+                      : 'Recording events…'}
               </span>
               <span className="font-mono">
                 {formatDuration(Date.now() - currentPerformance.startTime)}
@@ -108,6 +118,25 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
           )}
 
           {!isRecordingPerformance ? (
+            <>
+            <div className="flex flex-wrap items-center gap-3 text-xs audafact-text-secondary">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={recordEventsEnabled}
+                  onChange={(e) => setRecordEventsEnabled(e.target.checked)}
+                />
+                Log events
+              </label>
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={recordMixEnabled}
+                  onChange={(e) => setRecordMixEnabled(e.target.checked)}
+                />
+                Record mix
+              </label>
+            </div>
             <button
               onClick={async () => {
                 // Check if user is authenticated
@@ -124,13 +153,18 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
                   return;
                 }
                 
-                startPerformanceRecording(audioContext);
+                startPerformanceRecording(audioContext, {
+                  recordEvents: recordEventsEnabled,
+                  recordMix: recordMixEnabled,
+                  continueOverdub: isOverdubEnabled && !!playingPerformanceId,
+                });
               }}
               className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
             >
               <div className="w-3 h-3 bg-current rounded-full"></div>
               Record
             </button>
+            </>
           ) : (
             <button
               onClick={stopPerformanceRecording}

@@ -88,7 +88,13 @@ const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
     useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel, closeSidePanel } = useSidePanel();
-  const { addRecordingEvent, saveCurrentState, isRecordingPerformance, getRecordingDestination } = useRecording();
+  const {
+    addRecordingEvent,
+    saveCurrentState,
+    isRecordingPerformance,
+    getRecordingDestination,
+    registerStudioAudioContext,
+  } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
 
@@ -129,6 +135,11 @@ const Studio = () => {
       closeSidePanel();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- studio entry only, match initial viewport
+
+  useEffect(() => {
+    registerStudioAudioContext(audioContext ?? null);
+    return () => registerStudioAudioContext(null);
+  }, [audioContext, registerStudioAudioContext]);
 
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';
