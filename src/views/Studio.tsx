@@ -17,6 +17,7 @@ import TrackControls from '../components/TrackControls';
 import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
 import RecordingControls from '../components/RecordingControls';
+import LaneTransportControls from '../components/LaneTransportControls';
 import SidePanel from '../components/SidePanel';
 import SignupModal from '../components/SignupModal';
 import DemoModeIndicator from '../components/DemoModeIndicator';
@@ -89,11 +90,14 @@ const Studio = () => {
     useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel, closeSidePanel } = useSidePanel();
   const {
-    addRecordingEvent,
     saveCurrentState,
     isRecordingPerformance,
     getRecordingDestination,
     registerStudioAudioContext,
+    initRecordingTakesForTracks,
+    recordSessionGridTempoEvent,
+    recordSessionGridTimeSignatureEvent,
+    recordEventsEnabled,
   } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
@@ -140,6 +144,11 @@ const Studio = () => {
     registerStudioAudioContext(audioContext ?? null);
     return () => registerStudioAudioContext(null);
   }, [audioContext, registerStudioAudioContext]);
+
+  useEffect(() => {
+    if (!isRecordingPerformance || tracks.length === 0) return;
+    initRecordingTakesForTracks(tracks.map((t) => t.id));
+  }, [isRecordingPerformance, tracks, initRecordingTakesForTracks]);
 
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';
@@ -2399,11 +2408,17 @@ const Studio = () => {
 
   // Handle tempo changes
   const handleTempoChange = (trackId: string, tempo: number) => {
+    const prevTrack = tracks.find((t) => t.id === trackId);
+    const prevBpm = prevTrack ? Math.round(prevTrack.tempo * (playbackSpeeds[trackId] || 1)) : undefined;
+    const nextBpm = Math.round(tempo * (playbackSpeeds[trackId] || 1));
     setTracks(prev => 
       prev.map(track => 
         track.id === trackId ? { ...track, tempo } : track
       )
     );
+    if (isRecordingPerformance && recordEventsEnabled) {
+      recordSessionGridTempoEvent(trackId, nextBpm, prevBpm);
+    }
   };
 
   // Handle playback speed changes
@@ -2661,6 +2676,9 @@ const Studio = () => {
         track.id === trackId ? { ...track, timeSignature } : track
       )
     );
+    if (isRecordingPerformance && recordEventsEnabled) {
+      recordSessionGridTimeSignatureEvent(trackId, timeSignature.numerator, timeSignature.denominator);
+    }
   };
 
   // Handle first measure time changes
@@ -4131,6 +4149,7 @@ const Studio = () => {
             className="w-auto shrink-0"
             onSave={handleSaveCurrentState}
             audioContext={audioContext || undefined}
+            studioTrackIds={tracks.map((t) => t.id)}
           />
           <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
             {(() => {
@@ -4497,6 +4516,10 @@ const Studio = () => {
                     </button>
                   )}
                 </div>
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-audafact-divider/40">
+                  <span className="text-[10px] uppercase tracking-wide audafact-text-secondary shrink-0">Lane</span>
+                  <LaneTransportControls trackId={track.id} disabled={isTrackLoading} />
+                </div>
                 {/* Row 4: Time & Tempo toggle */}
                 <div>
                   <button
@@ -4519,8 +4542,8 @@ const Studio = () => {
               </div>
 
               {/* Desktop layout */}
-              <div className="hidden md:flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="hidden md:flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   {/* Custom Mode Selector */}
                   <div className="flex items-center bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider">
                     <button
@@ -4675,8 +4698,7 @@ const Studio = () => {
                     </p>
                   </div>
                 </div>
-                
-                
+                <LaneTransportControls trackId={track.id} disabled={isTrackLoading} />
               </div>
             </div>
 

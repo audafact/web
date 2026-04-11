@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Save, Check } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
 import { useAccessControl } from '../hooks/useAccessControl';
@@ -10,9 +10,16 @@ interface RecordingControlsProps {
   className?: string;
   onSave?: () => void;
   audioContext?: AudioContext;
+  /** Current Studio track ids — used for global arm / mute all lanes */
+  studioTrackIds?: string[];
 }
 
-const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', onSave, audioContext }) => {
+const RecordingControls: React.FC<RecordingControlsProps> = ({
+  className = '',
+  onSave,
+  audioContext,
+  studioTrackIds = [],
+}) => {
   const {
     isRecordingPerformance,
     currentPerformance,
@@ -24,7 +31,21 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     setRecordMixEnabled,
     isOverdubEnabled,
     playingPerformanceId,
+    performances,
+    startPerformancePlayback,
+    stopPerformancePlayback,
+    armAllRecordingLanes,
+    disarmAllRecordingLanes,
+    isPerformanceLoopEnabled,
+    setPerformanceLoopEnabled,
   } = useRecording();
+
+  const perfForGlobal = useMemo(
+    () => performances.find((p) => p.events.length > 0) ?? null,
+    [performances]
+  );
+
+  const isReplayPlaying = !!(perfForGlobal && playingPerformanceId === perfForGlobal.id);
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { tier } = useUser();
   
@@ -69,7 +90,7 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
   };
 
   return (
-    <div className={`flex items-center gap-6 w-full ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-6 gap-y-2 w-full ${className}`}>
       {/* Save Button */}
       <button
         onClick={handleSave}
@@ -183,6 +204,56 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
             </button>
           )}
         </div>
+
+      {studioTrackIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs border-l border-audafact-divider pl-4 audafact-text-secondary">
+          <span className="uppercase tracking-wide shrink-0">Session</span>
+          <button
+            type="button"
+            className="px-2 py-1 rounded border border-audafact-divider hover:bg-audafact-surface-2"
+            onClick={() => armAllRecordingLanes(studioTrackIds)}
+            title="Arm all lanes for event logging"
+          >
+            Arm all
+          </button>
+          <button
+            type="button"
+            className="px-2 py-1 rounded border border-audafact-divider hover:bg-audafact-surface-2"
+            onClick={() => disarmAllRecordingLanes(studioTrackIds)}
+            title="Mute all lanes for new events"
+          >
+            Mute all
+          </button>
+          {perfForGlobal && (
+            <>
+              <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isPerformanceLoopEnabled}
+                  onChange={(e) => setPerformanceLoopEnabled(e.target.checked)}
+                />
+                Loop replay
+              </label>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-audafact-accent-cyan text-audafact-accent-cyan hover:bg-audafact-surface-2"
+                onClick={async () => {
+                  if (isReplayPlaying) {
+                    stopPerformancePlayback();
+                    return;
+                  }
+                  await startPerformancePlayback(perfForGlobal.id, {
+                    loop: isPerformanceLoopEnabled,
+                    audioContext: audioContext ?? null,
+                  });
+                }}
+              >
+                {isReplayPlaying ? 'Stop replay' : 'Play all'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
         
         {/* Upgrade Prompt Modal */}
         {showUpgradePrompt && (
