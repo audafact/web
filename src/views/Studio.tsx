@@ -4153,21 +4153,23 @@ const Studio = () => {
           <div className="max-w-6xl mx-auto p-6 w-full space-y-3">
             {hasSavedSessionForRestore && (
               <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => void handleRestorePreviousSession()}
-                  disabled={isInitializingAudio}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isInitializingAudio ? (
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
-                  ) : (
-                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  )}
-                  Restore previous
-                </button>
+                <Tooltip content="Restore previous session" position="top" delay={150}>
+                  <button
+                    type="button"
+                    onClick={() => void handleRestorePreviousSession()}
+                    disabled={isInitializingAudio}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isInitializingAudio ? (
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
+                    ) : (
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                    Restore previous
+                  </button>
+                </Tooltip>
               </div>
             )}
             <div className="audafact-card overflow-hidden p-8 border border-audafact-divider">
@@ -4358,38 +4360,47 @@ const Studio = () => {
             />
             {(user || isGuestMode) && (
               <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleNewSession()}
-                  disabled={isInitializingAudio || isTrackLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Clear the studio and load one random track"
-                >
-                  {isTrackLoading ? (
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
-                  ) : (
-                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582M20 20v-5h-.581M5.636 5.636L7.05 7.05M18.364 18.364l1.414 1.414M4.582 9a8.003 8.003 0 0114.901-2.021M19.419 15.021a8.004 8.004 0 01-14.901 2.021" />
-                    </svg>
-                  )}
-                  New session
-                </button>
-                {user && !isGuestMode && hasSavedSessionForRestore && (
+                <Tooltip content="Start fresh session" position="top" delay={150}>
                   <button
                     type="button"
-                    onClick={() => void handleRestorePreviousSession()}
-                    disabled={isInitializingAudio}
+                    onClick={() => handleNewSession()}
+                    disabled={isInitializingAudio || isTrackLoading}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isInitializingAudio ? (
+                    {isTrackLoading ? (
                       <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
                     ) : (
                       <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"
+                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8M8 12h8" />
                       </svg>
                     )}
-                    Restore previous
+                    New session
                   </button>
+                </Tooltip>
+                {user && !isGuestMode && hasSavedSessionForRestore && (
+                  <Tooltip content="Restore prior session" position="top" delay={150}>
+                    <button
+                      type="button"
+                      onClick={() => void handleRestorePreviousSession()}
+                      disabled={isInitializingAudio}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isInitializingAudio ? (
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
+                      ) : (
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      )}
+                      Restore previous
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             )}
