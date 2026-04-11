@@ -39,6 +39,7 @@ import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
 import { BREAKPOINTS } from '../hooks/useResponsiveDesign';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
+import { decodeAudioFileToBufferWithoutRunningContext } from '../utils/decodeAudioFile';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
 
 // Define a Track type
@@ -82,7 +83,40 @@ interface AudioAsset {
   beats?: number[];
 }
 
+/** Pick newest studio snapshot from RecordingContext sessions (by embedded `timestamp`, else `startTime`). */
+function pickLatestSavedSessionForRestore(sessions: unknown[]) {
+  if (!sessions.length) return null;
+  let best: unknown = null;
+  let bestTs = -1;
+  for (const raw of sessions) {
+    const s = raw as {
+      events?: Array<{ data?: { timestamp?: number; tracks?: unknown[] } }>;
+      startTime?: number;
+    };
+    const data = s.events?.[0]?.data;
+    const tr = data?.tracks;
+    if (!Array.isArray(tr) || tr.length === 0) continue;
+    const ts = typeof data?.timestamp === 'number' ? data.timestamp : (s.startTime ?? 0);
+    if (ts >= bestTs) {
+      bestTs = ts;
+      best = raw;
+    }
+  }
+  return best;
+}
 
+/** Stable fingerprint for "pristine signed-in random bootstrap" — debounced save must not overwrite restore snapshot while this still matches. */
+function fingerprintTracksCueLoopMode(tracks: Array<Pick<Track, 'id' | 'cuePoints' | 'loopStart' | 'loopEnd' | 'mode'>>) {
+  return JSON.stringify(
+    tracks.map((t) => ({
+      id: t.id,
+      cuePoints: t.cuePoints,
+      loopStart: t.loopStart,
+      loopEnd: t.loopEnd,
+      mode: t.mode,
+    }))
+  );
+}
 
 const Studio = () => {
   const [searchParams] = useSearchParams();
@@ -92,12 +126,14 @@ const Studio = () => {
   const {
     saveCurrentState,
     isRecordingPerformance,
+    stopPerformanceRecording,
     getRecordingDestination,
     registerStudioAudioContext,
     initRecordingTakesForTracks,
     recordSessionGridTempoEvent,
     recordSessionGridTimeSignatureEvent,
     recordEventsEnabled,
+    savedSessions,
   } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
@@ -146,6 +182,10 @@ const Studio = () => {
   }, [audioContext, registerStudioAudioContext]);
 
   useEffect(() => {
+    if (tracks.length > 0) setHadTracksOnce(true);
+  }, [tracks.length]);
+
+  useEffect(() => {
     if (!isRecordingPerformance || tracks.length === 0) return;
     initRecordingTakesForTracks(tracks.map((t) => t.id));
   }, [isRecordingPerformance, tracks, initRecordingTakesForTracks]);
@@ -158,6 +198,19 @@ const Studio = () => {
   
   // Ref to prevent multiple track loads
   const hasLoadedTrack = useRef(false);
+  /** After the user has had ≥1 track in this session, do not treat empty studio as "initial" signed-in bootstrap (avoids re-running random load if they remove all tracks). */
+  const [hadTracksOnce, setHadTracksOnce] = useState(false);
+  /** Prevents duplicate signed-in auto-load when effect runs before isTrackLoading state updates (e.g. Strict Mode). */
+  const signedInRandomLoadStartedRef = useRef(false);
+  /** Bumped when signed-in bootstrap random starts or when Restore begins — stale completions must not call setTracks. */
+  const signedInLibraryBootstrapGenRef = useRef(0);
+  /** True from first sync line of handleRestore until finally (covers gap before isRestoringRef). */
+  const studioRestoreInProgressRef = useRef(false);
+  /**
+   * Set when signed-in random bootstrap finishes; matches cue/loop/mode until the user edits.
+   * Debounced persistence skips overwriting `studioRestoreSnapshot-*` while equal — preserves pre-refresh restore data.
+   */
+  const signedInBootstrapOnlyFingerprintRef = useRef<string | null>(null);
   const isRestoringRef = useRef(false);
   /** Creative metrics: emit sampler_ready only once per session when first track is playable */
   const hasEmittedSamplerReady = useRef(false);
@@ -554,71 +607,91 @@ const Studio = () => {
   };
 
   // --- Studio State Persistence (for authorized users only) ---
-  const getStudioStateKey = () => user ? `studioState-${user.id}` : null;
-  
-  const saveStudioStateToLocal = () => {
-    const stateKey = getStudioStateKey();
-    if (!stateKey || !user || isGuestMode) return;
+  /** Legacy key — migration only; active restore data lives in `studioRestoreSnapshot-*`. */
+  const getStudioStateKey = () => (user ? `studioState-${user.id}` : null);
+  const getStudioRestoreSnapshotKey = () => (user ? `studioRestoreSnapshot-${user.id}` : null);
 
-    const ref = studioStateForSaveRef.current;
-    if (!ref.tracks.length) return;
+  const saveStudioStateToLocal = useCallback(
+    (reason: 'debounced' | 'beforeunload' | 'explicit') => {
+      const restoreKey = getStudioRestoreSnapshotKey();
+      if (!restoreKey || !user || isGuestMode) return;
 
-    try {
-      const studioState = {
-        tracks: ref.tracks.map(track => {
-          let fileKey = track.fileKey ?? (track.sourceAssetId && ref.availableAssets.find(a => a.id === track.sourceAssetId)?.fileKey);
-          // Fallback: match by id prefix or fileName when exact lookup fails (handles tier/timing mismatches)
-          if (!fileKey && (track.sourceAssetId || track.id)) {
-            const lookupId = track.sourceAssetId ?? track.id;
-            const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
-            let fallbackAsset = ref.availableAssets.find(a => a.id === basePrefix || a.id.startsWith(basePrefix + '-'));
-            if (!fallbackAsset && track.file?.name) {
-              const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
-              fallbackAsset = ref.availableAssets.find(a =>
-                a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) || a.id.toLowerCase().includes(fn)
-              ) ?? undefined;
+      const ref = studioStateForSaveRef.current;
+      if (!ref.tracks.length) return;
+
+      if (
+        reason === 'debounced' &&
+        signedInBootstrapOnlyFingerprintRef.current !== null &&
+        fingerprintTracksCueLoopMode(ref.tracks) === signedInBootstrapOnlyFingerprintRef.current
+      ) {
+        return;
+      }
+
+      try {
+        const studioState = {
+          tracks: ref.tracks.map((track) => {
+            let fileKey =
+              track.fileKey ??
+              (track.sourceAssetId && ref.availableAssets.find((a) => a.id === track.sourceAssetId)?.fileKey);
+            if (!fileKey && (track.sourceAssetId || track.id)) {
+              const lookupId = track.sourceAssetId ?? track.id;
+              const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
+              let fallbackAsset = ref.availableAssets.find(
+                (a) => a.id === basePrefix || a.id.startsWith(basePrefix + '-')
+              );
+              if (!fallbackAsset && track.file?.name) {
+                const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
+                fallbackAsset =
+                  ref.availableAssets.find(
+                    (a) =>
+                      a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) ||
+                      a.id.toLowerCase().includes(fn)
+                  ) ?? undefined;
+              }
+              fileKey = fallbackAsset?.fileKey;
             }
-            fileKey = fallbackAsset?.fileKey;
-          }
-          return {
-            id: track.id,
-            sourceAssetId: track.sourceAssetId ?? track.id,
-            fileKey: fileKey ?? undefined,
-            fileName: track.file.name,
-            fileSize: track.file.size,
-            fileType: track.file.type,
-            mode: track.mode,
-            loopStart: track.loopStart,
-            loopEnd: track.loopEnd,
-            cuePoints: track.cuePoints,
-            tempo: track.tempo,
-            timeSignature: track.timeSignature,
-            firstMeasureTime: track.firstMeasureTime,
-            showMeasures: ref.showMeasures[track.id] || false,
-            showCueThumbs: (ref.showCueThumbs[track.id] ?? true),
-            zoomLevel: ref.zoomLevels[track.id] || 1,
-            playbackSpeed: ref.playbackSpeeds[track.id] || 1,
-            volume: ref.volume[track.id] || 1,
-            lowpassFreq: ref.lowpassFreqs[track.id] || 20000,
-            highpassFreq: ref.highpassFreqs[track.id] || 20,
-            filterEnabled: ref.filterEnabled[track.id] || false,
-            expandedControls: ref.expandedControls[track.id] || false,
-            playbackTime: ref.playbackTimes[track.id] || 0
-          };
-        }),
-        selectedCueTrackId: ref.selectedCueTrackId,
-        armedLoopTrackIds: [...ref.armedLoopTrackIds],
-        currentTrackIndex: ref.currentTrackIndex,
-        lastUsedVolume: ref.lastUsedVolume,
-        timestamp: Date.now(),
-        version: 1
-      };
+            return {
+              id: track.id,
+              sourceAssetId: track.sourceAssetId ?? track.id,
+              fileKey: fileKey ?? undefined,
+              fileName: track.file.name,
+              fileSize: track.file.size,
+              fileType: track.file.type,
+              mode: track.mode,
+              chopTriggerStyle: track.chopTriggerStyle,
+              loopStart: track.loopStart,
+              loopEnd: track.loopEnd,
+              cuePoints: track.cuePoints,
+              tempo: track.tempo,
+              timeSignature: track.timeSignature,
+              firstMeasureTime: track.firstMeasureTime,
+              showMeasures: ref.showMeasures[track.id] || false,
+              showCueThumbs: ref.showCueThumbs[track.id] ?? true,
+              zoomLevel: ref.zoomLevels[track.id] || 1,
+              playbackSpeed: ref.playbackSpeeds[track.id] || 1,
+              volume: ref.volume[track.id] || 1,
+              lowpassFreq: ref.lowpassFreqs[track.id] || 20000,
+              highpassFreq: ref.highpassFreqs[track.id] || 20,
+              filterEnabled: ref.filterEnabled[track.id] || false,
+              expandedControls: ref.expandedControls[track.id] || false,
+              playbackTime: ref.playbackTimes[track.id] || 0,
+            };
+          }),
+          selectedCueTrackId: ref.selectedCueTrackId,
+          armedLoopTrackIds: [...ref.armedLoopTrackIds],
+          currentTrackIndex: ref.currentTrackIndex,
+          lastUsedVolume: ref.lastUsedVolume,
+          timestamp: Date.now(),
+          version: 1,
+        };
 
-      localStorage.setItem(stateKey, JSON.stringify(studioState));
-    } catch (error) {
-      console.warn('Failed to save studio state:', error);
-    }
-  };
+        localStorage.setItem(restoreKey, JSON.stringify(studioState));
+      } catch (error) {
+        console.warn('Failed to save studio restore snapshot:', error);
+      }
+    },
+    [user, isGuestMode]
+  );
   
   // Keep ref in sync for reliable save (beforeunload/debounce can fire with stale closures)
   studioStateForSaveRef.current = {
@@ -640,27 +713,38 @@ const Studio = () => {
     lastUsedVolume,
   };
 
-  const loadStudioStateFromLocal = (): any | null => {
-    const stateKey = getStudioStateKey();
-    if (!stateKey) return null;
-    
+  const loadRestoreSnapshotFromLocal = (): any | null => {
+    const restoreKey = getStudioRestoreSnapshotKey();
+    const legacyKey = getStudioStateKey();
+    if (!restoreKey && !legacyKey) return null;
+
     try {
-      const saved = localStorage.getItem(stateKey);
-      if (!saved) return null;
-      
-      return JSON.parse(saved);
+      let raw = restoreKey ? localStorage.getItem(restoreKey) : null;
+      if (!raw && legacyKey) {
+        raw = localStorage.getItem(legacyKey);
+        if (raw && restoreKey) {
+          try {
+            localStorage.setItem(restoreKey, raw);
+          } catch {
+            /* quota — still parse legacy below */
+          }
+        }
+      }
+      if (!raw) return null;
+
+      return JSON.parse(raw);
     } catch (error) {
-      console.warn('Failed to load studio state:', error);
+      console.warn('Failed to load studio restore snapshot:', error);
       return null;
     }
   };
-  
+
   const clearStudioStateFromLocal = () => {
-    const stateKey = getStudioStateKey();
-    if (!stateKey) return;
-    
+    const restoreKey = getStudioRestoreSnapshotKey();
+    const legacyKey = getStudioStateKey();
     try {
-      localStorage.removeItem(stateKey);
+      if (restoreKey) localStorage.removeItem(restoreKey);
+      if (legacyKey) localStorage.removeItem(legacyKey);
     } catch (error) {
       console.warn('Failed to clear studio state:', error);
     }
@@ -715,21 +799,8 @@ const Studio = () => {
 
     try {
       isRestoringRef.current = true;
-      let context = audioContext;
-      if (!context) {
-        try {
-          context = await initializeAudio();
-          setIsAudioInitialized(true);
-        } catch (initError) {
-          console.error('Error initializing audio context during restore:', initError);
-          setNeedsUserInteraction(true);
-          return false;
-        }
-      }
-      if (!context) {
-        setNeedsUserInteraction(true);
-        return false;
-      }
+      // Decode with OfflineAudioContext (same as random load) — no shared AudioContext required
+      // before decode, so restore is not blocked by autoplay / suspended context.
 
       const restoredTracks: Track[] = [];
       const assets = availableAssets || [];
@@ -765,8 +836,14 @@ const Studio = () => {
           if (!fileKeyToUse) continue;
 
           const blob = await fetchLibraryAudioBlob(fileKeyToUse);
-          const file = new File([blob], savedTrack.fileName, { type: savedTrack.fileType });
-          const buffer = await loadAudioBuffer(file, context);
+          const safeName =
+            typeof savedTrack.fileName === 'string' && savedTrack.fileName.length > 0
+              ? savedTrack.fileName
+              : `track-${savedTrack.id}`;
+          const file = new File([blob], safeName, {
+            type: typeof savedTrack.fileType === 'string' && savedTrack.fileType.length > 0 ? savedTrack.fileType : 'audio/wav',
+          });
+          const buffer = await decodeAudioFileToBufferWithoutRunningContext(file);
 
           const rawCuePoints = savedTrack.cuePoints;
           const isAllZeros = Array.isArray(rawCuePoints) && rawCuePoints.every(v => v === 0);
@@ -794,6 +871,7 @@ const Studio = () => {
             fileKey: fileKeyToUse,
             file,
             buffer,
+            peaks: extractPeaksFromBuffer(buffer),
             mode: (savedTrack.mode && ['preview', 'loop', 'cue'].includes(savedTrack.mode)) ? savedTrack.mode : 'cue',
             chopTriggerStyle: validChopStyle,
             loopStart: typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0,
@@ -865,14 +943,7 @@ const Studio = () => {
       isRestoringRef.current = false;
     }
     return false;
-  }, [audioContext, initializeAudio, availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, fetchLibraryAudioBlob, tier.id]);
-
-  const restoreStudioStateFromLocal = useCallback(async (): Promise<boolean> => {
-    if (!user || isGuestMode) return false;
-    const savedState = loadStudioStateFromLocal();
-    if (!savedState || !savedState.tracks || savedState.tracks.length === 0) return false;
-    return restoreFromState(savedState);
-  }, [user, isGuestMode, loadStudioStateFromLocal, restoreFromState]);
+  }, [availableAssets, loadCuePointsFromLocal, saveTrackSettingsToLocal, saveCuePointsToLocal, fetchLibraryAudioBlob, tier.id]);
 
   // Restore from saved session (RecordingSession or DB Session with full_state)
   const restoreStudioStateFromSession = useCallback(async (session: { events?: Array<{ data?: any }>; full_state?: any }): Promise<boolean> => {
@@ -932,9 +1003,9 @@ const Studio = () => {
     }
   }, [libraryTracks, demoCollectionTracks, isGuestMode, user]);
 
-  // No automatic restoration on load - user must explicitly choose "Start digging" or "Restore previous session"
+  // Signed-in users: random track loads after library is ready (see effect below). Guests still use Start digging / Get started.
+  // Restore previous (saved studio state) remains an explicit action (button).
 
-  // Load a random track on component mount
   const loadRandomTrack = useCallback(async () => {
       try {
         setIsTrackLoading(true);
@@ -1029,31 +1100,16 @@ const Studio = () => {
         if (!availableAssets || availableAssets.length === 0) {
           throw new Error('No library tracks available yet. Please wait for tracks to load from the library or check your connection.');
         }
-        
+
+        signedInLibraryBootstrapGenRef.current += 1;
+        const randomLoadGen = signedInLibraryBootstrapGenRef.current;
+
         const randomIndex = Math.floor(Math.random() * availableAssets.length);
         const asset = availableAssets[randomIndex];
 
-        
-        // Use existing audio context if available
-        let context = audioContext;
-        if (!context) {
-          try {
-            context = await initializeAudio();
-            setIsAudioInitialized(true);
-          } catch (initError) {
-            console.error('Error initializing audio context:', initError);
-            setNeedsUserInteraction(true);
-            setIsTrackLoading(false);
-            return;
-          }
-        }
-
-        if (!context) {
-          setNeedsUserInteraction(true);
-          setIsTrackLoading(false);
-          return;
-        }
-        
+        // Fetch + decode without initializing the shared AudioContext. Chrome blocks resuming a
+        // real AudioContext without a user gesture; decode-only via OfflineAudioContext does not
+        // require that. Playback still uses ensureAudio() on first play / space / cue.
         let blob: Blob;
         try {
           blob = await fetchLibraryAudioBlob(asset.fileKey);
@@ -1063,10 +1119,9 @@ const Studio = () => {
           throw new Error(msg.includes('429') || msg.includes('Too many requests') ? 'Too many requests. Please wait a moment and try again.' : 'Failed to access audio file. Please try again.');
         }
         const file = new File([blob], `${asset.name}.${asset.type}`, { type: `audio/${asset.type}` });
-        
-        // Load the audio file into buffer
-        const buffer = await loadAudioBuffer(file, context);
-        
+
+        const buffer = await decodeAudioFileToBufferWithoutRunningContext(file);
+
         // Generate track ID
         const trackId = asset.id;
         const settings = loadTrackSettingsFromLocal(trackId) || {};
@@ -1080,8 +1135,11 @@ const Studio = () => {
           : (settings.tempo || 120);
         const newTrack: Track = {
           id: trackId,
+          sourceAssetId: asset.id,
+          fileKey: asset.fileKey,
           file,
           buffer,
+          peaks: extractPeaksFromBuffer(buffer),
           mode: newMode,
           chopTriggerStyle: newMode === 'cue' ? newChopStyle : undefined,
           loopStart: settings.loopStart || 0,
@@ -1096,7 +1154,17 @@ const Studio = () => {
           key: asset.key,
           beats: asset.beats
         };
-        
+
+        if (randomLoadGen !== signedInLibraryBootstrapGenRef.current) {
+          setIsTrackLoading(false);
+          if (!studioRestoreInProgressRef.current && !isRestoringRef.current) {
+            signedInRandomLoadStartedRef.current = false;
+          }
+          return;
+        }
+
+        signedInBootstrapOnlyFingerprintRef.current = fingerprintTracksCueLoopMode([newTrack]);
+
         setTracks([newTrack]);
         setCurrentTrackIndex(0);
         setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
@@ -1109,7 +1177,7 @@ const Studio = () => {
           : (typeof settings.volume === 'number' ? settings.volume : lastUsedVolumeRef.current);
         setVolume(prev => ({ ...prev, [trackId]: trackVolume }));
         setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-        
+
         // Creative metrics: sampler_ready + track_loaded (first track from library)
         if (!hasEmittedSamplerReady.current) {
           trackEvent('sampler_ready', { trackId, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
@@ -1124,7 +1192,10 @@ const Studio = () => {
         console.error('❌ Error loading random track:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
         setIsTrackLoading(false);
-        
+        if (!isGuestMode && user) {
+          signedInRandomLoadStartedRef.current = false;
+        }
+
         // Increment retry count and prevent infinite retry loop
         const newRetryCount = trackLoadRetryCount + 1;
         setTrackLoadRetryCount(newRetryCount);
@@ -1141,12 +1212,78 @@ const Studio = () => {
       }
     }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, loadRandomGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
 
-    useEffect(() => {
-      if (tracks.length === 0 && !isManuallyAddingTrack && !isTrackLoading && !error && trackLoadRetryCount < 3) {
-        // Don't automatically load tracks - wait for user interaction
-        // This prevents AudioContext initialization issues
-      }
-    }, [tracks.length, isManuallyAddingTrack, isGuestMode, availableAssets, user, isTrackLoading, loadRandomTrack, error, trackLoadRetryCount]);
+  /** Clear the deck and load one random track (signed-in: library; guest: demo) — same end state as first visit. */
+  const handleNewSession = useCallback(() => {
+    if (isTrackLoading || isInitializingAudio) return;
+    if (isRecordingPerformance) {
+      stopPerformanceRecording();
+    }
+    stopAllPlayback();
+    trackEvent('studio_new_session', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+    setError(null);
+    signedInBootstrapOnlyFingerprintRef.current = null;
+    signedInRandomLoadStartedRef.current = false;
+    randomQueueRef.current = [];
+    historyStackRef.current = [];
+    setTracks([]);
+    setCurrentTrackIndex(0);
+    setSelectedCueTrackId(null);
+    setSuggestionReferenceTrackId(null);
+    setArmedLoopTrackIds(new Set());
+    setPlaybackTimes({});
+    setZoomLevels({});
+    setPlaybackSpeeds({});
+    setVolume({});
+    setShowMeasures({});
+    setShowCueThumbs({});
+    setPlaybackStates({});
+    setExpandedControls({});
+    setLowpassFreqs({});
+    setHighpassFreqs({});
+    setFilterEnabled({});
+    setCueDragStates({});
+    setLoopDragStates({});
+    setWaveformReadyTrackIds(new Set());
+    setLoadingTrackPlaceholder(null);
+    addingTrackIdRef.current = null;
+    setIsManuallyAddingTrack(false);
+    setTrackLoadRetryCount(0);
+    queueMicrotask(() => {
+      void loadRandomTrack();
+    });
+  }, [
+    isTrackLoading,
+    isInitializingAudio,
+    isRecordingPerformance,
+    stopPerformanceRecording,
+    stopAllPlayback,
+    loadRandomTrack,
+    trackEvent,
+    tier?.id,
+  ]);
+
+  // Signed-in only: load a random library track once auth + library are ready. Audio may stay suspended until play/space/cue (ensureAudio in TrackControls).
+  useEffect(() => {
+    if (isGuestMode || !user || authLoading || userLoading) return;
+    if (availableAssets.length === 0 || tracks.length > 0 || hadTracksOnce) return;
+    if (error) return;
+    if (isManuallyAddingTrack || isTrackLoading) return;
+    if (signedInRandomLoadStartedRef.current) return;
+    signedInRandomLoadStartedRef.current = true;
+    void loadRandomTrack();
+  }, [
+    isGuestMode,
+    user,
+    authLoading,
+    userLoading,
+    availableAssets.length,
+    tracks.length,
+    hadTracksOnce,
+    error,
+    isManuallyAddingTrack,
+    isTrackLoading,
+    loadRandomTrack,
+  ]);
 
   // Global keyboard shortcuts (Space, help, zoom) — track switching uses Prev/Next or swipe only
   useEffect(() => {
@@ -2078,7 +2215,7 @@ const Studio = () => {
     
     // Debounce the save operation to avoid excessive localStorage writes
     const timeoutId = setTimeout(() => {
-      saveStudioStateToLocal();
+      saveStudioStateToLocal('debounced');
     }, 1000); // Save after 1 second of inactivity
     
     return () => clearTimeout(timeoutId);
@@ -2099,7 +2236,8 @@ const Studio = () => {
     filterEnabled,
     expandedControls,
     playbackTimes,
-    lastUsedVolume
+    lastUsedVolume,
+    saveStudioStateToLocal,
   ]);
 
   // Clear studio state when user logs out
@@ -2110,21 +2248,22 @@ const Studio = () => {
     }
   }, [user]);
 
-  // Save state before page unload (refresh/navigation)
-  // Must include tracks so handler has fresh state when loop/mode change
+  // Save restore snapshot before tab close / refresh / mobile background (always — bypasses bootstrap-only debounce skip)
   useEffect(() => {
-    const handleBeforeUnload = () => {
+    const persist = () => {
       if (user && !isGuestMode && tracks.length > 0) {
-        saveStudioStateToLocal();
+        saveStudioStateToLocal('beforeunload');
       }
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
+    window.addEventListener('beforeunload', persist);
+    window.addEventListener('pagehide', persist);
+
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('beforeunload', persist);
+      window.removeEventListener('pagehide', persist);
     };
-  }, [user, isGuestMode, tracks]);
+  }, [user, isGuestMode, tracks, saveStudioStateToLocal]);
 
   const loadAudioBuffer = async (file: File, context: AudioContext): Promise<AudioBuffer> => {
     if (!context) throw new Error('Audio context not initialized');
@@ -2323,21 +2462,28 @@ const Studio = () => {
     saveTrackSettingsToLocal(trackId, { ...settings, chopTriggerStyle });
   };
 
-  // Add a function to handle play requests and ensure audio context is running
-  const ensureAudioBeforeAction = async (callback: () => void) => {
+  /**
+   * Returns the AudioContext from initializeAudio/resume so TrackControls can use it immediately.
+   * Relying on `audioContext` from props right after await would stay null until the next render
+   * (stale closure), which broke first play and cue triggers until a second toggle.
+   */
+  const ensureAudioBeforeAction = useCallback(async (): Promise<AudioContext | null> => {
     try {
       if (!isAudioInitialized) {
-        await initializeAudio();
+        const ctx = await initializeAudio();
         setIsAudioInitialized(true);
-      } else if (audioContext?.state === 'suspended') {
+        return ctx;
+      }
+      if (audioContext?.state === 'suspended') {
         await resumeAudioContext();
       }
-      callback();
+      return audioContext ?? null;
     } catch (error) {
       console.error('Failed to initialize audio context:', error);
       setError('Failed to initialize audio context. Please try again.');
+      return null;
     }
-  };
+  }, [isAudioInitialized, audioContext, initializeAudio, resumeAudioContext]);
 
   // Add this function to handle track selection
   const handleTrackSelect = (trackId: string) => {
@@ -2746,7 +2892,7 @@ const Studio = () => {
     setFilterEnabled(prev => ({ ...prev, [trackId]: enabled }));
   };
 
-  // Handle save current studio state (full state for restore: fileKey, volume, tempo, filters; excludes zoom, playbackTime)
+  // Save session to DB / saved-sessions list; also mirrors `studioState-${user.id}` (full UI incl. zoom, playback) for Restore previous.
   const handleSaveCurrentState = async () => {
     // Check session save limits
     const canSaveSession = await canPerformAction('save_session');
@@ -2810,6 +2956,7 @@ const Studio = () => {
     };
 
     await saveCurrentState(studioState);
+    saveStudioStateToLocal('explicit');
   };
 
   // Add handler for toggling accordion controls
@@ -3236,6 +3383,12 @@ const Studio = () => {
   }, [needsUserInteraction, handleUserInteraction]);
 
   const handleInitializeAudio = async (preferredMode?: 'loop' | 'cue') => {
+    if (user && !isGuestMode && tracks.length > 0) {
+      return;
+    }
+    if (user && !isGuestMode && isTrackLoading) {
+      return;
+    }
     try {
       setNeedsUserInteraction(false);
       setIsInitializingAudio(true);
@@ -3385,6 +3538,69 @@ const Studio = () => {
     }
   };
 
+  const handleRestorePreviousSession = useCallback(async () => {
+    let restoreSucceeded = false;
+    try {
+      studioRestoreInProgressRef.current = true;
+      signedInLibraryBootstrapGenRef.current += 1;
+      setIsInitializingAudio(true);
+      setError(null);
+
+      const local = loadRestoreSnapshotFromLocal();
+      const latestSession = pickLatestSavedSessionForRestore(savedSessions) as
+        | {
+            events?: Array<{ data?: { timestamp?: number; tracks?: unknown[] } }>;
+            startTime?: number;
+          }
+        | null
+        | undefined;
+      const sessionData = latestSession?.events?.[0]?.data;
+
+      const localOk = !!(local?.tracks?.length);
+      const sessionOk = !!(sessionData?.tracks && (sessionData.tracks as unknown[]).length > 0);
+
+      let savedState: typeof local | typeof sessionData | null = null;
+      if (localOk && sessionOk) {
+        const localTs = typeof local!.timestamp === 'number' ? local!.timestamp : 0;
+        const sessionTs =
+          typeof sessionData!.timestamp === 'number'
+            ? sessionData!.timestamp
+            : (latestSession!.startTime ?? 0);
+        savedState = localTs >= sessionTs ? local : sessionData;
+      } else if (localOk) {
+        savedState = local;
+      } else if (sessionOk) {
+        savedState = sessionData ?? null;
+      }
+
+      if (!savedState?.tracks?.length) {
+        setError(
+          'Could not restore your saved studio. The same library tracks may no longer be available, or the save may be incomplete.',
+        );
+        return;
+      }
+
+      const restored = await restoreFromState(savedState);
+      if (restored) {
+        hasLoadedTrack.current = true;
+        signedInBootstrapOnlyFingerprintRef.current = null;
+        restoreSucceeded = true;
+        return;
+      }
+      setError(
+        'Could not restore your saved studio. The same library tracks may no longer be available, or the save may be incomplete.',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not restore your saved studio.');
+    } finally {
+      setIsInitializingAudio(false);
+      studioRestoreInProgressRef.current = false;
+      if (!restoreSucceeded) {
+        signedInRandomLoadStartedRef.current = false;
+      }
+    }
+  }, [restoreFromState, savedSessions]);
+
   const effectiveSuggestionReferenceTrackId =
     tracks.length > 0
       ? suggestionReferenceTrackId ?? selectedCueTrackId ?? tracks[0].id
@@ -3460,7 +3676,19 @@ const Studio = () => {
   
   // Loading state - only show full-page loader when NO tracks exist (initial load).
   // When adding a track mid-playback, we keep the studio mounted so playback continues.
-  const showLoadingState = (isLoading || isTrackLoading || userLoading) && tracks.length === 0;
+  // Do not derive loading from "signed-in bootstrap" heuristics alone — that can orphan the UI in a
+  // permanent spinner if auto-load never runs or ref/effect state desyncs. Rely on userLoading,
+  // isTrackLoading, and isLoading only.
+
+  const hasSavedSessionForRestore =
+    !!user &&
+    !isGuestMode &&
+    (!!(loadRestoreSnapshotFromLocal()?.tracks?.length) ||
+      pickLatestSavedSessionForRestore(savedSessions) != null);
+
+  const showLoadingState =
+    tracks.length === 0 &&
+    (isLoading || isTrackLoading || userLoading);
 
   // Single SidePanel instance - never unmounts when transitioning between states.
   // Preserves panel state (active tab, scroll position) when a track loads.
@@ -3577,7 +3805,7 @@ const Studio = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <button
                   onClick={handleStartCreating}
-                  disabled={isVerificationLoading}
+                  disabled={isVerificationLoading || isTrackLoading}
                   className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
                   <span className="relative z-10 flex items-center gap-2">
@@ -3600,7 +3828,7 @@ const Studio = () => {
 
                 <button
                   onClick={handleStartDemo}
-                  disabled={isVerificationLoading}
+                  disabled={isVerificationLoading || isTrackLoading}
                   className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
                   <span className="relative z-10 flex items-center gap-2">
@@ -3720,7 +3948,7 @@ const Studio = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <button
                   onClick={handleStartCreating}
-                  disabled={isVerificationLoading}
+                  disabled={isVerificationLoading || isTrackLoading}
                   className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
                   <span className="relative z-10 flex items-center gap-2">
@@ -3743,7 +3971,7 @@ const Studio = () => {
 
                 <button
                   onClick={handleStartDemo}
-                  disabled={isVerificationLoading}
+                  disabled={isVerificationLoading || isTrackLoading}
                   className="group relative inline-flex items-center justify-center px-8 py-4 bg-slate-800 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-600 hover:border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
                   <span className="relative z-10 flex items-center gap-2">
@@ -3825,8 +4053,9 @@ const Studio = () => {
             </div>
           )}
 
+          {(!user || isGuestMode) ? (
           <div className="max-w-6xl mx-auto p-6">
-            {/* Static track skeleton - initial load interface */}
+            {/* Static track skeleton - initial load interface (guest / anonymous only) */}
             <div
               key="static-track-skeleton"
               className="audafact-card overflow-hidden transition-all duration-300 relative border-audafact-accent-cyan shadow-card"
@@ -3850,10 +4079,10 @@ const Studio = () => {
                         <button
                           onClick={() => handleInitializeAudio()}
                           className="group relative inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-purple text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none w-full sm:w-auto"
-                          disabled={(user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading)}
+                          disabled={isInitializingAudio || isGuestLoading}
                         >
                           <span className="relative z-10 flex items-center gap-2">
-                            {(user ? isInitializingAudio : isInitializingAudio || isGuestLoading) ? (
+                            {(isInitializingAudio || isGuestLoading) ? (
                               <>
                                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                 Loading...
@@ -3874,54 +4103,13 @@ const Studio = () => {
                         <span className="text-sm text-audafact-text-secondary">First time here?</span>
                         <button
                           onClick={() => setGetStartedStep('mode-choice')}
-                          disabled={user ? availableAssets.length === 0 : isGuestLoading}
+                          disabled={isGuestLoading}
                           className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none w-full sm:w-auto"
                         >
                           <span className="relative z-10 flex items-center gap-2">Get started</span>
                         </button>
                       </div>
                     </div>
-                    {user && (() => {
-                      const savedState = loadStudioStateFromLocal();
-                      const hasSavedSession = savedState?.tracks?.length > 0;
-                      if (!hasSavedSession) return null;
-                      return (
-                        <button
-                          onClick={async () => {
-                            try {
-                              setIsInitializingAudio(true);
-                              const restored = await restoreStudioStateFromLocal();
-                              if (restored) {
-                                hasLoadedTrack.current = true;
-                                setIsInitializingAudio(false);
-                                return;
-                              }
-                            } catch {
-                              // Fall back to random track
-                            }
-                            handleInitializeAudio();
-                          }}
-                          className="group relative inline-flex items-center justify-center px-6 py-3 bg-slate-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 border border-slate-500 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                          disabled={isInitializingAudio}
-                        >
-                          <span className="relative z-10 flex items-center gap-2">
-                            {isInitializingAudio ? (
-                              <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                Loading...
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Restore previous session
-                              </>
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })()}
                   </>
                 )}
 
@@ -3942,7 +4130,7 @@ const Studio = () => {
                           setGetStartedStep(null);
                           handleInitializeAudio('cue');
                         }}
-                        disabled={user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading}
+                        disabled={isInitializingAudio || isGuestLoading}
                         className="w-full text-left p-4 rounded-lg border border-audafact-divider bg-audafact-surface-2 hover:border-audafact-accent-cyan hover:bg-audafact-surface-2/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <h3 className="font-medium text-audafact-heading mb-1">Chop up a sample</h3>
@@ -3956,7 +4144,7 @@ const Studio = () => {
                           setGetStartedStep(null);
                           handleInitializeAudio('loop');
                         }}
-                        disabled={user ? isInitializingAudio || availableAssets.length === 0 : isInitializingAudio || isGuestLoading}
+                        disabled={isInitializingAudio || isGuestLoading}
                         className="w-full text-left p-4 rounded-lg border border-audafact-divider bg-audafact-surface-2 hover:border-audafact-accent-cyan hover:bg-audafact-surface-2/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <h3 className="font-medium text-audafact-heading mb-1">Lock in a loop</h3>
@@ -3979,6 +4167,43 @@ const Studio = () => {
               </div>
             </div>
           </div>
+          ) : (
+          <div className="max-w-6xl mx-auto p-6 w-full space-y-3">
+            {hasSavedSessionForRestore && (
+              <div className="flex justify-end">
+                <Tooltip content="Restore previous session" position="top" delay={150}>
+                  <button
+                    type="button"
+                    onClick={() => void handleRestorePreviousSession()}
+                    disabled={isInitializingAudio}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isInitializingAudio ? (
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
+                    ) : (
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    )}
+                    Restore previous
+                  </button>
+                </Tooltip>
+              </div>
+            )}
+            <div className="audafact-card overflow-hidden p-8 border border-audafact-divider">
+              <h3 className="font-medium audafact-heading mb-2">
+                {availableAssets.length === 0 && !userLoading
+                  ? 'Your library is empty'
+                  : 'No tracks in the studio'}
+              </h3>
+              <p className="text-sm text-audafact-text-secondary">
+                {availableAssets.length === 0 && !userLoading
+                  ? 'Add sounds from the side panel or upload a file to get started.'
+                  : 'Add a track from the library, drop a file, or use Restore previous above.'}
+              </p>
+            </div>
+          </div>
+          )}
         </div>
 
         {/* Help Button - show with skeleton UI so users can access help before track loads */}
@@ -4143,41 +4368,91 @@ const Studio = () => {
           </div>
         )}
 
-        {/* Global Controls: Save, Record, keyboard indicators */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
-          <RecordingControls
-            className="w-auto shrink-0"
-            onSave={handleSaveCurrentState}
-            audioContext={audioContext || undefined}
-            studioTrackIds={tracks.map((t) => t.id)}
-          />
-          <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
-            {(() => {
-              if (armedLoopTrackIds.size === 0) return 'Space: Arm loop tracks to enable';
-              const nums = [...armedLoopTrackIds]
-                .map(id => tracks.findIndex(t => t.id === id) + 1)
-                .filter(n => n > 0)
-                .sort((a, b) => a - b);
-              if (nums.length === 0) return 'Space: Arm loop tracks to enable';
-              const label = nums.length === 1
-                ? `Track ${nums[0]}`
-                : nums.length === 2
-                  ? `Track ${nums[0]} & ${nums[1]}`
-                  : `Track ${nums.slice(0, -1).join(', ')} & ${nums[nums.length - 1]}`;
-              return `Space: Play/Pause ${label} loop${nums.length === 1 ? '' : 's'}`;
-            })()}
-          </span>
-          <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
-            {selectedCueTrackId
-              ? (() => {
-                  const idx = tracks.findIndex(t => t.id === selectedCueTrackId);
-                  if (idx < 0) return '1-0: Trigger Chop track cue points';
-                  return `1-0: Trigger Track ${idx + 1} cue points`;
-                })()
-              : tracks.some(t => t.mode === 'cue')
-                ? '1-0: Select Chop track to trigger cues'
-                : '1-0: Switch to Chop mode to trigger cues'}
-          </span>
+        {/* Save + Record row; New session + Restore previous right-aligned. Keyboard hints on next row. */}
+        <div className="mb-4 w-full space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <RecordingControls
+              className="!w-auto shrink-0 min-w-0"
+              onSave={handleSaveCurrentState}
+              audioContext={audioContext || undefined}
+              studioTrackIds={tracks.map((t) => t.id)}
+            />
+            {(user || isGuestMode) && (
+              <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                <Tooltip content="Start fresh session" position="top" delay={150}>
+                  <button
+                    type="button"
+                    onClick={() => handleNewSession()}
+                    disabled={isInitializingAudio || isTrackLoading}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isTrackLoading ? (
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
+                    ) : (
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"
+                        />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8M8 12h8" />
+                      </svg>
+                    )}
+                    New session
+                  </button>
+                </Tooltip>
+                {user && !isGuestMode && hasSavedSessionForRestore && (
+                  <Tooltip content="Restore prior session" position="top" delay={150}>
+                    <button
+                      type="button"
+                      onClick={() => void handleRestorePreviousSession()}
+                      disabled={isInitializingAudio}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isInitializingAudio ? (
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
+                      ) : (
+                        <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      )}
+                      Restore previous
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-audafact-text-secondary text-xs">
+              {(() => {
+                if (armedLoopTrackIds.size === 0) return 'Space: Arm loop tracks to enable';
+                const nums = [...armedLoopTrackIds]
+                  .map(id => tracks.findIndex(t => t.id === id) + 1)
+                  .filter(n => n > 0)
+                  .sort((a, b) => a - b);
+                if (nums.length === 0) return 'Space: Arm loop tracks to enable';
+                const label = nums.length === 1
+                  ? `Track ${nums[0]}`
+                  : nums.length === 2
+                    ? `Track ${nums[0]} & ${nums[1]}`
+                    : `Track ${nums.slice(0, -1).join(', ')} & ${nums[nums.length - 1]}`;
+                return `Space: Play/Pause ${label} loop${nums.length === 1 ? '' : 's'}`;
+              })()}
+            </span>
+            <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
+              {selectedCueTrackId
+                ? (() => {
+                    const idx = tracks.findIndex(t => t.id === selectedCueTrackId);
+                    if (idx < 0) return '1-0: Trigger Chop track cue points';
+                    return `1-0: Trigger Track ${idx + 1} cue points`;
+                  })()
+                : tracks.some(t => t.mode === 'cue')
+                  ? '1-0: Select Chop track to trigger cues'
+                  : '1-0: Switch to Chop mode to trigger cues'}
+            </span>
+          </div>
         </div>
 
         {/* Track skeleton - shown while waveforms load to prevent flicker */}
