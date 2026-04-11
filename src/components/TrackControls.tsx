@@ -100,7 +100,8 @@ interface TrackControlsProps {
   loopStart: number;
   loopEnd: number;
   cuePoints: number[];
-  ensureAudio: (callback: () => void) => Promise<void>;
+  /** Resolves to the AudioContext to use immediately (avoids stale null from props after first init). */
+  ensureAudio: () => Promise<AudioContext | null>;
   /** iOS: HTMLAudio warm-up before WebAudio (see AudioContext). Optional reason string is for debug logs. */
   primeIosSessionForWebAudio?: (reason?: string) => Promise<void>;
   isSelected?: boolean;
@@ -282,12 +283,13 @@ const TrackControls = ({
   }, [audioContext]);
 
   const ensureIosPrimeForStudioPlayback = useCallback(
-    async (reason: string) => {
-      if (!primeIosSessionForWebAudio || !audioContext) return;
+    async (reason: string, resolvedContext?: AudioContext | null) => {
+      const ctx = resolvedContext ?? audioContext;
+      if (!primeIosSessionForWebAudio || !ctx) return;
       if (!isIOSWebAudioTarget()) return;
       const needsPrime =
         !iosStudioWebAudioPrimedRef.current ||
-        audioContext.state !== 'running';
+        ctx.state !== 'running';
       if (!needsPrime) return;
       await primeIosSessionForWebAudio(reason);
       iosStudioWebAudioPrimedRef.current = true;
@@ -456,14 +458,15 @@ const TrackControls = ({
   }, [internalLowpassFreq, internalHighpassFreq]);
 
   // Helper function to create audio chain with current volume and speed
-  const createAudioChainWithCurrentSettings = useCallback(() => {
-    if (!audioContext) return null;
-    
+  const createAudioChainWithCurrentSettings = useCallback((resolvedContext?: AudioContext | null) => {
+    const ac = resolvedContext ?? audioContext;
+    if (!ac || !audioBuffer) return null;
+
     const currentVolume = currentVolumeRef.current;
     const currentSpeed = currentSpeedRef.current;
-    
-    const sourceNode = audioContext.createBufferSource();
-    const gainNode = audioContext.createGain();
+
+    const sourceNode = ac.createBufferSource();
+    const gainNode = ac.createGain();
     
     sourceNode.buffer = audioBuffer;
     sourceNode.playbackRate.value = currentSpeed;
@@ -474,12 +477,12 @@ const TrackControls = ({
     const lowpassFreq = currentLowpassFreqRef.current;
     const highpassFreq = currentHighpassFreqRef.current;
     
-    const lowpassFilter = audioContext.createBiquadFilter();
+    const lowpassFilter = ac.createBiquadFilter();
     lowpassFilter.type = 'lowpass';
     lowpassFilter.frequency.value = lowpassFreq;
     lowpassFilter.Q.value = 1;
     
-    const highpassFilter = audioContext.createBiquadFilter();
+    const highpassFilter = ac.createBiquadFilter();
     highpassFilter.type = 'highpass';
     highpassFilter.frequency.value = highpassFreq;
     highpassFilter.Q.value = 1;
@@ -492,11 +495,11 @@ const TrackControls = ({
     sourceNode.connect(highpassFilter);
     highpassFilter.connect(lowpassFilter);
     lowpassFilter.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
+    gainNode.connect(ac.destination);
+
     // Also connect to recording destination if available
     if (recordingDestination) {
-      const recordingGain = audioContext.createGain();
+      const recordingGain = ac.createGain();
       recordingGain.gain.value = gainNode.gain.value;
       lowpassFilter.connect(recordingGain);
       recordingGain.connect(recordingDestination);
@@ -967,8 +970,8 @@ const TrackControls = ({
   // Handle play/pause functionality
   const togglePlayback = async () => {
     try {
-      await ensureAudio(() => {});
-      if (!audioContext || !audioBuffer) return;
+      const ctx = await ensureAudio();
+      if (!ctx || !audioBuffer) return;
 
       if (isPlaying) {
         // Stop playback
@@ -1006,9 +1009,9 @@ const TrackControls = ({
           });
         }
       } else {
-        await ensureIosPrimeForStudioPlayback('trackcontrols:toggle-play');
+        await ensureIosPrimeForStudioPlayback('trackcontrols:toggle-play', ctx);
         // Start playback - create audio chain manually to ensure current volume and speed are applied
-        const audioChain = createAudioChainWithCurrentSettings();
+        const audioChain = createAudioChainWithCurrentSettings(ctx);
         if (!audioChain) return;
         
         const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
@@ -1055,8 +1058,8 @@ const TrackControls = ({
             }
           });
         }
-        startTimeRef.current = audioContext.currentTime;
-        
+        startTimeRef.current = ctx.currentTime;
+
         // Start the animation frame loop for smooth updates
         lastUpdateTimeRef.current = performance.now();
         animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
@@ -1110,8 +1113,7 @@ const TrackControls = ({
 
   // Play from a specific cue point (behavior depends on chopTriggerStyle)
   const playCuePoint = async (index: number, options?: PlayCuePointOptions) => {
-    
-    if (!audioContext || !audioBuffer || index >= cuePoints.length) {
+    if (!audioBuffer || index >= cuePoints.length) {
       return;
     }
 
@@ -1126,8 +1128,9 @@ const TrackControls = ({
     }
 
     try {
-      await ensureAudio(() => {});
-      await ensureIosPrimeForStudioPlayback('trackcontrols:play-cue-point');
+      const ctx = await ensureAudio();
+      if (!ctx) return;
+      await ensureIosPrimeForStudioPlayback('trackcontrols:play-cue-point', ctx);
 
       // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {
@@ -1150,7 +1153,7 @@ const TrackControls = ({
       activeCueIndexRef.current = index;
       cueStartTimeRef.current = cueTime;
 
-      const audioChain = createAudioChainWithCurrentSettings();
+      const audioChain = createAudioChainWithCurrentSettings(ctx);
       if (!audioChain) return;
 
       const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
@@ -1161,14 +1164,14 @@ const TrackControls = ({
       lowpassFilterRef.current = lowpassFilter;
       highpassFilterRef.current = highpassFilter;
       isSourceLoopingRef.current = false;
-      startTimeRef.current = audioContext.currentTime;
+      startTimeRef.current = ctx.currentTime;
 
       if (style === 'one-shot') {
         const sliceStart = cueTime;
         const sliceEnd = getSliceEnd(cuePoints, index, audioBuffer.duration, sliceStart);
         const durationSec = (sliceEnd - sliceStart) / playbackRate;
         sourceNode.start(0, sliceStart);
-        sourceNode.stop(audioContext.currentTime + durationSec);
+        sourceNode.stop(ctx.currentTime + durationSec);
         playbackStartTimeRef.current = sliceStart;
       } else {
         // Cue or Hold: play from cue to end of buffer

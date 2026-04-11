@@ -80,6 +80,8 @@ export interface TrackingEvents {
 
   // Creative Metrics (Studio only - excludes /demo)
   sampler_opened: { userTier: string };
+  /** User cleared the deck and requested a fresh random track (Studio). */
+  studio_new_session: { userTier: string };
   session_started: { userTier: string };
   sampler_ready: { trackId?: string; loadTime?: number; userTier: string };
   track_loaded: { trackId: string; trackIndex?: number; source?: string; userTier: string };
