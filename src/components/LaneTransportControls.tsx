@@ -42,6 +42,8 @@ const LaneTransportControls: React.FC<LaneTransportControlsProps> = ({ trackId, 
 
   const isArmed = !unarmedRecordingTrackIds.includes(trackId);
 
+  const hasLaneRecording = !!perfForLane;
+
   const isLaneLoopPlaying = !!(
     perfForLane &&
     playingPerformanceId === perfForLane.id &&
@@ -96,23 +98,30 @@ const LaneTransportControls: React.FC<LaneTransportControlsProps> = ({ trackId, 
           +Take
         </button>
       )}
-      {perfForLane && (
-        <button
-          type="button"
-          disabled={disabled}
-          className="px-1.5 py-0.5 rounded text-[10px] border border-audafact-divider audafact-text-secondary hover:bg-audafact-surface-2"
-          onClick={async () => {
-            if (isLaneLoopPlaying) {
-              stopPerformancePlayback();
-              return;
-            }
-            await startLanePlayback(perfForLane.id, trackId, { loop: true });
-          }}
-          title="Loop replay this lane only"
-        >
-          {isLaneLoopPlaying ? 'Stop' : 'Play'}
-        </button>
-      )}
+      <button
+        type="button"
+        disabled={disabled || !hasLaneRecording}
+        className={`px-1.5 py-0.5 rounded text-[10px] border ${
+          !hasLaneRecording
+            ? 'border-audafact-divider/60 audafact-text-secondary/40 cursor-not-allowed opacity-60'
+            : 'border-audafact-divider audafact-text-secondary hover:bg-audafact-surface-2'
+        }`}
+        onClick={async () => {
+          if (!perfForLane) return;
+          if (isLaneLoopPlaying) {
+            stopPerformancePlayback();
+            return;
+          }
+          await startLanePlayback(perfForLane.id, trackId, { loop: true });
+        }}
+        title={
+          hasLaneRecording
+            ? 'Loop replay this lane only'
+            : 'No saved performance with events for this track yet'
+        }
+      >
+        {isLaneLoopPlaying ? 'Stop' : 'Play'}
+      </button>
       {isRecordingPerformance && currentPerformance && (
         <>
           <button
