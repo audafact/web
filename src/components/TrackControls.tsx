@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { isIOSWebAudioTarget } from '../context/AudioContext';
 import { useRecording } from '../context/RecordingContext';
@@ -180,11 +180,34 @@ const TrackControls = ({
   cueDragState = null,
   chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
-  const { addRecordingEvent } = useRecording();
+  const {
+    addRecordingEvent,
+    unarmedRecordingTrackIds,
+    toggleRecordingArmForTrack,
+    performances,
+    startLanePlayback,
+    stopPerformancePlayback,
+    playingPerformanceId,
+    engagedTrackIds,
+  } = useRecording();
   const { trackEvent } = useAnalytics();
   const { tier } = useUser();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  const perfForLane = useMemo(() => {
+    if (!trackId) return null;
+    return performances.find((p) => p.events.some((e) => e.trackId === trackId)) ?? null;
+  }, [performances, trackId]);
+
+  const isArmedForRecord = !trackId || !unarmedRecordingTrackIds.includes(trackId);
+  const isLaneLoopPlaying = !!(
+    trackId &&
+    perfForLane &&
+    playingPerformanceId === perfForLane.id &&
+    engagedTrackIds.length === 1 &&
+    engagedTrackIds[0] === trackId
+  );
 
   // Reconnect audio sources when recording destination changes
   useEffect(() => {
@@ -1331,11 +1354,6 @@ const TrackControls = ({
 
       if (playbackEvent.type === 'speed_change') {
         handleSpeedSliderChange(playbackEvent.data.newSpeed, false);
-        return;
-      }
-
-      if (playbackEvent.type === 'tempo_change' || playbackEvent.type === 'time_signature_change') {
-        return;
       }
     };
 
@@ -1431,6 +1449,42 @@ const TrackControls = ({
           </div>
         )}
       </div>
+
+      {trackId && (
+        <div className="flex flex-wrap items-center gap-2 py-1.5 border-t border-audafact-divider/60">
+          <span className="text-[10px] uppercase tracking-wide audafact-text-secondary">Performance</span>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => toggleRecordingArmForTrack(trackId)}
+            className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+              isArmedForRecord
+                ? 'border-audafact-accent-cyan text-audafact-accent-cyan'
+                : 'border-audafact-divider audafact-text-secondary'
+            }`}
+            title={isArmedForRecord ? 'Events from this track will be logged when recording' : 'This lane is muted for new events'}
+          >
+            {isArmedForRecord ? 'Armed' : 'Muted'}
+          </button>
+          {perfForLane && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={async () => {
+                if (isLaneLoopPlaying) {
+                  stopPerformancePlayback();
+                  return;
+                }
+                await startLanePlayback(perfForLane.id, trackId, { loop: true });
+              }}
+              className="px-2 py-0.5 rounded text-xs border border-audafact-divider audafact-text-secondary hover:bg-audafact-surface-2"
+              title="Loop replay for this track only (event playback)"
+            >
+              {isLaneLoopPlaying ? 'Stop loop' : 'Loop lane'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Volume and Speed Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
