@@ -1090,7 +1090,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
           throw new Error(`Failed to fetch preview audio (${res.status})`);
         }
         const blob = await res.blob();
-        toggle({ kind: 'blob', blob });
+        toggle({ kind: 'blob', blob, id: assetId || `guest-url:${directUrl}` });
         return;
       }
 
@@ -2457,13 +2457,28 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           <div className="space-y-3">
                             {mergedRecordings.map((item) => {
                               const canPlay = !!(item.audioBlob instanceof Blob ? item.audioBlob : item.fileKey);
+                              const recordingPlaybackId = item.dbId || item.id;
                               const playSrc = item.audioBlob instanceof Blob
-                                ? { kind: 'blob' as const, blob: item.audioBlob }
+                                ? { kind: 'blob' as const, blob: item.audioBlob, id: recordingPlaybackId }
                                 : item.fileKey
                                   ? { kind: 'key' as const, key: item.fileKey }
                                   : null;
-                              const isThisPlaying = !!(canPlay && item.fileKey && isCurrentKey(item.fileKey));
-                              const isThisLoading = !!(canPlay && item.fileKey && isLoading && isCurrentKey(item.fileKey));
+                              const isThisPlaying = !!(
+                                canPlay &&
+                                playSrc &&
+                                isPlaying &&
+                                (playSrc.kind === 'key'
+                                  ? !!item.fileKey && isCurrentKey(item.fileKey)
+                                  : isCurrentKey(recordingPlaybackId))
+                              );
+                              const isThisLoading = !!(
+                                canPlay &&
+                                playSrc &&
+                                isLoading &&
+                                (playSrc.kind === 'key'
+                                  ? !!item.fileKey && isCurrentKey(item.fileKey)
+                                  : isCurrentKey(recordingPlaybackId))
+                              );
                               const performanceForPlayback = item.performance ?? performances.find(p => p.databaseId === item.dbId) ?? null;
                               const canEventReplay = !!(performanceForPlayback && performanceForPlayback.events.length > 0);
                               const isPerformancePlaying = playingPerformanceId === performanceForPlayback?.id;

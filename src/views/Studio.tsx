@@ -124,6 +124,10 @@ const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
     useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel, closeSidePanel } = useSidePanel();
+  /** Icon-only labels until md, or until xl when side panel is open (matches Save / New session row). */
+  const studioChromeSecondaryLabelClass = isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline';
+  /** Measures / Cues / Select / Time & Tempo: icon-only below lg (covers md + sm + default); below xl when side panel open. */
+  const studioTrackMetaLabelClass = isSidePanelOpen ? 'hidden xl:inline' : 'hidden lg:inline';
   const {
     addRecordingEvent,
     saveCurrentState,
@@ -132,6 +136,8 @@ const Studio = () => {
     getRecordingDestination,
     registerStudioAudioContext,
     savedSessions,
+    recordMixEnabled,
+    signalMixRecordingPlayback,
   } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
@@ -2708,6 +2714,19 @@ const Studio = () => {
     }));
   };
 
+  // Mix recording UI: switch from "waiting for playback" to "recording" once any lane plays.
+  useEffect(() => {
+    if (!isRecordingPerformance || !recordMixEnabled) return;
+    const anyPlaying = tracks.some((t) => playbackStates[t.id]);
+    if (anyPlaying) signalMixRecordingPlayback();
+  }, [
+    isRecordingPerformance,
+    recordMixEnabled,
+    tracks,
+    playbackStates,
+    signalMixRecordingPlayback,
+  ]);
+
   // Handle manual playhead position changes from waveform
   const handlePlayheadChange = (trackId: string, time: number) => {
     const track = tracks.find(t => t.id === trackId);
@@ -4298,7 +4317,8 @@ const Studio = () => {
                     type="button"
                     onClick={() => void handleRestorePreviousSession()}
                     disabled={isInitializingAudio}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px] min-w-[40px] sm:min-w-0"
+                    aria-label="Restore previous session"
                   >
                     {isInitializingAudio ? (
                       <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
@@ -4307,7 +4327,7 @@ const Studio = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                     )}
-                    Restore previous
+                    <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>Restore prior</span>
                   </button>
                 </Tooltip>
               </div>
@@ -4491,21 +4511,23 @@ const Studio = () => {
         )}
 
         {/* Save + Record row; New session + Restore previous right-aligned. Keyboard hints on next row. */}
-        <div className="mb-4 w-full space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="mb-4 w-full space-y-2 min-w-0 max-w-full">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 w-full min-w-0">
             <RecordingControls
-              className="!w-auto shrink-0 min-w-0"
+              className="min-w-0 flex-1 basis-0"
+              isSidePanelOpen={isSidePanelOpen}
               onSave={handleSaveCurrentState}
               audioContext={audioContext || undefined}
             />
             {(user || isGuestMode) && (
-              <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+              <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 shrink-0">
                 <Tooltip content="Start fresh session" position="top" delay={150}>
                   <button
                     type="button"
                     onClick={() => handleNewSession()}
                     disabled={isInitializingAudio || isTrackLoading}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px] min-w-[40px] sm:min-w-0"
+                    aria-label="New session"
                   >
                     {isTrackLoading ? (
                       <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
@@ -4520,16 +4542,17 @@ const Studio = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8M8 12h8" />
                       </svg>
                     )}
-                    New session
+                    <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>New session</span>
                   </button>
                 </Tooltip>
                 {user && !isGuestMode && hasSavedSessionForRestore && (
-                  <Tooltip content="Restore prior session" position="top" delay={150}>
+                  <Tooltip content="Restore previous session" position="top" delay={150}>
                     <button
                       type="button"
                       onClick={() => void handleRestorePreviousSession()}
                       disabled={isInitializingAudio}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="inline-flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px] min-w-[40px] sm:min-w-0"
+                      aria-label="Restore previous session"
                     >
                       {isInitializingAudio ? (
                         <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
@@ -4538,7 +4561,7 @@ const Studio = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       )}
-                      Restore previous
+                      <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>Restore prior</span>
                     </button>
                   </Tooltip>
                 )}
@@ -4722,7 +4745,7 @@ const Studio = () => {
             {/* Add Track and Navigation Controls - Only show on first track */}
             {index === 0 && (
               <div 
-                className="relative flex justify-center items-center py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
+                className="relative grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-1 sm:gap-x-2 py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
                 style={{ touchAction: 'pan-y pinch-zoom' }}
                 onWheel={handleWheel}
                 onTouchStart={handleTouchStart}
@@ -4730,13 +4753,13 @@ const Studio = () => {
                 onTouchEnd={handleTouchEnd}
                 data-testid="track-loader-bar"
               >
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-audafact-text-secondary">
+                <span className="min-w-0 justify-self-start text-xs font-medium text-audafact-text-secondary">
                   <span className="sm:hidden">Switch/add</span>
                   <span className="hidden sm:inline">Switch & add tracks</span>
                 </span>
                 <div
-                  className="flex items-center w-full max-w-2xl mx-auto"
-                  style={{ justifyContent: 'space-evenly', transform: 'translateX(16px)' }}
+                  className="flex shrink-0 items-center justify-center"
+                  style={{ justifyContent: 'space-evenly', transform: 'translateX(16px)', minWidth: '11rem' }}
                 >
                   <Tooltip content="Go to previous track" position="top" delay={150}>
                     <button
@@ -4816,6 +4839,33 @@ const Studio = () => {
                     </button>
                   </Tooltip>
                 </div>
+                <div className="min-w-0 justify-self-end text-right">
+                  {!sampleEditTrackId &&
+                    (isGuestMode ? (
+                      <span
+                        className="block truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
+                        data-testid="sample-edit-hint"
+                      >
+                        <span className="sm:hidden">Sample edit · Sign up</span>
+                        <span className="hidden sm:inline">Sample edit · Create account</span>
+                      </span>
+                    ) : (
+                      <Tooltip
+                        content="Double-click or double-tap outside the waveform on a deck to open precision editor."
+                        position="top"
+                        delay={200}
+                        maxWidth={280}
+                      >
+                        <span
+                          className="block max-w-full cursor-default truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
+                          data-testid="sample-edit-hint"
+                        >
+                          <span className="sm:hidden">2× tap deck · Sample edit</span>
+                          <span className="hidden sm:inline">Double-click for precision edit</span>
+                        </span>
+                      </Tooltip>
+                    ))}
+                </div>
             </div>
             )}
 
@@ -4838,50 +4888,12 @@ const Studio = () => {
             <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
               {/* Mobile layout */}
               <div className="flex flex-col gap-2 md:hidden">
-                {/* Row 1: Mode buttons */}
-                <div className="flex items-center gap-2">
-                  <div className="grid grid-cols-3 gap-1 bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider w-full max-w-full">
-                    <button
-                      onClick={() => handleModeChange(track.id, 'preview')}
-                      className={`w-full text-center px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'preview'
-                          ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                      }`}
-                      data-testid="preview-mode-button"
-                    >
-                      Preview
-                    </button>
-                    <button
-                      onClick={() => handleModeChange(track.id, 'loop')}
-                      className={`w-full text-center px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'loop'
-                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                      }`}
-                      data-testid="loop-mode-button"
-                    >
-                      Loop
-                    </button>
-                    <button
-                      onClick={() => handleModeChange(track.id, 'cue')}
-                      className={`w-full text-center px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'cue'
-                          ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                      }`}
-                      data-testid="chop-mode-button"
-                    >
-                      Chop
-                    </button>
-                  </div>
-                </div>
-                {/* Row 2: Song name (truncated) + mode + key & BPM */}
-                <div className="min-w-0">
-                  <h3 className="font-medium audafact-heading truncate">
+                {/* Row 1: Track title + meta (left-aligned; tight line height) */}
+                <div className="w-full min-w-0 space-y-0.5">
+                  <h3 className="truncate text-base font-medium leading-snug audafact-heading">
                     {track.file.name}
                   </h3>
-                  <p className="text-xs audafact-text-secondary truncate flex items-center gap-2 flex-wrap">
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0 truncate text-[11px] leading-tight text-audafact-text-secondary sm:text-xs">
                     {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
                       <span className="flex items-center gap-1">
                         <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
@@ -4903,22 +4915,58 @@ const Studio = () => {
                     )}
                   </p>
                 </div>
-                {/* Row 3: Measures, Cues, Select */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => handleToggleMeasures(track.id)}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                      showMeasures[track.id]
-                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
-                        : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                    }`}
-                    title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
-                    data-testid="measures-button"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {/* Row 2: One toolbar strip — mode left, tools right; tools full-width row when wrapped */}
+                <div className="flex w-full min-w-0 flex-wrap items-center gap-2 rounded-lg border border-audafact-divider/70 bg-audafact-surface-2/40 px-2 py-1.5 sm:flex-nowrap sm:justify-between">
+                  <div className="grid w-max max-w-full shrink-0 grid-cols-3 gap-1 rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5">
+                    <button
+                      onClick={() => handleModeChange(track.id, 'preview')}
+                      className={`whitespace-nowrap px-2 py-1 text-center text-xs font-medium rounded transition-colors ${
+                        track.mode === 'preview'
+                          ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="preview-mode-button"
+                    >
+                      Preview
+                    </button>
+                    <button
+                      onClick={() => handleModeChange(track.id, 'loop')}
+                      className={`whitespace-nowrap px-2 py-1 text-center text-xs font-medium rounded transition-colors ${
+                        track.mode === 'loop'
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="loop-mode-button"
+                    >
+                      Loop
+                    </button>
+                    <button
+                      onClick={() => handleModeChange(track.id, 'cue')}
+                      className={`whitespace-nowrap px-2 py-1 text-center text-xs font-medium rounded transition-colors ${
+                        track.mode === 'cue'
+                          ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="chop-mode-button"
+                    >
+                      Chop
+                    </button>
+                  </div>
+                  <div className="flex min-w-0 flex-1 basis-full flex-wrap items-center justify-end gap-2 sm:basis-auto">
+                    <button
+                      onClick={() => handleToggleMeasures(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        showMeasures[track.id]
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
+                      data-testid="measures-button"
+                    >
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
-                    <span>Measures</span>
+                    <span className={studioTrackMetaLabelClass}>Measures</span>
                   </button>
                   {track.mode === 'cue' && (
                     <button
@@ -4930,10 +4978,10 @@ const Studio = () => {
                       }`}
                       title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
                     >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
-                      <span>Cues</span>
+                      <span className={studioTrackMetaLabelClass}>Cues</span>
                     </button>
                   )}
                   {track.mode === 'cue' && (
@@ -4946,11 +4994,11 @@ const Studio = () => {
                       }`}
                       title={track.id === selectedCueTrackId ? 'Selected for Cue Control' : 'Select for Cue Control'}
                     >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
-                      <span>Select</span>
+                      <span className={studioTrackMetaLabelClass}>Select</span>
                     </button>
                   )}
                   {track.mode === 'loop' && (
@@ -4963,40 +5011,69 @@ const Studio = () => {
                       }`}
                       title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
                     >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
-                      <span>Arm</span>
+                      <span className={studioChromeSecondaryLabelClass}>Arm</span>
                     </button>
                   )}
-                </div>
-                {/* Row 4: Time & Tempo toggle */}
-                <div>
                   <button
+                    type="button"
                     onClick={() => handleToggleControls(track.id)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200 w-full justify-between"
-                    title={expandedControls[track.id] ? 'Collapse Controls' : 'Expand Controls'}
+                    className="inline-flex max-w-full shrink-0 items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
+                    aria-expanded={!!expandedControls[track.id]}
+                    aria-label="Time and tempo controls"
+                    title={
+                      expandedControls[track.id]
+                        ? 'Collapse time and tempo controls'
+                        : 'Expand time and tempo controls'
+                    }
                     data-testid="time-tempo-controls-button"
                   >
-                    <span className="truncate">Time and Tempo</span>
+                    <span className="flex min-w-0 max-w-[min(100%,12rem)] items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 3L6 19h12L12 3z"
+                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
+                        </svg>
+                      </span>
+                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
+                        Time and Tempo
+                      </span>
+                    </span>
                     <svg
-                      className={`w-3 h-3 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
+                      className={`w-3 h-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
+                      aria-hidden
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Desktop layout */}
-              <div className="hidden md:flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              {/* Desktop layout — tools (Measures…Time & Tempo) stay end-aligned vs mode + title */}
+              <div className="hidden md:flex min-w-0 items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                   {/* Custom Mode Selector */}
-                  <div className="flex items-center bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider">
+                  <div className="flex shrink-0 items-center bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider">
                     <button
                       onClick={() => handleModeChange(track.id, 'preview')}
                       className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
@@ -5031,11 +5108,11 @@ const Studio = () => {
                       Chop
                     </button>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="font-medium audafact-heading truncate max-w-[420px]">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="max-w-full truncate font-medium audafact-heading">
                       {track.file.name}
                     </h3>
-                    <p className="text-sm audafact-text-secondary flex items-center gap-2 flex-wrap">
+                    <p className="text-sm audafact-text-secondary flex flex-wrap items-center gap-2">
                       {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
                         <span className="flex items-center gap-1">
                           <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
@@ -5055,102 +5132,128 @@ const Studio = () => {
                         )}
                       </>
                     )}
-                      <div className="flex items-end gap-2">
-                        {/* Show Measures Button */}
-                        <button
-                          onClick={() => handleToggleMeasures(track.id)}
-                          className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                            showMeasures[track.id]
-                              ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
-                              : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                          }`}
-                          title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
-                          data-testid="measures-button"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                          <span>Measures</span>
-                        </button>
-
-                        {/* Show Cue Points Button - Only visible on cue tracks */}
-                        {track.mode === 'cue' && (
-                          <button
-                            onClick={() => handleToggleCueThumbs(track.id)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                              (showCueThumbs[track.id] ?? true)
-                                ? 'bg-audafact-alert-red text-audafact-text-primary'
-                                : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                            }`}
-                            title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                            </svg>
-                            <span>Cues</span>
-                          </button>
-                        )}
-
-                        {/* Cue Track Selection Indicator */}
-                        {track.mode === 'cue' && (
-                          <button
-                            onClick={() => handleTrackSelect(track.id)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                              track.id === selectedCueTrackId
-                                ? 'bg-audafact-alert-red text-audafact-text-primary'
-                                : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                            }`}
-                            title={track.id === selectedCueTrackId ? 'Selected for Cue Control' : 'Select for Cue Control'}
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span>Select</span>
-                          </button>
-                        )}
-
-                        {/* Loop Arm Indicator */}
-                        {track.mode === 'loop' && (
-                          <button
-                            onClick={() => handleLoopArmToggle(track.id)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                              armedLoopTrackIds.has(track.id)
-                                ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
-                                : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                            }`}
-                            title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span>Arm</span>
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handleToggleControls(track.id)}
-                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
-                          title={expandedControls[track.id] ? 'Collapse Controls' : 'Expand Controls'}
-                          data-testid="time-tempo-controls-button"
-                        >
-                          <span>Time and Tempo</span>
-                          <svg 
-                            className={`w-3 h-3 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`} 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                      </div>
                     </p>
                   </div>
                 </div>
-                
-                
+                <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
+                  {/* Show Measures Button */}
+                  <button
+                    onClick={() => handleToggleMeasures(track.id)}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                      showMeasures[track.id]
+                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+                        : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                    }`}
+                    title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
+                    data-testid="measures-button"
+                  >
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <span className={studioTrackMetaLabelClass}>Measures</span>
+                  </button>
+
+                  {track.mode === 'cue' && (
+                    <button
+                      onClick={() => handleToggleCueThumbs(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        (showCueThumbs[track.id] ?? true)
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
+                    >
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                      <span className={studioTrackMetaLabelClass}>Cues</span>
+                    </button>
+                  )}
+
+                  {track.mode === 'cue' && (
+                    <button
+                      onClick={() => handleTrackSelect(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        track.id === selectedCueTrackId
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={track.id === selectedCueTrackId ? 'Selected for Cue Control' : 'Select for Cue Control'}
+                    >
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span className={studioTrackMetaLabelClass}>Select</span>
+                    </button>
+                  )}
+
+                  {track.mode === 'loop' && (
+                    <button
+                      onClick={() => handleLoopArmToggle(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        armedLoopTrackIds.has(track.id)
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
+                    >
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span className={studioChromeSecondaryLabelClass}>Arm</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleControls(track.id)}
+                    className="inline-flex max-w-full shrink-0 items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
+                    aria-expanded={!!expandedControls[track.id]}
+                    aria-label="Time and tempo controls"
+                    title={
+                      expandedControls[track.id]
+                        ? 'Collapse time and tempo controls'
+                        : 'Expand time and tempo controls'
+                    }
+                    data-testid="time-tempo-controls-button"
+                  >
+                    <span className="flex min-w-0 items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 3L6 19h12L12 3z"
+                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
+                        </svg>
+                      </span>
+                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
+                        Time and Tempo
+                      </span>
+                    </span>
+                    <svg
+                      className={`h-3 w-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -5367,10 +5470,39 @@ const Studio = () => {
                     type="button"
                     onClick={() => handleToggleControls(track.id)}
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-audafact-divider bg-audafact-surface-1 px-2 py-1.5 text-left text-[11px] font-medium text-audafact-text-secondary hover:bg-audafact-surface-2 sm:px-3 sm:text-xs"
-                    title={expandedControls[track.id] ? 'Collapse Controls' : 'Expand Controls'}
+                    aria-expanded={!!expandedControls[track.id]}
+                    aria-label="Time and tempo controls"
+                    title={
+                      expandedControls[track.id]
+                        ? 'Collapse time and tempo controls'
+                        : 'Expand time and tempo controls'
+                    }
                     data-testid="sample-edit-time-tempo-controls-button"
                   >
-                    <span className="whitespace-nowrap">Time & Tempo</span>
+                    <span className="flex min-w-0 items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 3L6 19h12L12 3z"
+                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
+                        </svg>
+                      </span>
+                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
+                        Time & Tempo
+                      </span>
+                    </span>
                     <svg
                       className={`h-3 w-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
                       fill="none"

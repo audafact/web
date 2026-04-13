@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from 'react';
 import { DatabaseService } from '../services/databaseService';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { getNumericLimitsForDbTier } from '../config/tierConfig';
@@ -19,8 +27,11 @@ import { deleteByKey } from '../lib/storage';
 import {
   getSessionScope,
   getScopedSavedSessionsKey,
+  getScopedPerformancesKey,
+  getScopedAudioRecordingsKey,
   mergeSessionsById,
   migrateLegacySavedSessions,
+  migrateLegacyLocalRecordings,
   parseStoredArray,
 } from './sessionStorageScope';
 import { schedulePerformanceEventsPass } from '../lib/performancePlaybackSchedule';
@@ -114,7 +125,14 @@ interface RecordingContextValue {
   setRecordEventsEnabled: (v: boolean) => void;
   recordMixEnabled: boolean;
   setRecordMixEnabled: (v: boolean) => void;
-  
+  /**
+   * True once any deck has started playback during the current mix capture session.
+   * Used for UI: "Ready" vs actively recording when event count stays at 0 (e.g. mix-only / simple mode).
+   */
+  mixRecordingHasPlayback: boolean;
+  /** Call from Studio when a track begins playback while mix recording is armed. Idempotent until the next session. */
+  signalMixRecordingPlayback: () => void;
+
   // Audio recording
   isRecordingAudio: boolean;
   currentAudioRecording: AudioRecording | null;
@@ -157,15 +175,13 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { trackStudioAction } = useAnalytics();
   const sessionScope = getSessionScope(user?.id);
   const scopedSavedSessionsKey = getScopedSavedSessionsKey(sessionScope);
-  
-  // Performance recording state
-  const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
-  const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
-  const [performances, setPerformances] = useState<Performance[]>(() => {
-    const saved = localStorage.getItem('audafact_performances');
-    if (!saved) return [];
+  const scopedPerformancesKey = getScopedPerformancesKey(sessionScope);
+  const scopedAudioRecordingsKey = getScopedAudioRecordingsKey(sessionScope);
+
+  const parsePerformancesFromStorage = useCallback((raw: string | null): Performance[] => {
+    if (!raw) return [];
     try {
-      const parsed = JSON.parse(saved);
+      const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
       return parsed.map((item) => ({
         ...item,
@@ -178,7 +194,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error('Failed to parse local performances:', error);
       return [];
     }
-  });
+  }, []);
+
+  // Performance recording state
+  const [isRecordingPerformance, setIsRecordingPerformance] = useState(false);
+  const [mixRecordingHasPlayback, setMixRecordingHasPlayback] = useState(false);
+  const [currentPerformance, setCurrentPerformance] = useState<Performance | null>(null);
+  const [performances, setPerformances] = useState<Performance[]>([]);
+  const [localRecordingsHydrated, setLocalRecordingsHydrated] = useState(false);
   const performanceStartTimeRef = useRef<number>(0);
   const performancesRef = useRef<Performance[]>([]);
 
@@ -189,10 +212,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Audio recording state
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [currentAudioRecording, setCurrentAudioRecording] = useState<AudioRecording | null>(null);
-  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>(() => {
-    const saved = localStorage.getItem('audafact_audioRecordings');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [audioRecordings, setAudioRecordings] = useState<AudioRecording[]>([]);
   
   // Sessions state
   const [savedSessions, setSavedSessions] = useState<RecordingSession[]>([]);
@@ -234,6 +254,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setSavedRecordings([]);
       return;
     }
+    setSavedRecordings([]);
     try {
       const recordings = await DatabaseService.getUserRecordings(user.id);
       setSavedRecordings(recordings);
@@ -248,9 +269,35 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     refreshSavedRecordings();
   }, [refreshSavedRecordings]);
 
+  const recordingAuthKeyRef = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const key = user?.id ?? '__guest__';
+    if (recordingAuthKeyRef.current === key) return;
+    recordingAuthKeyRef.current = key;
+    setSavedRecordings([]);
+  }, [user?.id]);
+
+  // Per-account local performances / legacy audio list (not the same as DB savedRecordings).
+  // useLayoutEffect avoids persisting the previous account's in-memory rows into the new scope key.
+  useLayoutEffect(() => {
+    setLocalRecordingsHydrated(false);
+    try {
+      migrateLegacyLocalRecordings(localStorage, scopedPerformancesKey, scopedAudioRecordingsKey);
+      setPerformances(parsePerformancesFromStorage(localStorage.getItem(scopedPerformancesKey)));
+      const audioRaw = localStorage.getItem(scopedAudioRecordingsKey);
+      setAudioRecordings(audioRaw ? JSON.parse(audioRaw) : []);
+    } catch (error) {
+      console.error('Failed to load scoped local recordings:', error);
+      setPerformances([]);
+      setAudioRecordings([]);
+    } finally {
+      setLocalRecordingsHydrated(true);
+    }
+  }, [scopedPerformancesKey, scopedAudioRecordingsKey, parsePerformancesFromStorage]);
+
   // Hydrate in-memory performances from saved recordings so event replay survives refresh/login.
   useEffect(() => {
-    if (savedRecordings.length === 0) return;
+    if (!user?.id || !localRecordingsHydrated || savedRecordings.length === 0) return;
     setPerformances(prev => {
       const existingDbIds = new Set(prev.map(p => p.databaseId).filter(Boolean));
       const hydrated = savedRecordings
@@ -273,7 +320,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (hydrated.length === 0) return prev;
       return [...prev, ...hydrated];
     });
-  }, [savedRecordings]);
+  }, [savedRecordings, localRecordingsHydrated, user?.id]);
 
   // Load scoped local sessions on auth-scope change and migrate legacy key once.
   useEffect(() => {
@@ -323,14 +370,24 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return () => window.removeEventListener('recordingSaved', handler);
   }, [refreshSavedRecordings]);
 
-  // Persist data to localStorage when it changes
+  // Persist data to localStorage when it changes (after scope hydration to avoid wiping on init)
   useEffect(() => {
-    localStorage.setItem('audafact_performances', JSON.stringify(performances));
-  }, [performances]);
+    if (!localRecordingsHydrated) return;
+    try {
+      localStorage.setItem(scopedPerformancesKey, JSON.stringify(performances));
+    } catch (error) {
+      console.error('Failed to persist performances:', error);
+    }
+  }, [performances, scopedPerformancesKey, localRecordingsHydrated]);
 
   useEffect(() => {
-    localStorage.setItem('audafact_audioRecordings', JSON.stringify(audioRecordings));
-  }, [audioRecordings]);
+    if (!localRecordingsHydrated) return;
+    try {
+      localStorage.setItem(scopedAudioRecordingsKey, JSON.stringify(audioRecordings));
+    } catch (error) {
+      console.error('Failed to persist audio recordings:', error);
+    }
+  }, [audioRecordings, scopedAudioRecordingsKey, localRecordingsHydrated]);
 
   useEffect(() => {
     engagedTrackIdsRef.current = new Set(engagedTrackIds);
@@ -397,6 +454,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setPerformances((prev) => [completedPerformance, ...prev]);
       setCurrentPerformance(null);
       setIsRecordingPerformance(false);
+      setMixRecordingHasPlayback(false);
       overdubTimestampOffsetRef.current = 0;
 
       let canSave = true;
@@ -545,6 +603,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [user]
   );
 
+  const signalMixRecordingPlayback = useCallback(() => {
+    setMixRecordingHasPlayback(true);
+  }, []);
+
   // Combined recording functions
   const startPerformanceRecording = useCallback(
     async (
@@ -552,9 +614,10 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       options?: { recordEvents?: boolean; recordMix?: boolean; continueOverdub?: boolean }
     ) => {
       try {
+        const resolvedAudioContext = appAudioContext ?? studioAudioContextRef.current ?? null;
         const recEvents = options?.recordEvents !== false;
         const recMix =
-          options?.recordMix !== undefined ? options.recordMix : Boolean(appAudioContext);
+          options?.recordMix !== undefined ? options.recordMix : Boolean(resolvedAudioContext);
         recordEventsEnabledRef.current = recEvents;
         recordMixEnabledRef.current = recMix;
         setRecordEventsEnabled(recEvents);
@@ -565,8 +628,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return;
         }
 
-        if (recMix && !appAudioContext) {
-          console.error('No audio context provided for recording');
+        if (recMix && !resolvedAudioContext) {
+          console.error('No audio context available for recording (pass-through or Studio registration missing)');
           alert('Audio context is required when recording the mix.');
           return;
         }
@@ -595,6 +658,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         performanceEventsRef.current = [];
         performanceTracksRef.current = [];
+        setMixRecordingHasPlayback(false);
         setCurrentPerformance(newPerformance);
         setIsRecordingPerformance(true);
 
@@ -606,7 +670,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return;
         }
 
-        const destination = appAudioContext!.createMediaStreamDestination();
+        const mixContext = resolvedAudioContext as AudioContext;
+        const destination = mixContext.createMediaStreamDestination();
         recordingDestinationRef.current = destination;
 
         let mimeType = '';
@@ -844,11 +909,14 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setPerformances([]);
     setAudioRecordings([]);
     setSavedSessions([]);
-    // Also clear from localStorage
-    localStorage.removeItem('audafact_performances');
-    localStorage.removeItem('audafact_audioRecordings');
-    localStorage.removeItem(scopedSavedSessionsKey);
-  }, [scopedSavedSessionsKey]);
+    try {
+      localStorage.removeItem(scopedPerformancesKey);
+      localStorage.removeItem(scopedAudioRecordingsKey);
+      localStorage.removeItem(scopedSavedSessionsKey);
+    } catch (error) {
+      console.error('Failed to clear local recording storage:', error);
+    }
+  }, [scopedPerformancesKey, scopedAudioRecordingsKey, scopedSavedSessionsKey]);
 
   const exportPerformance = useCallback(async (performanceId: string, options?: { filename?: string; format?: 'mp3' | 'wav' }) => {
     const performance = performances.find(p => p.id === performanceId);
@@ -1539,6 +1607,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setRecordEventsEnabled,
     recordMixEnabled,
     setRecordMixEnabled,
+    mixRecordingHasPlayback,
+    signalMixRecordingPlayback,
 
     // Audio recording
     isRecordingAudio,

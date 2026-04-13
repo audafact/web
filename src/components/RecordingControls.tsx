@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Save, Check } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
+import { useAudioContext } from '../context/AudioContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { UpgradePrompt } from './UpgradePrompt';
 import Tooltip from './Tooltip';
@@ -12,9 +13,19 @@ interface RecordingControlsProps {
   className?: string;
   onSave?: () => void;
   audioContext?: AudioContext;
+  /**
+   * Studio side panel open — with the rest of Studio chrome, labels stay hidden until `xl`
+   * (matches New session / Restore prior). When false, labels show from `md` up.
+   */
+  isSidePanelOpen?: boolean;
 }
 
-const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', onSave, audioContext }) => {
+const RecordingControls: React.FC<RecordingControlsProps> = ({
+  className = '',
+  onSave,
+  audioContext,
+  isSidePanelOpen = false,
+}) => {
   const {
     isRecordingPerformance,
     currentPerformance,
@@ -26,13 +37,24 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     setRecordMixEnabled,
     isOverdubEnabled,
     playingPerformanceId,
+    mixRecordingHasPlayback,
   } = useRecording();
+  const { audioContext: audioContextFromProvider, initializeAudio } = useAudioContext();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { tier } = useUser();
   
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const waitingForMixPlayback =
+    !!isRecordingPerformance && recordMixEnabled && !mixRecordingHasPlayback;
+  const isActivelyCapturing =
+    (recordMixEnabled && mixRecordingHasPlayback) ||
+    (exposeAdvancedPerformanceUi &&
+      recordEventsEnabled &&
+      !!currentPerformance &&
+      currentPerformance.events.length > 0);
 
   const formatDuration = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
@@ -70,54 +92,70 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
     }
   };
 
+  /** Same breakpoints as New session / Restore prior in Studio */
+  const primaryLabelClass = isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline';
+
+  const primaryBtnPad =
+    'min-h-[40px] min-w-[40px] sm:min-w-0 px-2 sm:px-4 py-2 justify-center gap-1.5 sm:gap-2';
+
   return (
-    <div className={`flex items-center gap-6 w-full ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-1.5 sm:gap-x-3 gap-y-2 min-w-0 ${className}`}>
       {/* Save Button */}
       <Tooltip content="Save current session" position="top" delay={150}>
         <button
           onClick={handleSave}
           disabled={!onSave || isSaving}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`inline-flex items-center rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${primaryBtnPad} ${
             saveSuccess
               ? 'bg-green-500 text-white'
               : 'bg-audafact-text-secondary text-audafact-bg-primary hover:bg-opacity-90'
           }`}
+          aria-label={saveSuccess ? 'Session saved' : isSaving ? 'Saving session' : 'Save current session'}
         >
           {saveSuccess ? (
             <>
-              <Check size={12} />
-              Saved!
+              <Check className="h-4 w-4 shrink-0" aria-hidden />
+              <span className={primaryLabelClass}>Saved!</span>
             </>
           ) : isSaving ? (
             <>
-              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-              Saving...
+              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" aria-hidden />
+              <span className={primaryLabelClass}>Saving...</span>
             </>
           ) : (
             <>
-              <Save size={12} />
-              Save
+              <Save className="h-4 w-4 shrink-0" aria-hidden />
+              <span className={primaryLabelClass}>Save</span>
             </>
           )}
         </button>
       </Tooltip>
 
       {/* Record Button and Status */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3">
           {isRecordingPerformance && currentPerformance && (
-            <div className="flex items-center gap-2 text-sm audafact-text-secondary">
-              <span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm audafact-text-secondary min-w-0">
+              <span
+                className={`max-w-[min(100%,14rem)] truncate ${primaryLabelClass}`}
+              >
                 {!exposeAdvancedPerformanceUi
-                  ? 'Recording mix…'
-                  : currentPerformance.events.length === 0
-                    ? 'Waiting for first trigger…'
-                    : recordMixEnabled && recordEventsEnabled
-                      ? 'Recording mix & events…'
-                      : recordMixEnabled
-                        ? 'Recording mix…'
-                        : 'Recording events…'}
+                  ? waitingForMixPlayback
+                    ? 'Waiting for playback…'
+                    : 'Recording mix…'
+                  : waitingForMixPlayback
+                    ? 'Waiting for playback…'
+                    : exposeAdvancedPerformanceUi &&
+                        recordEventsEnabled &&
+                        currentPerformance.events.length === 0 &&
+                        !(recordMixEnabled && mixRecordingHasPlayback)
+                      ? 'Waiting for first trigger…'
+                      : recordMixEnabled && recordEventsEnabled
+                        ? 'Recording mix & events…'
+                        : recordMixEnabled
+                          ? 'Recording mix…'
+                          : 'Recording events…'}
               </span>
-              <span className="font-mono">
+              <span className="font-mono shrink-0 tabular-nums">
                 {formatDuration(Date.now() - currentPerformance.startTime)}
               </span>
             </div>
@@ -126,20 +164,22 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
           {!isRecordingPerformance ? (
             <>
             {exposeAdvancedPerformanceUi && (
-              <div className="flex flex-wrap items-center gap-3 text-xs audafact-text-secondary">
-                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 text-xs audafact-text-secondary">
+                <label className="inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer select-none" title="Log performance events">
                   <input
                     type="checkbox"
                     checked={recordEventsEnabled}
                     onChange={(e) => setRecordEventsEnabled(e.target.checked)}
+                    aria-label="Log performance events"
                   />
                   Log events
                 </label>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                <label className="inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer select-none" title="Record master mix">
                   <input
                     type="checkbox"
                     checked={recordMixEnabled}
                     onChange={(e) => setRecordMixEnabled(e.target.checked)}
+                    aria-label="Record master mix"
                   />
                   Record mix
                 </label>
@@ -162,35 +202,55 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
                     return;
                   }
 
-                  startPerformanceRecording(audioContext, {
-                    recordEvents: exposeAdvancedPerformanceUi ? recordEventsEnabled : false,
-                    recordMix: exposeAdvancedPerformanceUi ? recordMixEnabled : true,
+                  const recordMix = exposeAdvancedPerformanceUi ? recordMixEnabled : true;
+                  const recordEvents = exposeAdvancedPerformanceUi ? recordEventsEnabled : false;
+
+                  let ctx: AudioContext | undefined =
+                    audioContext ?? audioContextFromProvider ?? undefined;
+                  if (recordMix && !ctx) {
+                    try {
+                      ctx = await initializeAudio();
+                    } catch (e) {
+                      console.error('Failed to initialize audio for recording:', e);
+                      alert(
+                        'Could not start audio for recording. Try playing a track or tapping the waveform first.'
+                      );
+                      return;
+                    }
+                  }
+
+                  startPerformanceRecording(ctx, {
+                    recordEvents,
+                    recordMix,
                     continueOverdub:
                       exposeAdvancedPerformanceUi && isOverdubEnabled && !!playingPerformanceId,
                   });
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
+                className={`inline-flex items-center bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm ${primaryBtnPad}`}
+                aria-label="Record performance"
               >
-                <div className="w-3 h-3 bg-current rounded-full"></div>
-                Record
+                <div className="w-3 h-3 bg-current rounded-full shrink-0" aria-hidden />
+                <span className={primaryLabelClass}>Record</span>
               </button>
             </Tooltip>
             </>
           ) : (
             <button
               onClick={stopPerformanceRecording}
-              className="flex items-center gap-2 px-4 py-2 bg-audafact-text-secondary text-audafact-bg-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
+              className={`inline-flex items-center bg-audafact-text-secondary text-audafact-bg-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm ${primaryBtnPad}`}
+              aria-label={isActivelyCapturing ? 'Stop recording' : 'Ready to record'}
             >
               <div
-                className={`w-3 h-3 rounded-full ${
-                  currentPerformance && currentPerformance.events.length > 0
+                className={`w-3 h-3 rounded-full shrink-0 ${
+                  currentPerformance && isActivelyCapturing
                     ? 'bg-audafact-alert-red animate-recording-blink'
                     : 'bg-audafact-divider'
                 }`}
+                aria-hidden
               />
-              {currentPerformance && currentPerformance.events.length === 0
-                ? 'Ready to record...'
-                : 'Stop Recording'}
+              <span className={primaryLabelClass}>
+                {isActivelyCapturing ? 'Stop Recording' : 'Ready to record...'}
+              </span>
             </button>
           )}
         </div>
