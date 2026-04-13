@@ -25,6 +25,7 @@ import { useSingleAudio } from '@/hooks/useSingleAudio';
 import { ExportRecordingModal } from './ExportRecordingModal';
 import { RenameRecordingModal } from './RenameRecordingModal';
 import Tooltip from './Tooltip';
+import { exposeAdvancedPerformanceUi } from '../config/featureFlags';
 
 interface AudioAsset {
   id: string;
@@ -2612,21 +2613,23 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   {canEventReplay && performanceForPlayback && (
                                     <div className="mt-2 space-y-2">
                                       <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (isPerformancePlaying) {
-                                              stopPerformancePlayback();
-                                              return;
-                                            }
-                                            await startPerformancePlayback(performanceForPlayback.id, {
-                                              loop: true,
-                                            });
-                                          }}
-                                          className="px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
-                                        >
-                                          {isPerformancePlaying ? 'Stop Loop' : 'Loop Replay'}
-                                        </button>
+                                        {exposeAdvancedPerformanceUi && (
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              if (isPerformancePlaying) {
+                                                stopPerformancePlayback();
+                                                return;
+                                              }
+                                              await startPerformancePlayback(performanceForPlayback.id, {
+                                                loop: true,
+                                              });
+                                            }}
+                                            className="px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                                          >
+                                            {isPerformancePlaying ? 'Stop Loop' : 'Loop Replay'}
+                                          </button>
+                                        )}
                                         {canPlay && (
                                           <button
                                             type="button"
@@ -2641,16 +2644,18 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                             Reference only
                                           </button>
                                         )}
-                                        <label className="inline-flex items-center gap-1 cursor-pointer select-none">
-                                          <input
-                                            type="checkbox"
-                                            checked={isOverdubEnabled}
-                                            onChange={(e) => setOverdubEnabled(e.target.checked)}
-                                          />
-                                          Overdub
-                                        </label>
+                                        {exposeAdvancedPerformanceUi && (
+                                          <label className="inline-flex items-center gap-1 cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={isOverdubEnabled}
+                                              onChange={(e) => setOverdubEnabled(e.target.checked)}
+                                            />
+                                            Overdub
+                                          </label>
+                                        )}
                                       </div>
-                                      {performanceForPlayback.tracks.length > 0 && (
+                                      {exposeAdvancedPerformanceUi && performanceForPlayback.tracks.length > 0 && (
                                         <div className="flex flex-wrap gap-1">
                                           {performanceForPlayback.tracks.map((trackId: string) => {
                                             const engaged = engagedTrackIds.includes(trackId);

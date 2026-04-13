@@ -24,6 +24,7 @@ import {
   parseStoredArray,
 } from './sessionStorageScope';
 import { schedulePerformanceEventsPass } from '../lib/performancePlaybackSchedule';
+import { exposeAdvancedPerformanceUi } from '../config/featureFlags';
 
 type RecordingEvent = PerformanceEvent;
 
@@ -217,14 +218,15 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
   const engagedTrackIdsRef = useRef<Set<string>>(new Set());
   const studioAudioContextRef = useRef<AudioContext | null>(null);
-  const recordEventsEnabledRef = useRef(true);
+  const defaultLogEvents = exposeAdvancedPerformanceUi;
+  const recordEventsEnabledRef = useRef(defaultLogEvents);
   const recordMixEnabledRef = useRef(true);
   const unarmedRecordingTrackIdsRef = useRef<Set<string>>(new Set());
   const overdubTimestampOffsetRef = useRef(0);
   const playbackScheduleCancelRef = useRef<(() => void) | null>(null);
 
   const [unarmedRecordingTrackIds, setUnarmedRecordingTrackIds] = useState<string[]>([]);
-  const [recordEventsEnabled, setRecordEventsEnabled] = useState(true);
+  const [recordEventsEnabled, setRecordEventsEnabled] = useState(defaultLogEvents);
   const [recordMixEnabled, setRecordMixEnabled] = useState(true);
 
   const refreshSavedRecordings = useCallback(async () => {
@@ -670,6 +672,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [currentPerformance, trackStudioAction, finalizePerformanceCapture]);
 
   const addRecordingEvent = useCallback((event: NewPerformanceEvent) => {
+    if (!exposeAdvancedPerformanceUi) {
+      return;
+    }
     if (!isRecordingPerformance || !currentPerformance) {
       return;
     }

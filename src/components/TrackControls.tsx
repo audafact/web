@@ -6,6 +6,7 @@ import { useAnalytics } from '../hooks/useAnalytics';
 import { useUser } from '../hooks/useUser';
 import { PerformanceEvent } from '../types/performanceEvents';
 import { logRegionDragTransport } from '../utils/regionDragTransportDiag';
+import { exposeAdvancedPerformanceUi } from '../config/featureFlags';
 
 // Utility function to format cue point timestamps
 const formatCueTimestamp = (seconds: number): string => {
@@ -213,7 +214,7 @@ const TrackControls = ({
     return performances.find((p) => p.events.some((e) => e.trackId === trackId)) ?? null;
   }, [performances, trackId]);
 
-  const isArmedForRecord = !trackId || !unarmedRecordingTrackIds.includes(trackId);
+  const isArmedForRecord = !trackId || !(unarmedRecordingTrackIds ?? []).includes(trackId);
   const isLaneLoopPlaying = !!(
     trackId &&
     perfForLane &&
@@ -1627,7 +1628,7 @@ const TrackControls = ({
         )}
       </div>
 
-      {trackId && (
+      {trackId && exposeAdvancedPerformanceUi && (
         <div className="flex flex-wrap items-center gap-2 py-1.5 border-t border-audafact-divider/60">
           <span className="text-[10px] uppercase tracking-wide audafact-text-secondary">Performance</span>
           <button

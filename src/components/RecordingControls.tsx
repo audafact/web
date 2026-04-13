@@ -6,6 +6,7 @@ import { UpgradePrompt } from './UpgradePrompt';
 import Tooltip from './Tooltip';
 import { useUser } from '../hooks/useUser';
 import { showSignupModal } from '../hooks/useSignupModal';
+import { exposeAdvancedPerformanceUi } from '../config/featureFlags';
 
 interface RecordingControlsProps {
   className?: string;
@@ -106,13 +107,15 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
           {isRecordingPerformance && currentPerformance && (
             <div className="flex items-center gap-2 text-sm audafact-text-secondary">
               <span>
-                {currentPerformance.events.length === 0
-                  ? 'Waiting for first trigger...'
-                  : recordMixEnabled && recordEventsEnabled
-                    ? 'Recording mix & events…'
-                    : recordMixEnabled
-                      ? 'Recording mix…'
-                      : 'Recording events…'}
+                {!exposeAdvancedPerformanceUi
+                  ? 'Recording mix…'
+                  : currentPerformance.events.length === 0
+                    ? 'Waiting for first trigger…'
+                    : recordMixEnabled && recordEventsEnabled
+                      ? 'Recording mix & events…'
+                      : recordMixEnabled
+                        ? 'Recording mix…'
+                        : 'Recording events…'}
               </span>
               <span className="font-mono">
                 {formatDuration(Date.now() - currentPerformance.startTime)}
@@ -122,24 +125,26 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
 
           {!isRecordingPerformance ? (
             <>
-            <div className="flex flex-wrap items-center gap-3 text-xs audafact-text-secondary">
-              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={recordEventsEnabled}
-                  onChange={(e) => setRecordEventsEnabled(e.target.checked)}
-                />
-                Log events
-              </label>
-              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={recordMixEnabled}
-                  onChange={(e) => setRecordMixEnabled(e.target.checked)}
-                />
-                Record mix
-              </label>
-            </div>
+            {exposeAdvancedPerformanceUi && (
+              <div className="flex flex-wrap items-center gap-3 text-xs audafact-text-secondary">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={recordEventsEnabled}
+                    onChange={(e) => setRecordEventsEnabled(e.target.checked)}
+                  />
+                  Log events
+                </label>
+                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={recordMixEnabled}
+                    onChange={(e) => setRecordMixEnabled(e.target.checked)}
+                  />
+                  Record mix
+                </label>
+              </div>
+            )}
             <Tooltip content="Record performance" position="top" delay={150}>
               <button
                 onClick={async () => {
@@ -158,9 +163,10 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
                   }
 
                   startPerformanceRecording(audioContext, {
-                    recordEvents: recordEventsEnabled,
-                    recordMix: recordMixEnabled,
-                    continueOverdub: isOverdubEnabled && !!playingPerformanceId,
+                    recordEvents: exposeAdvancedPerformanceUi ? recordEventsEnabled : false,
+                    recordMix: exposeAdvancedPerformanceUi ? recordMixEnabled : true,
+                    continueOverdub:
+                      exposeAdvancedPerformanceUi && isOverdubEnabled && !!playingPerformanceId,
                   });
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
