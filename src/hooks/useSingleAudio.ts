@@ -3,7 +3,8 @@ import { getSignedUrl } from "@/lib/storage";
 
 type Playable =
   | { kind: "key"; key: string } // R2 object key for library/user items
-  | { kind: "blob"; blob: Blob }; // in-memory recordings
+  /** In-memory audio; `id` must be stable for the list row so play/pause UI can track playback. */
+  | { kind: "blob"; blob: Blob; id: string };
 
 export function useSingleAudio() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,8 +57,11 @@ export function useSingleAudio() {
   async function play(src: Playable) {
     const el = ensureAudio();
     // Stop previous sound + cleanup, but preserve key if it's the same track
-    const isSameKey = src.kind === "key" && currentKeyRef.current === src.key;
-    stop(!isSameKey);
+    const isSameSource =
+      src.kind === "key"
+        ? currentKeyRef.current === src.key
+        : currentKeyRef.current === src.id;
+    stop(!isSameSource);
 
     if (!isLoading) {
       setIsLoading(true);
@@ -72,7 +76,7 @@ export function useSingleAudio() {
       } else {
         url = URL.createObjectURL(src.blob);
         currentKindRef.current = "blob";
-        currentKeyRef.current = null;
+        currentKeyRef.current = src.id;
       }
 
       currentUrlRef.current = url;
@@ -108,9 +112,7 @@ export function useSingleAudio() {
     } else {
       // Set loading state and current key immediately for UI feedback
       setIsLoading(true);
-      if (src.kind === "key") {
-        currentKeyRef.current = src.key;
-      }
+      currentKeyRef.current = src.kind === "key" ? src.key : src.id;
       play(src).catch((e) => {
         console.error("Audio play failed:", e);
         setIsLoading(false);

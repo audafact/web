@@ -17,8 +17,6 @@ import TrackControls from '../components/TrackControls';
 import TempoControls from '../components/TempoControls';
 import TimeSignatureControls from '../components/TimeSignatureControls';
 import RecordingControls from '../components/RecordingControls';
-import SessionPlaybackToolbar from '../components/SessionPlaybackToolbar';
-import LaneTransportControls from '../components/LaneTransportControls';
 import SidePanel from '../components/SidePanel';
 import SignupModal from '../components/SignupModal';
 import DemoModeIndicator from '../components/DemoModeIndicator';
@@ -29,6 +27,8 @@ import HelpButton from '../components/HelpButton';
 import HelpModal from '../components/HelpModal';
 import { loadPreferredMode, savePreferredMode } from '../components/GetStartedFlowModal';
 import Tooltip from '../components/Tooltip';
+import SampleEditMode from '../components/SampleEditMode';
+import { logRegionDragTransport } from '../utils/regionDragTransportDiag';
 // import { AccessService } from '../services/accessService';
 import { TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
@@ -124,17 +124,20 @@ const Studio = () => {
   const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
     useAudioContext();
   const { isOpen: isSidePanelOpen, toggleSidePanel, closeSidePanel } = useSidePanel();
+  /** Icon-only labels until md, or until xl when side panel is open (matches Save / New session row). */
+  const studioChromeSecondaryLabelClass = isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline';
+  /** Measures / Cues / Select / Time & Tempo: icon-only below lg (covers md + sm + default); below xl when side panel open. */
+  const studioTrackMetaLabelClass = isSidePanelOpen ? 'hidden xl:inline' : 'hidden lg:inline';
   const {
+    addRecordingEvent,
     saveCurrentState,
     isRecordingPerformance,
     stopPerformanceRecording,
     getRecordingDestination,
     registerStudioAudioContext,
-    initRecordingTakesForTracks,
-    recordSessionGridTempoEvent,
-    recordSessionGridTimeSignatureEvent,
-    recordEventsEnabled,
     savedSessions,
+    recordMixEnabled,
+    signalMixRecordingPlayback,
   } = useRecording();
   const { loading: authLoading } = useAuth();
   const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
@@ -162,6 +165,10 @@ const Studio = () => {
   // Track drag state for real-time timestamp updates
   const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
   const [loopDragStates, setLoopDragStates] = useState<{ [trackId: string]: { start: number; end: number } }>({});
+  /** When set, Sample Edit overlay is open for this track id (signed-in only; cue/loop). */
+  const [sampleEditTrackId, setSampleEditTrackId] = useState<string | null>(null);
+  const sampleEditPlaybackSnapshotRef = useRef<Set<string> | null>(null);
+  const lastTapForSampleEditRef = useRef<{ t: number; x: number; y: number; trackId: string } | null>(null);
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
@@ -185,11 +192,6 @@ const Studio = () => {
   useEffect(() => {
     if (tracks.length > 0) setHadTracksOnce(true);
   }, [tracks.length]);
-
-  useEffect(() => {
-    if (!isRecordingPerformance || tracks.length === 0) return;
-    initRecordingTakesForTracks(tracks.map((t) => t.id));
-  }, [isRecordingPerformance, tracks, initRecordingTakesForTracks]);
 
   // Demo mode detection from URL parameters (for backward compatibility)
   const isDemoMode = searchParams.get('demo') === 'true';
@@ -428,7 +430,10 @@ const Studio = () => {
   const [showCueThumbs, setShowCueThumbs] = useState<{ [key: string]: boolean }>({});
   // Add playback state tracking
   const [playbackStates, setPlaybackStates] = useState<{ [key: string]: boolean }>({});
-  
+  const playbackStatesRef = useRef<{ [key: string]: boolean }>({});
+  useEffect(() => {
+    playbackStatesRef.current = playbackStates;
+  }, [playbackStates]);
 
   
   // Add accordion state for collapsible controls
@@ -439,7 +444,11 @@ const Studio = () => {
   
   // Store toggle playback functions for each track (for global space bar)
   const togglePlaybackRefs = useRef<{ [key: string]: React.MutableRefObject<(() => void) | null> }>({});
-  
+  /** Sample Edit overlay only: sync Waveform region-drag with TrackControls pause/resume. */
+  const suspendTransportForRegionDragSyncRefs = useRef<{
+    [key: string]: React.MutableRefObject<(() => void) | null>;
+  }>({});
+
   // Get or create seek function ref for a track
   const getSeekFunctionRef = useCallback((trackId: string) => {
     if (!seekFunctionRefs.current[trackId]) {
@@ -454,6 +463,13 @@ const Studio = () => {
       togglePlaybackRefs.current[trackId] = { current: null };
     }
     return togglePlaybackRefs.current[trackId];
+  }, []);
+
+  const getSuspendTransportForRegionDragSyncRef = useCallback((trackId: string) => {
+    if (!suspendTransportForRegionDragSyncRefs.current[trackId]) {
+      suspendTransportForRegionDragSyncRefs.current[trackId] = { current: null };
+    }
+    return suspendTransportForRegionDragSyncRefs.current[trackId];
   }, []);
 
   // Global play: play/pause all armed loop tracks (same as space bar)
@@ -476,6 +492,45 @@ const Studio = () => {
       }
     });
   }, [tracks, playbackStates, getTogglePlaybackRef]);
+
+  const closeSampleEditMode = useCallback(() => {
+    const snap = sampleEditPlaybackSnapshotRef.current;
+    sampleEditPlaybackSnapshotRef.current = null;
+    setSampleEditTrackId(null);
+    if (snap && snap.size > 0) {
+      requestAnimationFrame(() => {
+        snap.forEach((id) => {
+          if (!playbackStatesRef.current[id]) {
+            getTogglePlaybackRef(id).current?.();
+          }
+        });
+      });
+    }
+  }, [getTogglePlaybackRef]);
+
+  const openSampleEditMode = useCallback(
+    (trackId: string) => {
+      if (isGuestMode) return;
+      const t = tracks.find((tr) => tr.id === trackId);
+      if (!t) return;
+      const playing = new Set<string>();
+      tracks.forEach((tr) => {
+        if (playbackStates[tr.id]) playing.add(tr.id);
+      });
+      sampleEditPlaybackSnapshotRef.current = playing;
+      stopAllPlayback();
+      setSelectedCueTrackId(trackId);
+      setSampleEditTrackId(trackId);
+    },
+    [isGuestMode, tracks, playbackStates, stopAllPlayback]
+  );
+
+  useEffect(() => {
+    if (sampleEditTrackId && !tracks.some((t) => t.id === sampleEditTrackId)) {
+      sampleEditPlaybackSnapshotRef.current = null;
+      setSampleEditTrackId(null);
+    }
+  }, [tracks, sampleEditTrackId]);
 
   useEffect(() => {
     const handleRecordingCompleted = () => stopAllPlayback();
@@ -1302,13 +1357,19 @@ const Studio = () => {
         if (event.key === 'z' || event.key === 'Z' || event.key === 'x' || event.key === 'X' || event.key === 'c' || event.key === 'C') return; // Don't trigger zoom when typing
       }
 
-      // Space bar: global play/pause for all armed loop tracks (disabled when text inputs are focused)
+      // Space: Sample Edit = local transport; otherwise global loop play/pause
       if (event.key === ' ') {
-        if (isTypingInput) return; // Ensure we never trigger playback while user is typing
-        if (isTapTempoActive) return; // Let event propagate to TempoControls for tap tempo
+        if (isTypingInput) return;
+        if (isTapTempoActive) return;
         event.preventDefault();
         event.stopPropagation();
-        if (!event.repeat) handleGlobalPlay();
+        if (!event.repeat) {
+          if (sampleEditTrackId) {
+            getTogglePlaybackRef(sampleEditTrackId).current?.();
+          } else {
+            handleGlobalPlay();
+          }
+        }
         return;
       }
 
@@ -1319,20 +1380,23 @@ const Studio = () => {
         return;
       }
 
-      // Zoom shortcuts: z=zoom in, x=zoom out, c=reset (affects first track)
+      // Zoom shortcuts: z=zoom in, x=zoom out, c=reset (edited track in Sample Edit, else first track)
       if (tracks.length > 0) {
-        const activeTrackId = tracks[0].id;
+        const zoomTargetId =
+          sampleEditTrackId && tracks.some((t) => t.id === sampleEditTrackId)
+            ? sampleEditTrackId
+            : tracks[0].id;
         if (event.key === 'z' || event.key === 'Z') {
           event.preventDefault();
-          handleZoomIn(activeTrackId);
+          handleZoomIn(zoomTargetId);
           return;
         } else if (event.key === 'x' || event.key === 'X') {
           event.preventDefault();
-          handleZoomOut(activeTrackId);
+          handleZoomOut(zoomTargetId);
           return;
         } else if (event.key === 'c' || event.key === 'C') {
           event.preventDefault();
-          handleResetZoom(activeTrackId);
+          handleResetZoom(zoomTargetId);
           return;
         }
       }
@@ -1340,7 +1404,7 @@ const Studio = () => {
 
     window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
     return () => window.removeEventListener('keydown', handleKeyPress, true);
-  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay]);
+  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay, sampleEditTrackId, getTogglePlaybackRef]);
 
         // Handle demo track changes
       useEffect(() => {
@@ -1788,7 +1852,7 @@ const Studio = () => {
       if (assetsLength > 1) {
         historyStackRef.current.push(currentTrackIndex);
       }
-      await loadTrackByIndex(nextIndex, true); // true = only update first track
+      await loadTrackByIndex(nextIndex, { replaceSlotIndex: 0 });
     }
   }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex]);
 
@@ -1809,16 +1873,26 @@ const Studio = () => {
         : getRandomNextIndex(assetsLength, currentTrackIndex);
       if (prevIndex === null) return;
 
-      await loadTrackByIndex(prevIndex, true); // true = only update first track
+      await loadTrackByIndex(prevIndex, { replaceSlotIndex: 0 });
     }
   }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex]);
 
-  const loadTrackByIndex = async (index: number, onlyUpdateFirstTrack: boolean = false) => {
+  const loadTrackByIndex = async (
+    index: number,
+    replace?: boolean | { replaceSlotIndex: number }
+  ) => {
     const assets = availableAssets || [];
     const safeIndex = ((index % assets.length) + assets.length) % assets.length;
     const asset = assets[safeIndex];
-    
-    if (asset && onlyUpdateFirstTrack && tracks.length > 0) {
+    const replaceSlotIndex =
+      replace === true
+        ? 0
+        : typeof replace === 'object' && replace != null && typeof replace.replaceSlotIndex === 'number'
+          ? replace.replaceSlotIndex
+          : null;
+    const replaceOneSlot = replaceSlotIndex !== null && tracks.length > 0;
+
+    if (asset && replaceOneSlot && replaceSlotIndex! < tracks.length) {
       setLoadingTrackPlaceholder({
         id: `loading-${Date.now()}`,
         displayName: asset.name,
@@ -1871,12 +1945,13 @@ const Studio = () => {
       // Load the audio file into buffer
       const buffer = await loadAudioBuffer(file, context);
       
-      // Generate track ID - preserve existing first track ID if only updating first track
-      let trackId;
-      if (onlyUpdateFirstTrack && tracks.length > 0) {
-        trackId = tracks[0].id; // Keep the existing first track's ID
+      // Generate track ID — preserve existing slot id when replacing one deck
+      let trackId: string;
+      if (replaceOneSlot && tracks.length > 0) {
+        const slot = Math.max(0, Math.min(replaceSlotIndex!, tracks.length - 1));
+        trackId = tracks[slot].id;
       } else {
-        trackId = asset.id; // Use asset ID for new tracks
+        trackId = asset.id;
       }
       
       // Try to load settings from localStorage
@@ -1910,30 +1985,28 @@ const Studio = () => {
         beats: asset.beats
       };
       
-      if (onlyUpdateFirstTrack && tracks.length > 0) {
-        // Only update the first track, preserve other tracks
-        const replacedTrackId = tracks[0].id;
-        setTracks(prevTracks => {
+      if (replaceOneSlot && tracks.length > 0) {
+        const slot = Math.max(0, Math.min(replaceSlotIndex!, tracks.length - 1));
+        const replacedTrackId = tracks[slot].id;
+        setTracks((prevTracks) => {
           const updatedTracks = [...prevTracks];
-          // Update the first track in place to preserve React's reference
-          updatedTracks[0] = {
-            ...updatedTracks[0], // Keep existing properties
-            ...newTrack, // Override with new track data
-            id: updatedTracks[0].id // Ensure we keep the original ID
+          updatedTracks[slot] = {
+            ...updatedTracks[slot],
+            ...newTrack,
+            id: updatedTracks[slot].id,
           };
           return updatedTracks;
         });
-        addingTrackIdRef.current = replacedTrackId; // Defer clearing placeholder until waveform is ready
+        addingTrackIdRef.current = replacedTrackId;
       } else {
-        // Replace all tracks (original behavior)
         setTracks([newTrack]);
-        addingTrackIdRef.current = newTrack.id; // Defer clearing placeholder until waveform is ready
+        addingTrackIdRef.current = newTrack.id;
       }
       setCurrentTrackIndex(safeIndex);
       setShowMeasures(prev => ({ ...prev, [trackId]: !!settings.showMeasures }));
       setShowCueThumbs(prev => ({ ...prev, [trackId]: settings.showCueThumbs !== undefined ? !!settings.showCueThumbs : true }));
       setZoomLevels(prev => ({ ...prev, [trackId]: settings.zoomLevel || 1 }));
-      if (!onlyUpdateFirstTrack) {
+      if (!replaceOneSlot) {
         setSelectedCueTrackId(trackId);
       } else if (newTrack.mode === 'cue') {
         setSelectedCueTrackId(trackId);
@@ -1964,6 +2037,53 @@ const Studio = () => {
       setIsTrackLoading(false);
       setLoadingTrackPlaceholder(null);
     }
+  };
+
+  const handleSampleEditNextLibrary = async () => {
+    if (isTrackLoading || isGuestLoading || !sampleEditTrackId) return;
+    const slot = tracks.findIndex((tr) => tr.id === sampleEditTrackId);
+    if (slot < 0) return;
+    const assetsLength = (availableAssets || []).length;
+    if (assetsLength <= 0) return;
+    const nextIndex = getRandomNextIndex(assetsLength, currentTrackIndex);
+    if (nextIndex === null) return;
+    if (assetsLength > 1) {
+      historyStackRef.current.push(currentTrackIndex);
+    }
+    await loadTrackByIndex(nextIndex, { replaceSlotIndex: slot });
+  };
+
+  const handleSampleEditPrevLibrary = async () => {
+    if (isTrackLoading || isGuestLoading || !sampleEditTrackId) return;
+    const slot = tracks.findIndex((tr) => tr.id === sampleEditTrackId);
+    if (slot < 0) return;
+    const assetsLength = (availableAssets || []).length;
+    if (assetsLength <= 0) return;
+    const prevFromHistory = historyStackRef.current.pop();
+    const prevIndex =
+      typeof prevFromHistory === 'number'
+        ? prevFromHistory
+        : getRandomNextIndex(assetsLength, currentTrackIndex);
+    if (prevIndex === null) return;
+    await loadTrackByIndex(prevIndex, { replaceSlotIndex: slot });
+  };
+
+  const handleSampleEditPrevSessionTrack = () => {
+    if (!sampleEditTrackId || tracks.length < 2) return;
+    const idx = tracks.findIndex((t) => t.id === sampleEditTrackId);
+    if (idx <= 0) return;
+    const nextId = tracks[idx - 1].id;
+    setSampleEditTrackId(nextId);
+    setSelectedCueTrackId(nextId);
+  };
+
+  const handleSampleEditNextSessionTrack = () => {
+    if (!sampleEditTrackId || tracks.length < 2) return;
+    const idx = tracks.findIndex((t) => t.id === sampleEditTrackId);
+    if (idx < 0 || idx >= tracks.length - 1) return;
+    const nextId = tracks[idx + 1].id;
+    setSampleEditTrackId(nextId);
+    setSelectedCueTrackId(nextId);
   };
 
   // Add new track function
@@ -2349,6 +2469,14 @@ const Studio = () => {
 
   // Handle cue point drag state updates for real-time timestamp display
   const handleCueDragStateChange = (trackId: string, index: number, time: number | null) => {
+    logRegionDragTransport('Studio handleCueDragStateChange', {
+      trackId,
+      index,
+      time,
+      sampleEditTrackId,
+      inSampleEdit: sampleEditTrackId === trackId,
+      phase: time === null ? 'drag-end' : 'drag-active',
+    });
     setCueDragStates(prev => {
       const newState = { ...prev };
       const trackState = newState[trackId] ? { ...newState[trackId] } : {};
@@ -2371,6 +2499,14 @@ const Studio = () => {
   };
 
   const handleLoopDragStateChange = (trackId: string, start: number | null, end: number | null) => {
+    logRegionDragTransport('Studio handleLoopDragStateChange', {
+      trackId,
+      start,
+      end,
+      sampleEditTrackId,
+      inSampleEdit: sampleEditTrackId === trackId,
+      phase: start === null || end === null ? 'drag-end' : 'drag-active',
+    });
     setLoopDragStates(prev => {
       if (start === null || end === null) {
         const { [trackId]: _, ...rest } = prev;
@@ -2491,7 +2627,7 @@ const Studio = () => {
     setSelectedCueTrackId(prevId => prevId === trackId ? null : trackId);
   };
 
-  /** Toggle Space-bar engagement for this loop (not recording arm — see Lane transport). */
+  // Add this function to handle loop arm toggle (multiple loops can be armed)
   const handleLoopArmToggle = (trackId: string) => {
     setArmedLoopTrackIds(prev => {
       const next = new Set(prev);
@@ -2555,17 +2691,11 @@ const Studio = () => {
 
   // Handle tempo changes
   const handleTempoChange = (trackId: string, tempo: number) => {
-    const prevTrack = tracks.find((t) => t.id === trackId);
-    const prevBpm = prevTrack ? Math.round(prevTrack.tempo * (playbackSpeeds[trackId] || 1)) : undefined;
-    const nextBpm = Math.round(tempo * (playbackSpeeds[trackId] || 1));
     setTracks(prev => 
       prev.map(track => 
         track.id === trackId ? { ...track, tempo } : track
       )
     );
-    if (isRecordingPerformance && recordEventsEnabled) {
-      recordSessionGridTempoEvent(trackId, nextBpm, prevBpm);
-    }
   };
 
   // Handle playback speed changes
@@ -2583,6 +2713,19 @@ const Studio = () => {
       [trackId]: isPlaying
     }));
   };
+
+  // Mix recording UI: switch from "waiting for playback" to "recording" once any lane plays.
+  useEffect(() => {
+    if (!isRecordingPerformance || !recordMixEnabled) return;
+    const anyPlaying = tracks.some((t) => playbackStates[t.id]);
+    if (anyPlaying) signalMixRecordingPlayback();
+  }, [
+    isRecordingPerformance,
+    recordMixEnabled,
+    tracks,
+    playbackStates,
+    signalMixRecordingPlayback,
+  ]);
 
   // Handle manual playhead position changes from waveform
   const handlePlayheadChange = (trackId: string, time: number) => {
@@ -2823,9 +2966,6 @@ const Studio = () => {
         track.id === trackId ? { ...track, timeSignature } : track
       )
     );
-    if (isRecordingPerformance && recordEventsEnabled) {
-      recordSessionGridTimeSignatureEvent(trackId, timeSignature.numerator, timeSignature.denominator);
-    }
   };
 
   // Handle first measure time changes
@@ -4177,7 +4317,8 @@ const Studio = () => {
                     type="button"
                     onClick={() => void handleRestorePreviousSession()}
                     disabled={isInitializingAudio}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px] min-w-[40px] sm:min-w-0"
+                    aria-label="Restore previous session"
                   >
                     {isInitializingAudio ? (
                       <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
@@ -4186,7 +4327,7 @@ const Studio = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                     )}
-                    Restore previous
+                    <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>Restore prior</span>
                   </button>
                 </Tooltip>
               </div>
@@ -4369,12 +4510,12 @@ const Studio = () => {
           </div>
         )}
 
-        {/* Row 1: Save + Record (left) · New session + Restore (right). Row 2: keyboard hints (left) · Session playback (right). */}
+        {/* Save + Record row; New session + Restore previous right-aligned. Keyboard hints on next row. */}
         <div className="mb-4 w-full space-y-2 min-w-0 max-w-full">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 w-full min-w-0">
             <RecordingControls
               className="min-w-0 flex-1 basis-0"
-              compact={isSidePanelOpen}
+              isSidePanelOpen={isSidePanelOpen}
               onSave={handleSaveCurrentState}
               audioContext={audioContext || undefined}
             />
@@ -4405,7 +4546,7 @@ const Studio = () => {
                   </button>
                 </Tooltip>
                 {user && !isGuestMode && hasSavedSessionForRestore && (
-                  <Tooltip content="Restore prior session" position="top" delay={150}>
+                  <Tooltip content="Restore previous session" position="top" delay={150}>
                     <button
                       type="button"
                       onClick={() => void handleRestorePreviousSession()}
@@ -4420,35 +4561,41 @@ const Studio = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       )}
-                      <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>Restore previous</span>
+                      <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>Restore prior</span>
                     </button>
                   </Tooltip>
                 )}
               </div>
             )}
           </div>
-          <div className="flex flex-nowrap items-center justify-between gap-x-3 w-full min-w-0">
-            <div
-              className={`flex min-w-0 flex-1 flex-row flex-nowrap items-center gap-x-0 sm:gap-x-4 overflow-hidden text-audafact-text-secondary ${
-                isSidePanelOpen ? 'text-[10px] sm:text-[11px] lg:text-xs' : 'text-[11px] sm:text-xs'
-              }`}
-            >
-              <span className="min-w-0 flex-1 truncate" title="Space: Play/Pause engaged loops">
-                Space: Play/Pause engaged loops
-              </span>
-              <span
-                className="min-w-0 flex-1 truncate sm:border-l sm:border-audafact-divider sm:pl-4"
-                title="1-0: Trigger selected cues"
-              >
-                1-0: Trigger selected cues
-              </span>
-            </div>
-            <SessionPlaybackToolbar
-              studioTrackIds={tracks.map((t) => t.id)}
-              audioContext={audioContext || undefined}
-              compact={isSidePanelOpen}
-              className="shrink-0 max-w-full"
-            />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-audafact-text-secondary text-xs">
+              {(() => {
+                if (armedLoopTrackIds.size === 0) return 'Space: Arm loop tracks to enable';
+                const nums = [...armedLoopTrackIds]
+                  .map(id => tracks.findIndex(t => t.id === id) + 1)
+                  .filter(n => n > 0)
+                  .sort((a, b) => a - b);
+                if (nums.length === 0) return 'Space: Arm loop tracks to enable';
+                const label = nums.length === 1
+                  ? `Track ${nums[0]}`
+                  : nums.length === 2
+                    ? `Track ${nums[0]} & ${nums[1]}`
+                    : `Track ${nums.slice(0, -1).join(', ')} & ${nums[nums.length - 1]}`;
+                return `Space: Play/Pause ${label} loop${nums.length === 1 ? '' : 's'}`;
+              })()}
+            </span>
+            <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
+              {selectedCueTrackId
+                ? (() => {
+                    const idx = tracks.findIndex(t => t.id === selectedCueTrackId);
+                    if (idx < 0) return '1-0: Trigger Chop track cue points';
+                    return `1-0: Trigger Track ${idx + 1} cue points`;
+                  })()
+                : tracks.some(t => t.mode === 'cue')
+                  ? '1-0: Select Chop track to trigger cues'
+                  : '1-0: Switch to Chop mode to trigger cues'}
+            </span>
           </div>
         </div>
 
@@ -4540,6 +4687,50 @@ const Studio = () => {
               if ((e.target as HTMLElement).closest?.('button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg')) return;
               setSuggestionReferenceTrackId(track.id);
             } : undefined}
+            onDoubleClick={(e) => {
+              if (isGuestMode) return;
+              if (
+                (e.target as HTMLElement).closest?.(
+                  'button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg, textarea'
+                )
+              ) {
+                return;
+              }
+              e.preventDefault();
+              openSampleEditMode(track.id);
+            }}
+            onTouchEnd={(e) => {
+              if (isGuestMode) return;
+              if (
+                (e.target as HTMLElement).closest?.(
+                  'button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg, textarea'
+                )
+              ) {
+                return;
+              }
+              const touch = e.changedTouches[0];
+              if (!touch) return;
+              const now = Date.now();
+              const last = lastTapForSampleEditRef.current;
+              if (
+                last &&
+                last.trackId === track.id &&
+                now - last.t < 380 &&
+                Math.abs(touch.clientX - last.x) < 40 &&
+                Math.abs(touch.clientY - last.y) < 40
+              ) {
+                lastTapForSampleEditRef.current = null;
+                e.preventDefault();
+                openSampleEditMode(track.id);
+                return;
+              }
+              lastTapForSampleEditRef.current = {
+                t: now,
+                x: touch.clientX,
+                y: touch.clientY,
+                trackId: track.id,
+              };
+            }}
             className={`audafact-card overflow-hidden transition-all duration-300 relative ${
               isSuggestionRef
                 ? 'border-audafact-accent-cyan shadow-card' // Suggestion reference track
@@ -4554,7 +4745,7 @@ const Studio = () => {
             {/* Add Track and Navigation Controls - Only show on first track */}
             {index === 0 && (
               <div 
-                className="relative flex justify-center items-center py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
+                className="relative grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-1 sm:gap-x-2 py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
                 style={{ touchAction: 'pan-y pinch-zoom' }}
                 onWheel={handleWheel}
                 onTouchStart={handleTouchStart}
@@ -4562,13 +4753,13 @@ const Studio = () => {
                 onTouchEnd={handleTouchEnd}
                 data-testid="track-loader-bar"
               >
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-audafact-text-secondary">
+                <span className="min-w-0 justify-self-start text-xs font-medium text-audafact-text-secondary">
                   <span className="sm:hidden">Switch/add</span>
                   <span className="hidden sm:inline">Switch & add tracks</span>
                 </span>
                 <div
-                  className="flex items-center w-full max-w-2xl mx-auto"
-                  style={{ justifyContent: 'space-evenly', transform: 'translateX(16px)' }}
+                  className="flex shrink-0 items-center justify-center"
+                  style={{ justifyContent: 'space-evenly', transform: 'translateX(16px)', minWidth: '11rem' }}
                 >
                   <Tooltip content="Go to previous track" position="top" delay={150}>
                     <button
@@ -4648,57 +4839,61 @@ const Studio = () => {
                     </button>
                   </Tooltip>
                 </div>
+                <div className="min-w-0 justify-self-end text-right">
+                  {!sampleEditTrackId &&
+                    (isGuestMode ? (
+                      <span
+                        className="block truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
+                        data-testid="sample-edit-hint"
+                      >
+                        <span className="sm:hidden">Sample edit · Sign up</span>
+                        <span className="hidden sm:inline">Sample edit · Create account</span>
+                      </span>
+                    ) : (
+                      <Tooltip
+                        content="Double-click or double-tap outside the waveform on a deck to open precision editor."
+                        position="top"
+                        delay={200}
+                        maxWidth={280}
+                      >
+                        <span
+                          className="block max-w-full cursor-default truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
+                          data-testid="sample-edit-hint"
+                        >
+                          <span className="sm:hidden">2× tap deck · Sample edit</span>
+                          <span className="hidden sm:inline">Double-click for precision edit</span>
+                        </span>
+                      </Tooltip>
+                    ))}
+                </div>
             </div>
             )}
 
+            {sampleEditTrackId === track.id ? (
+              <div className="border-b border-audafact-divider bg-audafact-surface-1 p-6 text-center">
+                <p className="text-sm audafact-text-secondary">
+                  This deck is open in Sample Edit. Use Back, Escape, or tap outside the editor to return.
+                </p>
+                <button
+                  type="button"
+                  className="mt-3 rounded-lg border border-audafact-divider px-4 py-2 text-sm font-medium text-audafact-text-primary hover:bg-audafact-surface-2"
+                  onClick={() => closeSampleEditMode()}
+                >
+                  Return to Studio
+                </button>
+              </div>
+            ) : (
+            <>
             {/* Track Header */}
             <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
               {/* Mobile layout */}
               <div className="flex flex-col gap-2 md:hidden">
-                {/* Row 1: Mode buttons */}
-                <div className="flex items-center gap-2">
-                  <div className="grid grid-cols-3 gap-1 bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider w-full max-w-full">
-                    <button
-                      onClick={() => handleModeChange(track.id, 'preview')}
-                      className={`w-full text-center px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'preview'
-                          ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                      }`}
-                      data-testid="preview-mode-button"
-                    >
-                      Preview
-                    </button>
-                    <button
-                      onClick={() => handleModeChange(track.id, 'loop')}
-                      className={`w-full text-center px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'loop'
-                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                      }`}
-                      data-testid="loop-mode-button"
-                    >
-                      Loop
-                    </button>
-                    <button
-                      onClick={() => handleModeChange(track.id, 'cue')}
-                      className={`w-full text-center px-2 py-1 text-xs font-medium rounded transition-colors ${
-                        track.mode === 'cue'
-                          ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                      }`}
-                      data-testid="chop-mode-button"
-                    >
-                      Chop
-                    </button>
-                  </div>
-                </div>
-                {/* Row 2: Song name (truncated) + mode + key & BPM */}
-                <div className="min-w-0">
-                  <h3 className="font-medium audafact-heading truncate">
+                {/* Row 1: Track title + meta (left-aligned; tight line height) */}
+                <div className="w-full min-w-0 space-y-0.5">
+                  <h3 className="truncate text-base font-medium leading-snug audafact-heading">
                     {track.file.name}
                   </h3>
-                  <p className="text-xs audafact-text-secondary truncate flex items-center gap-2 flex-wrap">
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0 truncate text-[11px] leading-tight text-audafact-text-secondary sm:text-xs">
                     {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
                       <span className="flex items-center gap-1">
                         <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
@@ -4720,22 +4915,58 @@ const Studio = () => {
                     )}
                   </p>
                 </div>
-                {/* Row 3: Measures, Cues, Select */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => handleToggleMeasures(track.id)}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                      showMeasures[track.id]
-                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
-                        : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                    }`}
-                    title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
-                    data-testid="measures-button"
-                  >
+                {/* Row 2: One toolbar strip — mode left, tools right; tools full-width row when wrapped */}
+                <div className="flex w-full min-w-0 flex-wrap items-center gap-2 rounded-lg border border-audafact-divider/70 bg-audafact-surface-2/40 px-2 py-1.5 sm:flex-nowrap sm:justify-between">
+                  <div className="grid w-max max-w-full shrink-0 grid-cols-3 gap-1 rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5">
+                    <button
+                      onClick={() => handleModeChange(track.id, 'preview')}
+                      className={`whitespace-nowrap px-2 py-1 text-center text-xs font-medium rounded transition-colors ${
+                        track.mode === 'preview'
+                          ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="preview-mode-button"
+                    >
+                      Preview
+                    </button>
+                    <button
+                      onClick={() => handleModeChange(track.id, 'loop')}
+                      className={`whitespace-nowrap px-2 py-1 text-center text-xs font-medium rounded transition-colors ${
+                        track.mode === 'loop'
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="loop-mode-button"
+                    >
+                      Loop
+                    </button>
+                    <button
+                      onClick={() => handleModeChange(track.id, 'cue')}
+                      className={`whitespace-nowrap px-2 py-1 text-center text-xs font-medium rounded transition-colors ${
+                        track.mode === 'cue'
+                          ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="chop-mode-button"
+                    >
+                      Chop
+                    </button>
+                  </div>
+                  <div className="flex min-w-0 flex-1 basis-full flex-wrap items-center justify-end gap-2 sm:basis-auto">
+                    <button
+                      onClick={() => handleToggleMeasures(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        showMeasures[track.id]
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
+                      data-testid="measures-button"
+                    >
                     <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
-                    <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>Measures</span>
+                    <span className={studioTrackMetaLabelClass}>Measures</span>
                   </button>
                   {track.mode === 'cue' && (
                     <button
@@ -4750,7 +4981,7 @@ const Studio = () => {
                       <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
-                      <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>Cues</span>
+                      <span className={studioTrackMetaLabelClass}>Cues</span>
                     </button>
                   )}
                   {track.mode === 'cue' && (
@@ -4767,7 +4998,7 @@ const Studio = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
-                      <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>Select</span>
+                      <span className={studioTrackMetaLabelClass}>Select</span>
                     </button>
                   )}
                   {track.mode === 'loop' && (
@@ -4778,32 +5009,19 @@ const Studio = () => {
                           ? 'bg-audafact-accent-cyan text-audafact-text-primary'
                           : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
                       }`}
-                      title={
-                        armedLoopTrackIds.has(track.id)
-                          ? 'Engaged for Space — click to remove from Space play/pause'
-                          : 'Engage — include this loop in Space play/pause'
-                      }
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
                     >
                       <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
-                      <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>
-                        {armedLoopTrackIds.has(track.id) ? 'Engaged' : 'Engage'}
-                      </span>
+                      <span className={studioChromeSecondaryLabelClass}>Arm</span>
                     </button>
                   )}
-                </div>
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-audafact-divider/40">
-                  <span className="text-[10px] uppercase tracking-wide audafact-text-secondary shrink-0">Lane</span>
-                  <LaneTransportControls trackId={track.id} disabled={isTrackLoading} />
-                </div>
-                {/* Row 4: Time & Tempo toggle */}
-                <div>
                   <button
-                    onClick={() => handleToggleControls(track.id)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200 w-full justify-between"
                     type="button"
+                    onClick={() => handleToggleControls(track.id)}
+                    className="inline-flex max-w-full shrink-0 items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
                     aria-expanded={!!expandedControls[track.id]}
                     aria-label="Time and tempo controls"
                     title={
@@ -4813,9 +5031,9 @@ const Studio = () => {
                     }
                     data-testid="time-tempo-controls-button"
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex min-w-0 max-w-[min(100%,12rem)] items-center gap-1">
                       <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -4823,7 +5041,7 @@ const Studio = () => {
                             d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                           />
                         </svg>
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -4833,7 +5051,7 @@ const Studio = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
                         </svg>
                       </span>
-                      <span className={`hidden truncate ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>
+                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
                         Time and Tempo
                       </span>
                     </span>
@@ -4847,14 +5065,15 @@ const Studio = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Desktop layout */}
-              <div className="hidden md:flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Desktop layout — tools (Measures…Time & Tempo) stay end-aligned vs mode + title */}
+              <div className="hidden md:flex min-w-0 items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                   {/* Custom Mode Selector */}
-                  <div className="flex items-center bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider">
+                  <div className="flex shrink-0 items-center bg-audafact-surface-2 rounded-md p-0.5 border border-audafact-divider">
                     <button
                       onClick={() => handleModeChange(track.id, 'preview')}
                       className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
@@ -4889,11 +5108,11 @@ const Studio = () => {
                       Chop
                     </button>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="font-medium audafact-heading truncate max-w-[420px]">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="max-w-full truncate font-medium audafact-heading">
                       {track.file.name}
                     </h3>
-                    <p className="text-sm audafact-text-secondary flex items-center gap-2 flex-wrap">
+                    <p className="text-sm audafact-text-secondary flex flex-wrap items-center gap-2">
                       {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
                         <span className="flex items-center gap-1">
                           <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
@@ -4913,143 +5132,128 @@ const Studio = () => {
                         )}
                       </>
                     )}
-                      <div className="flex items-end gap-2">
-                        {/* Show Measures Button */}
-                        <button
-                          onClick={() => handleToggleMeasures(track.id)}
-                          className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                            showMeasures[track.id]
-                              ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
-                              : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                          }`}
-                          title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
-                          data-testid="measures-button"
-                        >
-                          <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                          <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>Measures</span>
-                        </button>
-
-                        {/* Show Cue Points Button - Only visible on cue tracks */}
-                        {track.mode === 'cue' && (
-                          <button
-                            onClick={() => handleToggleCueThumbs(track.id)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                              (showCueThumbs[track.id] ?? true)
-                                ? 'bg-audafact-alert-red text-audafact-text-primary'
-                                : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                            }`}
-                            title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
-                          >
-                            <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                            </svg>
-                            <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>Cues</span>
-                          </button>
-                        )}
-
-                        {/* Cue Track Selection Indicator */}
-                        {track.mode === 'cue' && (
-                          <button
-                            onClick={() => handleTrackSelect(track.id)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                              track.id === selectedCueTrackId
-                                ? 'bg-audafact-alert-red text-audafact-text-primary'
-                                : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                            }`}
-                            title={track.id === selectedCueTrackId ? 'Selected for Cue Control' : 'Select for Cue Control'}
-                          >
-                            <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>Select</span>
-                          </button>
-                        )}
-
-                        {/* Loop: Space play/pause engagement (not recording arm) */}
-                        {track.mode === 'loop' && (
-                          <button
-                            onClick={() => handleLoopArmToggle(track.id)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
-                              armedLoopTrackIds.has(track.id)
-                                ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
-                                : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
-                            }`}
-                            title={
-                              armedLoopTrackIds.has(track.id)
-                                ? 'Engaged for Space — click to remove from Space play/pause'
-                                : 'Engage — include this loop in Space play/pause'
-                            }
-                          >
-                            <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span className={`hidden ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>
-                              {armedLoopTrackIds.has(track.id) ? 'Engaged' : 'Engage'}
-                            </span>
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handleToggleControls(track.id)}
-                          type="button"
-                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
-                          aria-expanded={!!expandedControls[track.id]}
-                          aria-label="Time and tempo controls"
-                          title={
-                            expandedControls[track.id]
-                              ? 'Collapse time and tempo controls'
-                              : 'Expand time and tempo controls'
-                          }
-                          data-testid="time-tempo-controls-button"
-                        >
-                          <span className="flex min-w-0 items-center gap-1">
-                            <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
-                              <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
-                              <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 3L6 19h12L12 3z"
-                                />
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 9v6"
-                                />
-                              </svg>
-                            </span>
-                            <span className={`hidden truncate ${isSidePanelOpen ? 'xl:inline' : 'lg:inline'}`}>
-                              Time and Tempo
-                            </span>
-                          </span>
-                          <svg
-                            className={`h-3 w-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                      </div>
                     </p>
                   </div>
                 </div>
-                <LaneTransportControls trackId={track.id} disabled={isTrackLoading} />
+                <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
+                  {/* Show Measures Button */}
+                  <button
+                    onClick={() => handleToggleMeasures(track.id)}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                      showMeasures[track.id]
+                        ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+                        : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                    }`}
+                    title={showMeasures[track.id] ? 'Hide Measures' : 'Show Measures'}
+                    data-testid="measures-button"
+                  >
+                    <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <span className={studioTrackMetaLabelClass}>Measures</span>
+                  </button>
+
+                  {track.mode === 'cue' && (
+                    <button
+                      onClick={() => handleToggleCueThumbs(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        (showCueThumbs[track.id] ?? true)
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={(showCueThumbs[track.id] ?? true) ? 'Hide Cue Points' : 'Show Cue Points'}
+                    >
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                      <span className={studioTrackMetaLabelClass}>Cues</span>
+                    </button>
+                  )}
+
+                  {track.mode === 'cue' && (
+                    <button
+                      onClick={() => handleTrackSelect(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        track.id === selectedCueTrackId
+                          ? 'bg-audafact-alert-red text-audafact-text-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={track.id === selectedCueTrackId ? 'Selected for Cue Control' : 'Select for Cue Control'}
+                    >
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span className={studioTrackMetaLabelClass}>Select</span>
+                    </button>
+                  )}
+
+                  {track.mode === 'loop' && (
+                    <button
+                      onClick={() => handleLoopArmToggle(track.id)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs font-medium border border-audafact-divider rounded transition-colors duration-200 ${
+                        armedLoopTrackIds.has(track.id)
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary'
+                          : 'bg-audafact-surface-1 text-audafact-text-secondary hover:bg-audafact-surface-2 hover:text-audafact-text-primary'
+                      }`}
+                      title={armedLoopTrackIds.has(track.id) ? 'Armed for Space — Disarm to remove from Space control' : 'Arm — add to Space control'}
+                    >
+                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span className={studioChromeSecondaryLabelClass}>Arm</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleControls(track.id)}
+                    className="inline-flex max-w-full shrink-0 items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
+                    aria-expanded={!!expandedControls[track.id]}
+                    aria-label="Time and tempo controls"
+                    title={
+                      expandedControls[track.id]
+                        ? 'Collapse time and tempo controls'
+                        : 'Expand time and tempo controls'
+                    }
+                    data-testid="time-tempo-controls-button"
+                  >
+                    <span className="flex min-w-0 items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 3L6 19h12L12 3z"
+                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
+                        </svg>
+                      </span>
+                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
+                        Time and Tempo
+                      </span>
+                    </span>
+                    <svg
+                      className={`h-3 w-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -5076,8 +5280,8 @@ const Studio = () => {
               </div>
             )}
 
-            {/* Waveform Display */}
-            <div className="audafact-waveform-bg relative" style={{ height: '120px' }}>
+            {/* Waveform Display — height comes from WaveformDisplay (shell + optional cue-thumb strip) */}
+            <div className="audafact-waveform-bg relative">
               {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-audafact-waveform-bg" aria-hidden>
                   <div className="flex items-end gap-1 h-12" aria-hidden>
@@ -5164,46 +5368,13 @@ const Studio = () => {
                 trackId={track.id}
                 seekFunctionRef={getSeekFunctionRef(track.id)}
                 togglePlaybackFunctionRef={getTogglePlaybackRef(track.id)}
+                pauseTransportOnRegionDrag={false}
                 recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
                 cueDragState={cueDragStates[track.id] || null}
                 chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                onChopTriggerStyleChange={(style) => handleChopTriggerStyleChange(track.id, style)}
               />
 
-              {track.mode === 'cue' && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="text-xs audafact-text-secondary">Trigger style:</span>
-                  <div className="flex rounded-md border border-audafact-divider p-0.5 bg-audafact-surface-2">
-                    {(['cue', 'hold', 'one-shot'] as const).map((style) => {
-                      const locked = style !== 'cue' && tier.id === 'guest';
-                      return (
-                      <button
-                        key={style}
-                        type="button"
-                        onClick={() => handleChopTriggerStyleChange(track.id, style)}
-                        title={
-                          locked
-                            ? 'Sign up to unlock Hold and One-Shot modes'
-                            : style === 'cue'
-                              ? 'Jump to cue and continue'
-                              : style === 'hold'
-                                ? 'Play while held'
-                                : 'Play slice once'
-                        }
-                        className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                          (track.chopTriggerStyle ?? 'cue') === style
-                            ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                            : locked
-                              ? 'text-audafact-text-secondary opacity-50 hover:opacity-80'
-                              : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                        }`}
-                      >
-                        {style === 'one-shot' ? 'One-Shot' : style.charAt(0).toUpperCase() + style.slice(1)}
-                        {locked ? ' 🔒' : ''}
-                      </button>
-                    )})}
-                  </div>
-                </div>
-              )}
               {track.mode === 'cue' && track.id === selectedCueTrackId && (
                 <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
                   Press keyboard keys 1-0 to trigger cue points
@@ -5211,15 +5382,282 @@ const Studio = () => {
               )}
               {track.mode === 'loop' && armedLoopTrackIds.has(track.id) && (
                 <div className="mt-3 bg-audafact-accent-cyan bg-opacity-10 p-2 rounded text-audafact-accent-cyan text-xs">
-                  Engaged — Space bar play/pause
+                  Armed — Space controls playback
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
           );
         })}
         </div>
       </div>
+
+      {sampleEditTrackId &&
+        (() => {
+          const editIndex = tracks.findIndex((t) => t.id === sampleEditTrackId);
+          if (editIndex < 0) return null;
+          const track = tracks[editIndex];
+          return (
+            <SampleEditMode
+              sessionTrackId={track.id}
+              trackLabel={track.file.name}
+              onClose={closeSampleEditMode}
+              onPrevLibrary={() => void handleSampleEditPrevLibrary()}
+              onNextLibrary={() => void handleSampleEditNextLibrary()}
+              onPrevSessionTrack={handleSampleEditPrevSessionTrack}
+              onNextSessionTrack={handleSampleEditNextSessionTrack}
+              hasPrevSessionTrack={editIndex > 0}
+              hasNextSessionTrack={editIndex < tracks.length - 1}
+              isTrackLoading={isTrackLoading}
+            >
+              <div className="border-b border-audafact-divider bg-audafact-surface-2 px-3 py-2 sm:px-4">
+                <div className="flex min-w-0 flex-nowrap items-center justify-between gap-2 sm:gap-3">
+                  <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-audafact-text-secondary sm:text-xs sm:normal-case sm:tracking-normal">
+                      Mode
+                    </span>
+                    {/* Match desktop deck track card: compact flex segment, intrinsic width */}
+                    <div className="flex items-center rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5">
+                      <button
+                        type="button"
+                        disabled={editIndex !== 0}
+                        title={
+                          editIndex !== 0
+                            ? 'Only the top deck can use Preview mode'
+                            : 'Preview — full track'
+                        }
+                        onClick={() => editIndex === 0 && handleModeChange(track.id, 'preview')}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                          track.mode === 'preview'
+                            ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
+                            : editIndex !== 0
+                              ? 'cursor-not-allowed text-audafact-text-secondary opacity-50'
+                              : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                        }`}
+                        data-testid="sample-edit-preview-mode-button"
+                      >
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange(track.id, 'loop')}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                          track.mode === 'loop'
+                            ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
+                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                        }`}
+                        data-testid="sample-edit-loop-mode-button"
+                      >
+                        Loop
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange(track.id, 'cue')}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                          track.mode === 'cue'
+                            ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                        }`}
+                        data-testid="sample-edit-chop-mode-button"
+                      >
+                        Chop
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleControls(track.id)}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-audafact-divider bg-audafact-surface-1 px-2 py-1.5 text-left text-[11px] font-medium text-audafact-text-secondary hover:bg-audafact-surface-2 sm:px-3 sm:text-xs"
+                    aria-expanded={!!expandedControls[track.id]}
+                    aria-label="Time and tempo controls"
+                    title={
+                      expandedControls[track.id]
+                        ? 'Collapse time and tempo controls'
+                        : 'Expand time and tempo controls'
+                    }
+                    data-testid="sample-edit-time-tempo-controls-button"
+                  >
+                    <span className="flex min-w-0 items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 3L6 19h12L12 3z"
+                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
+                        </svg>
+                      </span>
+                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
+                        Time & Tempo
+                      </span>
+                    </span>
+                    <svg
+                      className={`h-3 w-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+                {expandedControls[track.id] && (
+                  <div className="mt-3 space-y-4 border-t border-audafact-divider pt-3">
+                    <div className="space-y-2">
+                      <TempoControls
+                        trackId={track.id}
+                        initialTempo={track.tempo}
+                        onTempoChange={handleTempoChange}
+                        playbackSpeed={playbackSpeeds[track.id] || 1}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <TimeSignatureControls
+                        timeSignature={track.timeSignature}
+                        onTimeSignatureChange={(timeSignature) =>
+                          handleTimeSignatureChange(track.id, timeSignature)
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="audafact-waveform-bg relative">
+                {loadingTrackPlaceholder && editIndex === 0 && !waveformReadyTrackIds.has(track.id) && (
+                  <div
+                    className="absolute inset-0 z-50 flex items-center justify-center bg-audafact-waveform-bg"
+                    aria-hidden
+                  >
+                    <div className="flex h-12 items-end gap-1" aria-hidden>
+                      {[...Array(24)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-1 rounded-sm bg-audafact-accent-cyan/30 animate-pulse"
+                          style={{
+                            height: `${20 + Math.sin(i * 0.5) * 30}%`,
+                            animationDelay: `${i * 50}ms`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <WaveformDisplay
+                  audioFile={track.file}
+                  peaks={track.peaks}
+                  duration={track.peaks ? track.buffer.duration : undefined}
+                  scrubAudioBuffer={track.buffer}
+                  ensureAudioForScrub={ensureAudioBeforeAction}
+                  mode={track.mode}
+                  loopStart={track.loopStart}
+                  loopEnd={track.loopEnd}
+                  cuePoints={track.cuePoints}
+                  onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+                  onLoopDragStateChange={(start, end) => handleLoopDragStateChange(track.id, start, end)}
+                  onCuePointChange={(ci, time) => handleCuePointChange(track.id, ci, time)}
+                  playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
+                  playbackTime={playbackTimes[track.id] || 0}
+                  zoomLevel={zoomLevels[track.id] || 1}
+                  onZoomIn={() => handleZoomIn(track.id)}
+                  onZoomOut={() => handleZoomOut(track.id)}
+                  onResetZoom={() => handleResetZoom(track.id)}
+                  onZoomChange={(level) => handleZoomChange(track.id, level)}
+                  trackId={track.id}
+                  showMeasures={showMeasures[track.id]}
+                  tempo={track.tempo}
+                  timeSignature={track.timeSignature}
+                  firstMeasureTime={track.firstMeasureTime}
+                  onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
+                  showCueThumbs={(showCueThumbs[track.id] ?? true)}
+                  isPlaying={playbackStates[track.id] || false}
+                  onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
+                  onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
+                  isGuestMode={isGuestMode}
+                  chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                  onCueDragStateChange={(ci, time) => handleCueDragStateChange(track.id, ci, time)}
+                  onReady={() => handleWaveformReady(track.id)}
+                  suppressLoadingOverlay={
+                    !!(loadingTrackPlaceholder && editIndex === 0 && !waveformReadyTrackIds.has(track.id))
+                  }
+                  beats={track.beats}
+                  cueDragTime={
+                    cueDragStates[track.id] ? (Object.values(cueDragStates[track.id])[0] ?? null) : null
+                  }
+                  suspendTransportOnRegionDragStart={() =>
+                    getSuspendTransportForRegionDragSyncRef(track.id).current?.()
+                  }
+                />
+              </div>
+              <div className="relative z-10 bg-audafact-surface-1 p-4">
+                <TrackControls
+                  key={`sample-edit-controls-${track.id}`}
+                  mode={track.mode}
+                  audioContext={audioContext}
+                  audioBuffer={track.buffer}
+                  loopStart={track.loopStart}
+                  loopEnd={track.loopEnd}
+                  loopDragState={loopDragStates[track.id] || null}
+                  cuePoints={track.cuePoints}
+                  ensureAudio={ensureAudioBeforeAction}
+                  primeIosSessionForWebAudio={primeIosSessionForWebAudio}
+                  isSelected={track.id === selectedCueTrackId}
+                  onSelect={() => handleTrackSelect(track.id)}
+                  onPlaybackTimeChange={(time) => handlePlaybackTimeChange(track.id, time)}
+                  onSpeedChange={(speed) => handleSpeedChange(track.id, speed)}
+                  trackTempo={track.tempo}
+                  volume={volume[track.id] || 1}
+                  onVolumeChange={(newVolume) => handleVolumeChange(track.id, newVolume)}
+                  playbackSpeed={playbackSpeeds[track.id] || 1}
+                  onPlaybackStateChange={(isPlaying: boolean) =>
+                    handlePlaybackStateChange(track.id, isPlaying)
+                  }
+                  playbackTime={playbackTimes[track.id] || 0}
+                  disabled={false}
+                  lowpassFreq={lowpassFreqs[track.id] || 20000}
+                  onLowpassFreqChange={(freq) => handleLowpassFreqChange(track.id, freq)}
+                  highpassFreq={highpassFreqs[track.id] || 20}
+                  onHighpassFreqChange={(freq) => handleHighpassFreqChange(track.id, freq)}
+                  filterEnabled={filterEnabled[track.id] || false}
+                  onFilterEnabledChange={(enabled) => handleFilterEnabledChange(track.id, enabled)}
+                  showDeleteButton={tracks.length > 1 && track.mode !== 'preview'}
+                  onDelete={() => removeTrack(track.id)}
+                  trackId={track.id}
+                  seekFunctionRef={getSeekFunctionRef(track.id)}
+                  togglePlaybackFunctionRef={getTogglePlaybackRef(track.id)}
+                  suspendTransportForRegionDragSyncRef={getSuspendTransportForRegionDragSyncRef(track.id)}
+                  pauseTransportOnRegionDrag
+                  recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
+                  cueDragState={cueDragStates[track.id] || null}
+                  chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                  onChopTriggerStyleChange={(style) => handleChopTriggerStyleChange(track.id, style)}
+                />
+                {track.mode === 'cue' && track.id === selectedCueTrackId && (
+                  <div className="mt-3 rounded bg-audafact-accent-blue bg-opacity-10 p-2 text-xs text-audafact-accent-blue">
+                    Press 1–0 to trigger cues (Sample Edit — local transport)
+                  </div>
+                )}
+                {track.mode === 'loop' && (
+                  <div className="mt-3 rounded bg-audafact-accent-cyan bg-opacity-10 p-2 text-xs text-audafact-accent-cyan">
+                    Space: play/pause this loop (Sample Edit)
+                  </div>
+                )}
+              </div>
+            </SampleEditMode>
+          );
+        })()}
 
       {/* Signup Modal */}
       {showEarlyCreatorModal && (

@@ -4,7 +4,9 @@ import { isIOSWebAudioTarget } from '../context/AudioContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { useUser } from '../hooks/useUser';
+import { PerformanceEvent } from '../types/performanceEvents';
 import { logRegionDragTransport } from '../utils/regionDragTransportDiag';
+import { exposeAdvancedPerformanceUi } from '../config/featureFlags';
 
 // Utility function to format cue point timestamps
 const formatCueTimestamp = (seconds: number): string => {
@@ -212,7 +214,7 @@ const TrackControls = ({
     return performances.find((p) => p.events.some((e) => e.trackId === trackId)) ?? null;
   }, [performances, trackId]);
 
-  const isArmedForRecord = !trackId || !unarmedRecordingTrackIds.includes(trackId);
+  const isArmedForRecord = !trackId || !(unarmedRecordingTrackIds ?? []).includes(trackId);
   const isLaneLoopPlaying = !!(
     trackId &&
     perfForLane &&
@@ -221,18 +223,46 @@ const TrackControls = ({
     engagedTrackIds[0] === trackId
   );
 
-  // Reconnect audio sources when recording destination changes
+  /**
+   * True when the last `createAudioChainWithCurrentSettings` wired recording from the track gain
+   * (post-filters, post-volume). When recording starts mid-playback, the chain was built without
+   * a destination — we add a one-off tap from `gainNodeRef` in the effect below.
+   */
+  const chainBuiltWithRecordingRef = useRef(false);
+
   useEffect(() => {
-    if (recordingDestination && audioSourceRef.current && isPlaying && audioContext) {
-      // Create a separate gain node for recording
-      const recordingGain = audioContext.createGain();
-      recordingGain.gain.value = gainNodeRef.current?.gain.value || 1;
-      
-      // Connect the audio source to the recording gain
-      audioSourceRef.current.connect(recordingGain);
-      recordingGain.connect(recordingDestination);
+    if (!recordingDestination) {
+      chainBuiltWithRecordingRef.current = false;
+      return;
     }
-  }, [recordingDestination, isPlaying, trackId, audioContext, mode]);
+    if (!isPlaying || !audioContext) return;
+    if (chainBuiltWithRecordingRef.current) return;
+
+    const gain = gainNodeRef.current;
+    if (!gain) return;
+
+    const recordingGain = audioContext.createGain();
+    recordingGain.gain.value = 1;
+    try {
+      gain.connect(recordingGain);
+      recordingGain.connect(recordingDestination);
+    } catch {
+      return;
+    }
+
+    return () => {
+      try {
+        gain.disconnect(recordingGain);
+      } catch {
+        /* ignore */
+      }
+      try {
+        recordingGain.disconnect();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [recordingDestination, isPlaying, audioContext, mode, trackId]);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState<number | null>(null);
   
@@ -510,12 +540,15 @@ const TrackControls = ({
     lowpassFilter.connect(gainNode);
     gainNode.connect(ac.destination);
 
-    // Also connect to recording destination if available
+    // Mix recording: tap after filters and track volume so the file matches what you hear.
     if (recordingDestination) {
       const recordingGain = ac.createGain();
-      recordingGain.gain.value = gainNode.gain.value;
-      lowpassFilter.connect(recordingGain);
+      recordingGain.gain.value = 1;
+      gainNode.connect(recordingGain);
       recordingGain.connect(recordingDestination);
+      chainBuiltWithRecordingRef.current = true;
+    } else {
+      chainBuiltWithRecordingRef.current = false;
     }
     
     return { sourceNode, gainNode, lowpassFilter, highpassFilter };
@@ -1626,7 +1659,7 @@ const TrackControls = ({
         )}
       </div>
 
-      {trackId && (
+      {trackId && exposeAdvancedPerformanceUi && (
         <div className="flex flex-wrap items-center gap-2 py-1.5 border-t border-audafact-divider/60">
           <span className="text-[10px] uppercase tracking-wide audafact-text-secondary">Performance</span>
           <button
