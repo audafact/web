@@ -5,6 +5,13 @@ import MeasureDisplay from './MeasureDisplay';
 import GridLines from './GridLines';
 import { TimeSignature } from '../types/music';
 import { showSignupModal } from '../hooks/useSignupModal';
+import {
+  getWaveformScrubDiag,
+  logWaveformScrubDiagBanner,
+  logWaveformScrubHtmlMediaOnceDev,
+  logWaveformScrubPlayAttempt,
+} from '../utils/waveformScrubDiagnostics';
+import { logRegionDragTransport } from '../utils/regionDragTransportDiag';
 
 const PINCH_ZOOM_CONFIG = {
   enabled: true,
@@ -15,6 +22,20 @@ const PINCH_ZOOM_CONFIG = {
   discreteCooldownMs: 120,
 };
 const WAVEFORM_DEBUG_LOGS = false;
+/** Strip under the grid for cue thumb hitboxes (positioned below region); solid bg, not tiled like the wave area. */
+const CUE_THUMB_BOTTOM_PAD_PX = 36;
+
+function primeHtmlMediaForAudibleScrub(wavesurfer: { getMediaElement: () => unknown }) {
+  try {
+    const m = wavesurfer.getMediaElement() as HTMLMediaElement | undefined;
+    if (m && typeof m.muted === 'boolean') {
+      m.muted = false;
+      if (typeof m.volume === 'number' && m.volume === 0) m.volume = 1;
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 interface WaveformDisplayProps {
   audioFile: File;
@@ -67,6 +88,20 @@ interface WaveformDisplayProps {
   beats?: number[];
   /** Current cue drag time for nearest-beat highlight (null when not dragging) */
   cueDragTime?: number | null;
+  /** WaveSurfer canvas height in CSS pixels (default 120) */
+  waveHeight?: number;
+  /**
+   * When set with `ensureAudioForScrub`, region-drag audition uses short Web Audio grains from this buffer
+   * (same engine as the deck). Without these, drag is silent — HTMLMediaElement scrub was unreliable/silent.
+   */
+  scrubAudioBuffer?: AudioBuffer;
+  /** Must return a running or resumable `AudioContext` (e.g. Studio `ensureAudioBeforeAction`). */
+  ensureAudioForScrub?: () => Promise<AudioContext | null>;
+  /**
+   * Stop deck transport on first WaveSurfer region `update` each drag (WS7 has no `update-start`).
+   * Omit on Studio main deck (performance owns playback). Wire in Sample Edit to TrackControls suspend ref.
+   */
+  suspendTransportOnRegionDragStart?: () => void;
 }
 
 const WaveformDisplay = ({
@@ -111,6 +146,10 @@ const WaveformDisplay = ({
   duration: durationProp,
   beats,
   cueDragTime,
+  waveHeight = 120,
+  scrubAudioBuffer,
+  ensureAudioForScrub,
+  suspendTransportOnRegionDragStart,
 }: WaveformDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -145,6 +184,15 @@ const WaveformDisplay = ({
   modeRef.current = mode;
   const prevChopTriggerStyleRef = useRef<string | undefined>(chopTriggerStyle);
   const prevPlaybackTimeRef = useRef<number>(playbackTime);
+  /** Latest prop for syncing WaveSurfer after region drag (drag end does not re-run the playback effect). */
+  const playbackTimeRef = useRef(playbackTime);
+  playbackTimeRef.current = playbackTime;
+  /**
+   * When true, canonical playbackTime must not drive WaveSurfer (refs alone don't re-run effects).
+   * Toggled on region drag start/end so the sync effect reliably skips during drag.
+   */
+  /** Grid overlay only: suppress nearest-beat highlight churn during region drag (not used for WaveSurfer sync — that uses regionDragActiveRef). */
+  const [suppressBeatHighlightForRegionDrag, setSuppressBeatHighlightForRegionDrag] = useState(false);
   
   // Ref to track current cuePoints value for use in createRegions callback
   // This avoids stale closure issues when cuePoints values change but length doesn't
@@ -159,13 +207,132 @@ const WaveformDisplay = ({
   const onLoopPointsChangeRef = useRef(onLoopPointsChange);
   const onLoopDragStateChangeRef = useRef(onLoopDragStateChange);
   const onCuePointChangeRef = useRef(onCuePointChange);
-  const lastLoopDragUpdateRef = useRef(0);
-  const lastLoopTrackUpdateRef = useRef(0);
+  const onCueDragStateChangeRef = useRef(onCueDragStateChange);
+  /** True while dragging a loop or cue region — skip syncing canonical playbackTime into WaveSurfer (prevents choppy playhead). */
+  const regionDragActiveRef = useRef(false);
   const lastSentLoopStartRef = useRef<number | undefined>(undefined);
   const lastSentLoopEndRef = useRef<number | undefined>(undefined);
   const onReadyRef = useRef(onReady);
   const onReadyCalledRef = useRef(false);
   const pinchLastStepAtRef = useRef<number>(0);
+
+  const scrubAudioBufferRef = useRef<AudioBuffer | undefined>(undefined);
+  const ensureAudioForScrubRef = useRef<(() => Promise<AudioContext | null>) | undefined>(undefined);
+  const scrubGrainSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const lastScrubGrainAtRef = useRef(0);
+  const pendingScrubGrainSecRef = useRef<number | null>(null);
+  const scrubGrainScheduleRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    scrubAudioBufferRef.current = scrubAudioBuffer;
+    ensureAudioForScrubRef.current = ensureAudioForScrub;
+  }, [scrubAudioBuffer, ensureAudioForScrub]);
+
+  const stopRegionScrubGrain = useCallback(() => {
+    const s = scrubGrainSourceRef.current;
+    if (!s) return;
+    try {
+      s.stop();
+    } catch {
+      /* already stopped */
+    }
+    try {
+      s.disconnect();
+    } catch {
+      /* ignore */
+    }
+    scrubGrainSourceRef.current = null;
+  }, []);
+
+  /** Min time between grains; keeps scrub dense enough to hear while limiting work. */
+  const SCRUB_GRAIN_MIN_INTERVAL_MS = 55;
+
+  const cancelPendingScrubGrainSchedule = useCallback(() => {
+    if (scrubGrainScheduleRafRef.current != null) {
+      cancelAnimationFrame(scrubGrainScheduleRafRef.current);
+      scrubGrainScheduleRafRef.current = null;
+    }
+    pendingScrubGrainSecRef.current = null;
+  }, []);
+
+  const playRegionScrubGrain = useCallback(
+    async (headSec: number) => {
+      const buf = scrubAudioBufferRef.current;
+      const ensure = ensureAudioForScrubRef.current;
+      if (!buf || !ensure || buf.duration <= 0) return;
+      const now = performance.now();
+      if (now - lastScrubGrainAtRef.current < SCRUB_GRAIN_MIN_INTERVAL_MS) return;
+      lastScrubGrainAtRef.current = now;
+
+      const ctx = await ensure();
+      if (!ctx) return;
+      try {
+        await ctx.resume();
+      } catch {
+        /* ignore */
+      }
+
+      stopRegionScrubGrain();
+
+      const offset = Math.max(0, Math.min(headSec, buf.duration - 0.001));
+      const grainDur = Math.min(0.045, buf.duration - offset);
+      if (grainDur < 0.008) return;
+
+      const src = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.72;
+      src.buffer = buf;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(0, offset, grainDur);
+      scrubGrainSourceRef.current = src;
+      src.onended = () => {
+        if (scrubGrainSourceRef.current === src) scrubGrainSourceRef.current = null;
+      };
+
+    },
+    [stopRegionScrubGrain]
+  );
+
+  /** One rAF batch per frame; coalesces many pointer events to a single grain attempt. */
+  const scheduleRegionScrubGrain = useCallback(
+    (headSec: number) => {
+      pendingScrubGrainSecRef.current = headSec;
+      if (scrubGrainScheduleRafRef.current != null) return;
+      scrubGrainScheduleRafRef.current = requestAnimationFrame(() => {
+        scrubGrainScheduleRafRef.current = null;
+        const t = pendingScrubGrainSecRef.current;
+        if (t == null) return;
+        void playRegionScrubGrain(t);
+      });
+    },
+    [playRegionScrubGrain]
+  );
+
+  /** Run after WaveSurfer’s synchronous region work so the handle stays under the cursor. */
+  const queueRegionScrubGrainAfterPointer = useCallback(
+    (headSec: number) => {
+      queueMicrotask(() => scheduleRegionScrubGrain(headSec));
+    },
+    [scheduleRegionScrubGrain]
+  );
+
+  useEffect(() => {
+    return () => {
+      cancelPendingScrubGrainSchedule();
+      stopRegionScrubGrain();
+    };
+  }, [cancelPendingScrubGrainSchedule, stopRegionScrubGrain]);
+
+  const warnedMissingScrubPropsRef = useRef(false);
+  useEffect(() => {
+    if (!import.meta.env.DEV || warnedMissingScrubPropsRef.current) return;
+    if (scrubAudioBuffer && ensureAudioForScrub) return;
+    warnedMissingScrubPropsRef.current = true;
+    console.warn(
+      '[Audafact] Waveform: pass scrubAudioBuffer + ensureAudioForScrub from Studio for audible region scrub. Without them, drag stays silent (HTML scrub disabled during drag).'
+    );
+  }, [scrubAudioBuffer, ensureAudioForScrub]);
 
   const debugLog = useCallback((label: string, details?: unknown) => {
     if (!WAVEFORM_DEBUG_LOGS) return;
@@ -199,6 +366,15 @@ const WaveformDisplay = ({
   useEffect(() => {
     onCuePointChangeRef.current = onCuePointChange;
   }, [onCuePointChange]);
+
+  useEffect(() => {
+    onCueDragStateChangeRef.current = onCueDragStateChange;
+  }, [onCueDragStateChange]);
+
+  const suspendTransportOnRegionDragStartRef = useRef(suspendTransportOnRegionDragStart);
+  useEffect(() => {
+    suspendTransportOnRegionDragStartRef.current = suspendTransportOnRegionDragStart;
+  }, [suspendTransportOnRegionDragStart]);
 
   useEffect(() => {
     zoomLevelRef.current = zoomLevel;
@@ -266,11 +442,15 @@ const WaveformDisplay = ({
     waveColor: '#008CFF',
     progressColor: '#00F5C3',
     cursorColor: '#00F5C3',
-    height: 120,
+    height: waveHeight,
     normalize: true,
     autoplay: false,
     plugins: plugins,
   });
+
+  useEffect(() => {
+    logWaveformScrubDiagBanner(getWaveformScrubDiag());
+  }, []);
 
   // Notify parent when waveform is ready for display (only once per load to prevent infinite loop)
   useEffect(() => {
@@ -342,6 +522,55 @@ const WaveformDisplay = ({
     // Scale from 1x baseline so 2x is exactly 2× the width of 1x (no abrupt jump)
     return basePxPerSec * zoomLevel;
   }, [wavesurfer, isReady, zoomLevel]);
+
+  /** Cue region end time: keep narrow chops (~10ms) at 1x; when zoomed in, slight width cap (~6–10px on screen) so handles stay grabbable without wide slabs. */
+  const getCueRegionEnd = useCallback(
+    (
+      clampedStart: number,
+      index: number,
+      currentCuePoints: number[],
+      duration: number,
+      minPxPerSec: number,
+      zoom: number
+    ) => {
+      const nextT =
+        index < currentCuePoints.length - 1 ? Number(currentCuePoints[index + 1]) : NaN;
+      let span = 0.01;
+      if (zoom > 1) {
+        span = Math.min(0.014, Math.max(0.01, 8 / Math.max(minPxPerSec, 1e-6)));
+      }
+      let end = Math.min(clampedStart + span, duration);
+      if (!Number.isNaN(nextT)) {
+        end = Math.min(end, Math.max(clampedStart + 0.002, nextT - 0.002));
+      }
+      return end;
+    },
+    []
+  );
+
+  /** Re-apply cue region times after zoom/minPxPerSec so RegionsPlugin redraws markers at correct x (same idea as loop refresh). */
+  const syncCueRegionLayoutAfterZoom = useCallback(() => {
+    if (!wavesurfer || !isReady) return;
+    if (modeRef.current !== 'cue') return;
+    const duration = wavesurfer.getDuration();
+    if (duration <= 0) return;
+    const epsilon = 0.05;
+    const minPxPerSec = calculateMinPxPerSec();
+    const pts = currentCuePointsRef.current;
+    const z = zoomLevelRef.current;
+    currentRegionsRef.current.forEach((cueRegion: any, index: number) => {
+      if (!cueRegion?.id?.includes?.('cue-')) return;
+      const point = pts[index];
+      if (typeof point !== 'number' || Number.isNaN(point)) return;
+      const clampedStart = Math.max(0, Math.min(point, duration - epsilon));
+      const regionEnd = getCueRegionEnd(clampedStart, index, pts, duration, minPxPerSec, z);
+      try {
+        cueRegion.setOptions({ start: clampedStart, end: regionEnd });
+      } catch (_) {
+        /* ignore */
+      }
+    });
+  }, [wavesurfer, isReady, calculateMinPxPerSec, getCueRegionEnd]);
 
   // Pixels per second for measure/grid overlays - must match WaveSurfer's actual scale for alignment
   const [pixelsPerSecond, setPixelsPerSecond] = useState(() => 40 * zoomLevel);
@@ -463,6 +692,10 @@ const WaveformDisplay = ({
             const end = Math.max(start + 0.1, Math.min(region.end, duration));
             region.setOptions({ start, end });
           }
+          // Cue/chop regions: same as loop — after zoom, markers must be re-synced or they vanish/misalign.
+          if (widthSyncGeneration === widthSyncGenerationRef.current) {
+            syncCueRegionLayoutAfterZoom();
+          }
         };
         
         renderer.on('rendered', handleRendered);
@@ -508,7 +741,7 @@ const WaveformDisplay = ({
       widthSyncTimeoutsRef.current = [];
       clearInterval(intervalId);
     };
-  }, [wavesurfer, isReady, zoomLevel, mode, calculateMinPxPerSec, debugLog]);
+  }, [wavesurfer, isReady, zoomLevel, mode, calculateMinPxPerSec, debugLog, syncCueRegionLayoutAfterZoom]);
 
   // Auto-scroll to follow playhead during playback with center-lock behavior
   useEffect(() => {
@@ -718,41 +951,75 @@ const WaveformDisplay = ({
 
       // Update parent state only on drop to avoid playback glitching during drag.
       // onLoopDragStateChange provides display-only live values during drag.
-      region.on('update-start', () => {
-        isInternalLoopUpdateRef.current = true;
-        const duration = wavesurfer.getDuration();
-        const epsilon = 0.05;
-        const start = Math.max(0, Math.min(region.start, duration - epsilon));
-        const end = Math.max(start + 0.01, Math.min(region.end, duration));
-        onLoopDragStateChangeRef.current?.(start, end);
-        lastLoopTrackUpdateRef.current = -Infinity;
-      });
+      // WaveSurfer 7 regions emit `update` / `update-end` only — there is no `update-start`.
+      let loopRegionGestureActive = false;
 
       region.on('update', () => {
-        isInternalLoopUpdateRef.current = true;
-        const now = performance.now();
-        const duration = wavesurfer.getDuration();
-        const epsilon = 0.05;
-        const start = Math.max(0, Math.min(region.start, duration - epsilon));
-        const end = Math.max(start + 0.01, Math.min(region.end, duration));
-        if (now - lastLoopDragUpdateRef.current >= 50) {
-          lastLoopDragUpdateRef.current = now;
-          onLoopDragStateChangeRef.current?.(start, end);
-        }
-        if (now - lastLoopTrackUpdateRef.current >= 600) {
-          const prevStart = lastSentLoopStartRef.current;
-          const prevEnd = lastSentLoopEndRef.current;
-          const meaningfulChange = prevStart === undefined || prevEnd === undefined || Math.abs(start - prevStart) > 0.02 || Math.abs(end - prevEnd) > 0.02;
-          if (meaningfulChange) {
-            lastLoopTrackUpdateRef.current = now;
-            lastSentLoopStartRef.current = start;
-            lastSentLoopEndRef.current = end;
-            onLoopPointsChangeRef.current(start, end);
+        if (!loopRegionGestureActive) {
+          loopRegionGestureActive = true;
+          suspendTransportOnRegionDragStartRef.current?.();
+          const scrubDiag = getWaveformScrubDiag();
+          regionDragActiveRef.current = true;
+          setSuppressBeatHighlightForRegionDrag(true);
+          isInternalLoopUpdateRef.current = true;
+          logWaveformScrubHtmlMediaOnceDev(wavesurfer, 'loop-region');
+          const d0 = wavesurfer.getDuration();
+          const eps0 = 0.05;
+          const s0 = Math.max(0, Math.min(region.start, d0 - eps0));
+          const e0 = Math.max(s0 + 0.01, Math.min(region.end, d0));
+          logRegionDragTransport('WaveformDisplay loop-region first update (drag begin)', {
+            trackId: trackId ?? '(no trackId)',
+            scrubNoParent: scrubDiag.noParent,
+            willCallStudioDragHandler: !scrubDiag.noParent,
+            start: s0,
+            end: e0,
+          });
+          if (!scrubDiag.noParent) {
+            onLoopDragStateChangeRef.current?.(s0, e0);
+          }
+          lastScrubGrainAtRef.current = 0;
+          queueRegionScrubGrainAfterPointer(s0);
+          if (scrubDiag.logPlay && !scrubDiag.noAudio) {
+            try {
+              wavesurfer.setPlaybackRate(1);
+            } catch {
+              /* ignore */
+            }
+            primeHtmlMediaForAudibleScrub(wavesurfer);
+            const playPromise = wavesurfer.play(s0);
+            logWaveformScrubPlayAttempt(wavesurfer, 'loop-region', playPromise, true);
+          } else if (scrubDiag.logPlay && scrubDiag.noAudio) {
+            console.info('[WaveformScrubDiag] loop-region first update: noAudio — skipped play()');
           }
         }
+        isInternalLoopUpdateRef.current = true;
+        const dur = wavesurfer.getDuration();
+        const eps = 0.05;
+        const start = Math.max(0, Math.min(region.start, dur - eps));
+        queueRegionScrubGrainAfterPointer(start);
       });
 
       region.on('update-end', () => {
+        loopRegionGestureActive = false;
+        regionDragActiveRef.current = false;
+        cancelPendingScrubGrainSchedule();
+        stopRegionScrubGrain();
+        try {
+          wavesurfer.pause();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          wavesurfer.setPlaybackRate(1);
+        } catch {
+          /* ignore */
+        }
+        try {
+          wavesurfer.setTime(playbackTimeRef.current);
+        } catch (_) {
+          /* ignore */
+        }
+        setSuppressBeatHighlightForRegionDrag(false);
         const duration = wavesurfer.getDuration();
         const epsilon = 0.05;
         // Clamp to valid bounds - prevents corrupted values from zoom sync issues
@@ -785,11 +1052,18 @@ const WaveformDisplay = ({
       const epsilon = 0.05; // slightly larger to avoid float issues
       // Use ref to get current cuePoints to avoid stale closure issues
       const currentCuePoints = currentCuePointsRef.current;
+      const minPxPerSec = calculateMinPxPerSec();
       const newRegions = currentCuePoints.map((point, index) => {
         // Clamp start to [0, duration - epsilon]
         const clampedStart = Math.max(0, Math.min(point, duration - epsilon));
-        // Ensure region end does not exceed duration
-        const regionEnd = Math.min(clampedStart + 0.01, duration);
+        const regionEnd = getCueRegionEnd(
+          clampedStart,
+          index,
+          currentCuePoints,
+          duration,
+          minPxPerSec,
+          zoomLevel
+        );
         // One-Shot: grey out thumb node if it is at or past the next node (invalid trigger)
         const currNum = Number(point);
         const nextNum = index < currentCuePoints.length - 1 ? Number(currentCuePoints[index + 1]) : NaN;
@@ -815,32 +1089,76 @@ const WaveformDisplay = ({
           }
         });
 
-        // Add drag event listeners for real-time timestamp updates
-        region.on('update-start', () => {
-          if (onCueDragStateChange) {
-            const cuePoint = region.start + (region.end - region.start) / 2;
-            const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
-            onCueDragStateChange(index, clampedCuePoint);
-          }
-        });
+        let cueRegionGestureActive = false;
 
         region.on('update', () => {
-          if (onCueDragStateChange) {
+          if (!cueRegionGestureActive) {
+            cueRegionGestureActive = true;
+            suspendTransportOnRegionDragStartRef.current?.();
+            const scrubDiag = getWaveformScrubDiag();
+            regionDragActiveRef.current = true;
+            setSuppressBeatHighlightForRegionDrag(true);
+            logWaveformScrubHtmlMediaOnceDev(wavesurfer, `cue-region[${index}]`);
+            const dCue = wavesurfer.getDuration();
             const cuePoint = region.start + (region.end - region.start) / 2;
-            const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
-            onCueDragStateChange(index, clampedCuePoint);
+            const clampedCuePoint = Math.max(0, Math.min(dCue, cuePoint));
+            logRegionDragTransport(`WaveformDisplay cue-region[${index}] first update (drag begin)`, {
+              trackId: trackId ?? '(no trackId)',
+              scrubNoParent: scrubDiag.noParent,
+              willCallStudioDragHandler: !scrubDiag.noParent,
+              clampedCuePoint,
+            });
+            if (!scrubDiag.noParent) {
+              onCueDragStateChangeRef.current?.(index, clampedCuePoint);
+            }
+            lastScrubGrainAtRef.current = 0;
+            queueRegionScrubGrainAfterPointer(clampedCuePoint);
+            if (scrubDiag.logPlay && !scrubDiag.noAudio) {
+              try {
+                wavesurfer.setPlaybackRate(1);
+              } catch {
+                /* ignore */
+              }
+              primeHtmlMediaForAudibleScrub(wavesurfer);
+              const playPromise = wavesurfer.play(clampedCuePoint);
+              logWaveformScrubPlayAttempt(wavesurfer, `cue-region[${index}]`, playPromise, true);
+            } else if (scrubDiag.logPlay && scrubDiag.noAudio) {
+              console.info(`[WaveformScrubDiag] cue-region[${index}] first update: noAudio — skipped play()`);
+            }
           }
+          const mid = region.start + (region.end - region.start) * 0.5;
+          const dur = wavesurfer.getDuration();
+          const head = Math.max(0, Math.min(mid, dur - 0.001));
+          queueRegionScrubGrainAfterPointer(head);
         });
 
         // Only update the cue point and region position, do not recreate all regions
         region.on('update-end', () => {
+          cueRegionGestureActive = false;
+          regionDragActiveRef.current = false;
+          cancelPendingScrubGrainSchedule();
+          stopRegionScrubGrain();
+          try {
+            wavesurfer.pause();
+          } catch (_) {
+            /* ignore */
+          }
+          try {
+            wavesurfer.setPlaybackRate(1);
+          } catch {
+            /* ignore */
+          }
+          try {
+            wavesurfer.setTime(playbackTimeRef.current);
+          } catch (_) {
+            /* ignore */
+          }
+          setSuppressBeatHighlightForRegionDrag(false);
           const cuePoint = region.start + (region.end - region.start) / 2;
           const clampedCuePoint = Math.max(0, Math.min(wavesurfer.getDuration(), cuePoint));
           
           // Clear drag state when drag ends
-          if (onCueDragStateChange) {
-            onCueDragStateChange(index, null);
-          }
+          onCueDragStateChangeRef.current?.(index, null);
           
           // Set flag to indicate this is an internal update from drag
           // This prevents the effect from recreating/updating regions
@@ -900,7 +1218,27 @@ const WaveformDisplay = ({
       currentRegionsRef.current = newRegions;
     }
     debugLog('createRegions done', { token, mode: modeRef.current, count: currentRegionsRef.current.length });
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints.length, trackId, showCueThumbs, isGuestMode, chopTriggerStyle, clearRegions, isRegionOpCurrent, debugLog]);
+  }, [
+    wavesurfer,
+    isReady,
+    mode,
+    loopStart,
+    loopEnd,
+    cuePoints.length,
+    trackId,
+    showCueThumbs,
+    isGuestMode,
+    chopTriggerStyle,
+    clearRegions,
+    isRegionOpCurrent,
+    debugLog,
+    calculateMinPxPerSec,
+    getCueRegionEnd,
+    zoomLevel,
+    queueRegionScrubGrainAfterPointer,
+    cancelPendingScrubGrainSchedule,
+    stopRegionScrubGrain,
+  ]);
 
   // Improved function to add thumb element to a region
   // When isInvalidOneShotTrigger is true (One-Shot mode, node at or past next), style thumb grey
@@ -1068,7 +1406,7 @@ const WaveformDisplay = ({
     } else {
       removeThumbsFromRegions();
     }
-  }, [showCueThumbs, mode, wavesurfer, isReady, chopTriggerStyle, addThumbToRegion, removeThumbsFromRegions]);
+  }, [showCueThumbs, mode, wavesurfer, isReady, chopTriggerStyle, addThumbToRegion, removeThumbsFromRegions, zoomLevel]);
 
   // Handle mode changes explicitly to ensure proper region cleanup
   useEffect(() => {
@@ -1162,7 +1500,15 @@ const WaveformDisplay = ({
           const duration = wavesurfer.getDuration();
           const epsilon = 0.05;
           const clampedStart = Math.max(0, Math.min(cuePoints[changedIndex], duration - epsilon));
-          const regionEnd = Math.min(clampedStart + 0.01, duration);
+          const minPxPerSec = calculateMinPxPerSec();
+          const regionEnd = getCueRegionEnd(
+          clampedStart,
+          changedIndex,
+          cuePoints,
+          duration,
+          minPxPerSec,
+          zoomLevel
+        );
           region.setOptions({
             start: clampedStart,
             end: regionEnd
@@ -1190,7 +1536,23 @@ const WaveformDisplay = ({
     };
     
     handleParameterChange();
-  }, [wavesurfer, isReady, mode, loopStart, loopEnd, cuePoints, chopTriggerStyle, createRegions, clearRegions, beginRegionOp, isRegionOpCurrent, debugLog]);
+  }, [
+    wavesurfer,
+    isReady,
+    mode,
+    loopStart,
+    loopEnd,
+    cuePoints,
+    chopTriggerStyle,
+    createRegions,
+    clearRegions,
+    beginRegionOp,
+    isRegionOpCurrent,
+    debugLog,
+    calculateMinPxPerSec,
+    getCueRegionEnd,
+    zoomLevel,
+  ]);
 
   // Effect to handle initial setup when waveform becomes ready
   useEffect(() => {
@@ -1376,6 +1738,12 @@ const WaveformDisplay = ({
       });
     } else {
       applyZoom(newMinPxPerSec, true);
+      // Backup if renderer 'rendered' doesn't fire — cue chops still need setOptions after zoom()
+      const cueSyncId = setTimeout(() => {
+        syncCueRegionLayoutAfterZoom();
+        zoomChangeRetryTimeoutsRef.current = zoomChangeRetryTimeoutsRef.current.filter((t) => t !== cueSyncId);
+      }, 220);
+      zoomChangeRetryTimeoutsRef.current.push(cueSyncId);
     }
 
     return () => {
@@ -1389,7 +1757,7 @@ const WaveformDisplay = ({
         zoomRenderedHandlerRef.current = null;
       }
     };
-  }, [zoomLevel, wavesurfer, isReady, scrollToCenterPlayhead, calculateMinPxPerSec]);
+  }, [zoomLevel, wavesurfer, isReady, scrollToCenterPlayhead, calculateMinPxPerSec, syncCueRegionLayoutAfterZoom]);
 
   // Effect to handle window resize at 1x zoom
   useEffect(() => {
@@ -1509,7 +1877,7 @@ const WaveformDisplay = ({
         e.preventDefault();
         const current = pendingZoom ?? zoomLevelRef.current;
         const factor = Math.exp(-PINCH_SENSITIVITY * e.deltaY);
-        const unclamped = Math.max(1, Math.min(16, current * factor));
+        const unclamped = Math.max(1, Math.min(8, current * factor));
         const maxDelta = PINCH_ZOOM_CONFIG.maxDeltaPerTick;
         const bounded = Math.max(current - maxDelta, Math.min(current + maxDelta, unclamped));
         pendingZoom = Math.max(1, Math.min(16, bounded));
@@ -1581,6 +1949,8 @@ const WaveformDisplay = ({
   // Optimized playhead update with throttling
   useEffect(() => {
     if (!wavesurfer || !isReady) return;
+    // While dragging loop/cue regions, WaveSurfer time is driven from region handlers + scrub preview.
+    if (regionDragActiveRef.current) return;
 
     const prevDisplayTime = prevPlaybackTimeRef.current;
 
@@ -1640,6 +2010,9 @@ const WaveformDisplay = ({
 
   const horizontalGridSize = calculateHorizontalGridSize();
 
+  // Cue thumbs sit below the region (hitbox bottom: -4px, 40px tall) — reserve strip so overflow:hidden doesn't clip.
+  const cueThumbBottomPadPx = mode === 'cue' && showCueThumbs ? CUE_THUMB_BOTTOM_PAD_PX : 0;
+
   return (
     <div className="w-full box-border overflow-hidden relative">
       {/* Compact Zoom Controls Overlay */}
@@ -1688,7 +2061,10 @@ const WaveformDisplay = ({
           ref={scrollContainerRef}
           style={{ 
             overflowX: zoomLevel <= 1 ? 'hidden' : 'auto', 
-            overflowY: 'hidden'
+            overflowY: 'hidden',
+            paddingBottom: cueThumbBottomPadPx,
+            // Solid band under the grid for thumbs (no extra horizontal grid rows)
+            backgroundColor: cueThumbBottomPadPx ? '#111827' : undefined,
           }}
         >
           <div
@@ -1696,7 +2072,7 @@ const WaveformDisplay = ({
             ref={containerRef}
             className={`box-border ${zoomLevel <= 1 ? 'w-full' : ''}`}
             style={{ 
-              height: '170px', 
+              height: `${waveHeight}px`,
               minWidth: zoomLevel <= 1 ? '100%' : undefined,
               position: 'relative',
               backgroundColor: '#111827',
@@ -1722,7 +2098,7 @@ const WaveformDisplay = ({
                 visible={true}
                 showMeasures={internalShowMeasures}
                 beats={beats}
-                highlightTime={cueDragTime}
+                highlightTime={suppressBeatHighlightForRegionDrag ? null : cueDragTime}
               />
             )}
             
@@ -1749,11 +2125,21 @@ const WaveformDisplay = ({
 };
 
 const WaveformDisplayContainer = (props: WaveformDisplayProps) => {
+  const h = props.waveHeight ?? 120;
+  const cuePad =
+    props.mode === 'cue' && (props.showCueThumbs ?? true)
+      ? CUE_THUMB_BOTTOM_PAD_PX
+      : 0;
+  // Match scroll column only: grid (h) + optional solid strip for cue thumbs. Zoom overlays the top — no extra +34 slack.
+  const outerH = h + cuePad;
   return (
-     <div className="w-full relative box-border overflow-hidden audafact-waveform-bg" style={{ height: '190px' }}>
-       <WaveformDisplay {...props} />
-     </div>
+    <div
+      className="audafact-waveform-bg relative box-border w-full overflow-hidden"
+      style={{ height: `${outerH}px` }}
+    >
+      <WaveformDisplay {...props} />
+    </div>
   );
-}
+};
 
 export default WaveformDisplayContainer;

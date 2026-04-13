@@ -87,7 +87,7 @@ const StudioDemo = () => {
   };
 
   // Initialize audio context and load demo track using GuestContext
-  const handleInitializeAudio = async () => {
+  const handleInitializeAudio = async (): Promise<AudioContext | null> => {
     try {
       addDebugInfo('Starting audio initialization...');
       setNeedsUserInteraction(false);
@@ -147,13 +147,15 @@ const StudioDemo = () => {
       setTrack(newTrack);
       setTempo(currentGuestTrack.bpm);
       addDebugInfo('Track loaded successfully!');
-      
+
+      return context;
     } catch (err) {
       addDebugInfo(`INITIALIZATION ERROR: ${err instanceof Error ? err.message : String(err)}`);
       setError(err instanceof Error ? err.message : 'Failed to initialize audio');
     } finally {
       setIsInitializingAudio(false);
     }
+    return null;
   };
 
   // Handle time change (scrubbing)
@@ -595,11 +597,15 @@ const StudioDemo = () => {
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
                 cuePoints={track.cuePoints}
-                ensureAudio={async (callback) => {
+                ensureAudio={async () => {
                   if (!isAudioInitialized) {
-                    await handleInitializeAudio();
+                    const ctx = await handleInitializeAudio();
+                    return ctx ?? null;
                   }
-                  callback();
+                  if (audioContext?.state === 'suspended') {
+                    await audioContext.resume();
+                  }
+                  return audioContext ?? null;
                 }}
                 primeIosSessionForWebAudio={primeIosSessionForWebAudio}
                 isSelected={true}
