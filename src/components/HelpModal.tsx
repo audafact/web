@@ -19,7 +19,7 @@ const HelpModal: React.FC<HelpModalProps> = ({
   const { isPro, isStarter } = useUser();
 
   const shortcuts = [
-    { key: 'Space', description: 'Play/Pause armed loops (loop tracks are armed by default)' },
+    { key: 'Space', description: 'Play/Pause engaged loops (loop tracks are engaged for Space by default)' },
     { key: '1-0', description: 'Trigger cue points (in Chop mode)' },
     { key: '?', description: 'Show this help modal' },
     { key: 'Z', description: 'Zoom in on waveform' },
@@ -30,7 +30,7 @@ const HelpModal: React.FC<HelpModalProps> = ({
   const tips = [
     'Use the Switch & add tracks bar to switch tracks, add new ones, or swipe to navigate',
     'Drag any track from the library panel into the studio to add it',
-    'Loop tracks are armed by default — use Space to play/pause. Click Arm to disarm.',
+    'Loop tracks are engaged for Space by default — use Space to play/pause. Click Engaged to remove from Space control.',
     'Click anywhere on the waveform to jump to that position',
     'Drag on the waveform to set loop start and end points',
     'Use the side panel to browse and preview tracks from your library',
