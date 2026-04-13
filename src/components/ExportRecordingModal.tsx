@@ -17,9 +17,9 @@ interface ExportRecordingModalProps {
   performance: Performance | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (filename: string, format: 'mp3' | 'wav') => void | Promise<void>;
+  onSave: (filename: string, format: 'mp3' | 'wav') => void;
   onExport: (filename: string, format: 'mp3' | 'wav') => void;
-  onSaveAndExport: (filename: string, format: 'mp3' | 'wav') => void | Promise<void>;
+  onSaveAndExport: (filename: string, format: 'mp3' | 'wav') => void;
   onCancel?: () => void;
   allowedFormats: ('mp3' | 'wav')[];
   canSave?: boolean;
@@ -88,17 +88,14 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
     return filename.endsWith(`.${ext}`) ? filename : `${filename}.${ext}`;
   };
 
-  const handleAction = async (action: 'save' | 'export' | 'saveAndExport') => {
+  const handleAction = (action: 'save' | 'export' | 'saveAndExport') => {
     if (!performance) return;
     const finalFilename = getFinalFilename();
-    try {
-      if (action === 'save') await Promise.resolve(onSave(finalFilename, format));
-      else if (action === 'export') onExport(finalFilename, format);
-      else await Promise.resolve(onSaveAndExport(finalFilename, format));
-    } finally {
-      setDropdownOpen(false);
-      onClose();
-    }
+    if (action === 'save') onSave(finalFilename, format);
+    else if (action === 'export') onExport(finalFilename, format);
+    else onSaveAndExport(finalFilename, format);
+    setDropdownOpen(false);
+    onClose();
   };
 
   if (!performance) return null;
@@ -216,7 +213,7 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
               <div className="flex rounded-lg overflow-hidden border border-audafact-accent-cyan/50">
                 <button
                   type="button"
-                  onClick={() => void handleAction('saveAndExport')}
+                  onClick={() => handleAction('saveAndExport')}
                   className="px-4 py-2 bg-audafact-accent-cyan text-audafact-bg-primary font-medium hover:opacity-90 transition-opacity"
                 >
                   Save & Export
@@ -240,7 +237,7 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
                 >
                   <button
                     type="button"
-                    onClick={() => void handleAction('save')}
+                    onClick={() => handleAction('save')}
                     disabled={!canSave}
                     className="w-full px-4 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -248,14 +245,14 @@ export const ExportRecordingModal: React.FC<ExportRecordingModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleAction('export')}
+                    onClick={() => handleAction('export')}
                     className="w-full px-4 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1"
                   >
                     Export only
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleAction('saveAndExport')}
+                    onClick={() => handleAction('saveAndExport')}
                     className="w-full px-4 py-2 text-left text-sm audafact-text-primary hover:bg-audafact-surface-1"
                   >
                     Save & Export

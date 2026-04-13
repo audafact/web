@@ -17,7 +17,9 @@ import {
   parsePerformanceEvents,
   PerformanceEvent,
   clonePerformanceEventsForDb,
+  getEventTakeId,
 } from '../types/performanceEvents';
+import { filterEventsForPlaybackPass, generateTakeId } from '../lib/performanceTakeUtils';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
 import { supabase } from '../services/supabase';
@@ -100,6 +102,23 @@ interface RecordingContextValue {
   unarmedRecordingTrackIds: string[];
   toggleRecordingArmForTrack: (trackId: string) => void;
   clearRecordingArmExclusions: () => void;
+  armAllRecordingLanes: (trackIds: string[]) => void;
+  disarmAllRecordingLanes: (trackIds: string[]) => void;
+  /** Ensure each lane has at least one take (call when Studio track list updates during recording). */
+  initRecordingTakesForTracks: (trackIds: string[]) => void;
+  newTakeForTrack: (trackId: string) => void;
+  newTakeAllTracks: (trackIds: string[]) => void;
+  selectRecordingTakeForTrack: (trackId: string, takeId: string) => void;
+  selectPlaybackTakeForTrack: (trackId: string, takeId: string) => void;
+  /** In-memory only until stop/save */
+  eraseCurrentTakeForTrack: (trackId: string, takeId?: string) => void;
+  eraseWholeLaneForTrack: (trackId: string) => void;
+  laneTakeStacks: Record<string, string[]>;
+  activeRecordingTakeByTrack: Record<string, string>;
+  playbackTakeByTrack: Record<string, string>;
+  /** Session grid (Option A): per-track tempo / TS as performance events */
+  recordSessionGridTempoEvent: (trackId: string, bpm: number, previousBpm?: number) => void;
+  recordSessionGridTimeSignatureEvent: (trackId: string, numerator: number, denominator: number) => void;
   startPerformancePlayback: (
     performanceId: string,
     options?: {
@@ -110,6 +129,8 @@ interface RecordingContextValue {
       /** Play stored mix only; no event dispatch */
       referenceOnly?: boolean;
       trackIdFilter?: string | null;
+      /** Per-lane take for playback; defaults to latest take per lane when omitted */
+      playbackTakeByTrack?: Record<string, string | undefined>;
     }
   ) => Promise<void>;
   startReferenceOnlyPlayback: (performanceId: string, options?: { loop?: boolean }) => Promise<void>;
@@ -119,6 +140,7 @@ interface RecordingContextValue {
   engagedTrackIds: string[];
   setTrackEngaged: (trackId: string, engaged: boolean) => void;
   isPerformanceLoopEnabled: boolean;
+  setPerformanceLoopEnabled: (enabled: boolean) => void;
   isOverdubEnabled: boolean;
   setOverdubEnabled: (enabled: boolean) => void;
   recordEventsEnabled: boolean;
@@ -248,6 +270,30 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [unarmedRecordingTrackIds, setUnarmedRecordingTrackIds] = useState<string[]>([]);
   const [recordEventsEnabled, setRecordEventsEnabled] = useState(defaultLogEvents);
   const [recordMixEnabled, setRecordMixEnabled] = useState(true);
+
+  const takeStackByTrackRef = useRef<Map<string, string[]>>(new Map());
+  const activeRecordingTakeIdByTrackRef = useRef<Map<string, string>>(new Map());
+  const playbackTakeByTrackRef = useRef<Record<string, string>>({});
+  const [laneTakeState, setLaneTakeState] = useState<{
+    stacks: Record<string, string[]>;
+    recordingActive: Record<string, string>;
+    playbackSelected: Record<string, string>;
+  }>({ stacks: {}, recordingActive: {}, playbackSelected: {} });
+
+  const syncLaneTakeStateFromRefs = useCallback(() => {
+    setLaneTakeState({
+      stacks: Object.fromEntries(takeStackByTrackRef.current),
+      recordingActive: Object.fromEntries(activeRecordingTakeIdByTrackRef.current),
+      playbackSelected: { ...playbackTakeByTrackRef.current },
+    });
+  }, []);
+
+  const resetLaneTakeState = useCallback(() => {
+    takeStackByTrackRef.current = new Map();
+    activeRecordingTakeIdByTrackRef.current = new Map();
+    playbackTakeByTrackRef.current = {};
+    syncLaneTakeStateFromRefs();
+  }, [syncLaneTakeStateFromRefs]);
 
   const refreshSavedRecordings = useCallback(async () => {
     if (!user?.id) {
@@ -456,6 +502,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setIsRecordingPerformance(false);
       setMixRecordingHasPlayback(false);
       overdubTimestampOffsetRef.current = 0;
+      resetLaneTakeState();
 
       let canSave = true;
       if (user?.id && (finalAudioBlob || eventCount > 0)) {
@@ -600,7 +647,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         audioCheckIntervalRef.current = null;
       }
     },
-    [user]
+    [user, resetLaneTakeState]
   );
 
   const signalMixRecordingPlayback = useCallback(() => {
@@ -637,6 +684,8 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const performanceId = `performance_${Date.now()}`;
         const startTime = Date.now();
         performanceStartTimeRef.current = startTime;
+
+        resetLaneTakeState();
 
         overdubTimestampOffsetRef.current = 0;
         if (options?.continueOverdub && playingPerformanceIdRef.current) {
@@ -713,7 +762,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         alert('Failed to start recording. Please check microphone permissions.');
       }
     },
-    [finalizePerformanceCapture, performances, trackStudioAction]
+    [finalizePerformanceCapture, performances, resetLaneTakeState, trackStudioAction]
   );
 
   const stopPerformanceRecording = useCallback(() => {
@@ -750,11 +799,26 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
+    if (!takeStackByTrackRef.current.has(event.trackId)) {
+      const id = generateTakeId();
+      takeStackByTrackRef.current.set(event.trackId, [id]);
+      activeRecordingTakeIdByTrackRef.current.set(event.trackId, id);
+      if (playbackTakeByTrackRef.current[event.trackId] === undefined) {
+        playbackTakeByTrackRef.current[event.trackId] = id;
+      }
+      syncLaneTakeStateFromRefs();
+    }
+    const takeId = activeRecordingTakeIdByTrackRef.current.get(event.trackId);
+    if (!takeId) {
+      return;
+    }
+
     const raw = Date.now() - performanceStartTimeRef.current;
     const timestamp = raw + overdubTimestampOffsetRef.current;
     const newEvent = {
       ...event,
-      timestamp
+      timestamp,
+      takeId,
     } as RecordingEvent;
     
     // Update refs immediately
@@ -779,7 +843,29 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         tracks
       };
     });
-  }, [isRecordingPerformance, currentPerformance]);
+  }, [isRecordingPerformance, currentPerformance, syncLaneTakeStateFromRefs]);
+
+  const recordSessionGridTempoEvent = useCallback(
+    (trackId: string, bpm: number, previousBpm?: number) => {
+      addRecordingEvent({
+        type: 'tempo_change',
+        trackId,
+        data: { bpm, previousBpm, mode: 'preview' },
+      });
+    },
+    [addRecordingEvent]
+  );
+
+  const recordSessionGridTimeSignatureEvent = useCallback(
+    (trackId: string, numerator: number, denominator: number) => {
+      addRecordingEvent({
+        type: 'time_signature_change',
+        trackId,
+        data: { numerator, denominator, mode: 'preview' },
+      });
+    },
+    [addRecordingEvent]
+  );
 
   // Audio recording functions (deprecated - now combined with performance recording)
   const startAudioRecording = useCallback(async (tempo: number, countInBeats: number = 4) => {
@@ -1261,6 +1347,152 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setUnarmedRecordingTrackIds([]);
   }, []);
 
+  const armAllRecordingLanes = useCallback((trackIds: string[]) => {
+    setUnarmedRecordingTrackIds((prev) => {
+      const s = new Set(prev);
+      trackIds.forEach((id) => s.delete(id));
+      unarmedRecordingTrackIdsRef.current = s;
+      return [...s];
+    });
+  }, []);
+
+  const disarmAllRecordingLanes = useCallback((trackIds: string[]) => {
+    setUnarmedRecordingTrackIds((prev) => {
+      const s = new Set(prev);
+      trackIds.forEach((id) => s.add(id));
+      unarmedRecordingTrackIdsRef.current = s;
+      return [...s];
+    });
+  }, []);
+
+  const initRecordingTakesForTracks = useCallback(
+    (trackIds: string[]) => {
+      if (!isRecordingPerformance) return;
+      let changed = false;
+      for (const tid of trackIds) {
+        if (!takeStackByTrackRef.current.has(tid)) {
+          const id = generateTakeId();
+          takeStackByTrackRef.current.set(tid, [id]);
+          activeRecordingTakeIdByTrackRef.current.set(tid, id);
+          if (playbackTakeByTrackRef.current[tid] === undefined) {
+            playbackTakeByTrackRef.current[tid] = id;
+          }
+          changed = true;
+        }
+      }
+      if (changed) syncLaneTakeStateFromRefs();
+    },
+    [isRecordingPerformance, syncLaneTakeStateFromRefs]
+  );
+
+  const newTakeForTrack = useCallback(
+    (trackId: string) => {
+      if (!isRecordingPerformance) return;
+      let stack = takeStackByTrackRef.current.get(trackId);
+      if (!stack?.length) {
+        stack = [generateTakeId()];
+        takeStackByTrackRef.current.set(trackId, stack);
+      }
+      const nid = generateTakeId();
+      takeStackByTrackRef.current.set(trackId, [...stack, nid]);
+      activeRecordingTakeIdByTrackRef.current.set(trackId, nid);
+      syncLaneTakeStateFromRefs();
+    },
+    [isRecordingPerformance, syncLaneTakeStateFromRefs]
+  );
+
+  const newTakeAllTracks = useCallback(
+    (trackIds: string[]) => {
+      trackIds.forEach((id) => newTakeForTrack(id));
+    },
+    [newTakeForTrack]
+  );
+
+  const selectRecordingTakeForTrack = useCallback(
+    (trackId: string, takeId: string) => {
+      const stack = takeStackByTrackRef.current.get(trackId);
+      if (!stack?.includes(takeId)) return;
+      activeRecordingTakeIdByTrackRef.current.set(trackId, takeId);
+      syncLaneTakeStateFromRefs();
+    },
+    [syncLaneTakeStateFromRefs]
+  );
+
+  const selectPlaybackTakeForTrack = useCallback(
+    (trackId: string, takeId: string) => {
+      playbackTakeByTrackRef.current[trackId] = takeId;
+      syncLaneTakeStateFromRefs();
+    },
+    [syncLaneTakeStateFromRefs]
+  );
+
+  const eraseCurrentTakeForTrack = useCallback(
+    (trackId: string, takeId?: string) => {
+      if (!currentPerformance) return;
+      const tid = takeId ?? activeRecordingTakeIdByTrackRef.current.get(trackId);
+      if (!tid) return;
+
+      const drop = (events: RecordingEvent[]) =>
+        events.filter((e) => !(e.trackId === trackId && getEventTakeId(e) === tid));
+
+      performanceEventsRef.current = drop(performanceEventsRef.current);
+      performanceTracksRef.current = Array.from(new Set(performanceEventsRef.current.map((e) => e.trackId)));
+
+      setCurrentPerformance((prev) => {
+        if (!prev) return null;
+        const events = drop(prev.events);
+        return {
+          ...prev,
+          events,
+          tracks: Array.from(new Set(events.map((e) => e.trackId))),
+        };
+      });
+
+      const stack = takeStackByTrackRef.current.get(trackId)?.filter((x) => x !== tid) ?? [];
+      if (stack.length) {
+        takeStackByTrackRef.current.set(trackId, stack);
+        if (activeRecordingTakeIdByTrackRef.current.get(trackId) === tid) {
+          activeRecordingTakeIdByTrackRef.current.set(trackId, stack[stack.length - 1]);
+        }
+        if (playbackTakeByTrackRef.current[trackId] === tid) {
+          playbackTakeByTrackRef.current[trackId] = stack[stack.length - 1];
+        }
+      } else {
+        const nid = generateTakeId();
+        takeStackByTrackRef.current.set(trackId, [nid]);
+        activeRecordingTakeIdByTrackRef.current.set(trackId, nid);
+        playbackTakeByTrackRef.current[trackId] = nid;
+      }
+      syncLaneTakeStateFromRefs();
+    },
+    [currentPerformance, syncLaneTakeStateFromRefs]
+  );
+
+  const eraseWholeLaneForTrack = useCallback(
+    (trackId: string) => {
+      if (!currentPerformance) return;
+      performanceEventsRef.current = performanceEventsRef.current.filter((e) => e.trackId !== trackId);
+      performanceTracksRef.current = performanceTracksRef.current.filter((t) => t !== trackId);
+
+      setCurrentPerformance((prev) => {
+        if (!prev) return null;
+        const events = prev.events.filter((e) => e.trackId !== trackId);
+        return {
+          ...prev,
+          events,
+          tracks: prev.tracks.filter((t) => t !== trackId),
+        };
+      });
+
+      const nid = generateTakeId();
+      takeStackByTrackRef.current.set(trackId, [nid]);
+      activeRecordingTakeIdByTrackRef.current.set(trackId, nid);
+      playbackTakeByTrackRef.current[trackId] = nid;
+      syncLaneTakeStateFromRefs();
+    },
+    [currentPerformance, syncLaneTakeStateFromRefs]
+  );
+
   const clearPlaybackTimers = useCallback(() => {
     playbackScheduleCancelRef.current?.();
     playbackScheduleCancelRef.current = null;
@@ -1319,6 +1551,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         trackIdFilter: string | null;
         audioContext: AudioContext | null;
         abortToken: { cancelled: boolean };
+        playbackTakeByTrack?: Record<string, string | undefined>;
       }
     ) => {
       const hasEvents = performance.events.length > 0;
@@ -1350,9 +1583,11 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const cycleLen = performance.cycleLengthMs ?? performance.duration;
       const sorted = [...performance.events].sort((a, b) => a.timestamp - b.timestamp);
-      const filtered = opts.trackIdFilter
-        ? sorted.filter((e) => e.trackId === opts.trackIdFilter)
-        : sorted;
+      const filtered = filterEventsForPlaybackPass({
+        events: sorted,
+        trackIdFilter: opts.trackIdFilter,
+        playbackTakeByTrack: opts.playbackTakeByTrack,
+      });
       const lastTs = filtered.length ? Math.max(...filtered.map((e) => e.timestamp)) : 0;
       const passDurationMs =
         opts.loop && cycleLen > 0
@@ -1409,6 +1644,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         referenceAudio?: boolean;
         referenceOnly?: boolean;
         trackIdFilter?: string | null;
+        playbackTakeByTrack?: Record<string, string | undefined>;
       }
     ) => {
       const performance = performances.find((item) => item.id === performanceId);
@@ -1441,12 +1677,30 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return;
       }
 
+      const takesPresent = new Map<string, Set<string>>();
+      for (const e of performance.events) {
+        const s = takesPresent.get(e.trackId) ?? new Set();
+        s.add(getEventTakeId(e));
+        takesPresent.set(e.trackId, s);
+      }
+      const fromRef: Record<string, string | undefined> = {};
+      for (const [tid, sel] of Object.entries(playbackTakeByTrackRef.current)) {
+        if (takesPresent.get(tid)?.has(sel)) {
+          fromRef[tid] = sel;
+        }
+      }
+      const mergedPlayback: Record<string, string | undefined> = {
+        ...fromRef,
+        ...(options?.playbackTakeByTrack ?? {}),
+      };
+
       runPerformancePlaybackPass(performance, {
         loop,
         referenceAudioWithEvents,
         trackIdFilter,
         audioContext,
         abortToken,
+        playbackTakeByTrack: mergedPlayback,
       });
     },
     [performances, runPerformancePlaybackPass, stopPerformancePlayback, playReferenceAudio]
@@ -1593,6 +1847,20 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     unarmedRecordingTrackIds,
     toggleRecordingArmForTrack,
     clearRecordingArmExclusions,
+    armAllRecordingLanes,
+    disarmAllRecordingLanes,
+    initRecordingTakesForTracks,
+    newTakeForTrack,
+    newTakeAllTracks,
+    selectRecordingTakeForTrack,
+    selectPlaybackTakeForTrack,
+    eraseCurrentTakeForTrack,
+    eraseWholeLaneForTrack,
+    laneTakeStacks: laneTakeState.stacks,
+    activeRecordingTakeByTrack: laneTakeState.recordingActive,
+    playbackTakeByTrack: laneTakeState.playbackSelected,
+    recordSessionGridTempoEvent,
+    recordSessionGridTimeSignatureEvent,
     startPerformancePlayback,
     startReferenceOnlyPlayback,
     startLanePlayback,
@@ -1601,6 +1869,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     engagedTrackIds,
     setTrackEngaged,
     isPerformanceLoopEnabled,
+    setPerformanceLoopEnabled: setIsPerformanceLoopEnabled,
     isOverdubEnabled,
     setOverdubEnabled: setIsOverdubEnabled,
     recordEventsEnabled,
