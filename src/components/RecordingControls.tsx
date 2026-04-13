@@ -3,7 +3,6 @@ import { Save, Check } from 'lucide-react';
 import { useRecording } from '../context/RecordingContext';
 import { useAccessControl } from '../hooks/useAccessControl';
 import { UpgradePrompt } from './UpgradePrompt';
-import Tooltip from './Tooltip';
 import { useUser } from '../hooks/useUser';
 import { showSignupModal } from '../hooks/useSignupModal';
 
@@ -14,17 +13,11 @@ interface RecordingControlsProps {
 }
 
 const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', onSave, audioContext }) => {
-  const {
-    isRecordingPerformance,
-    currentPerformance,
-    startPerformanceRecording,
-    stopPerformanceRecording,
-    recordEventsEnabled,
-    setRecordEventsEnabled,
-    recordMixEnabled,
-    setRecordMixEnabled,
-    isOverdubEnabled,
-    playingPerformanceId,
+  const { 
+    isRecordingPerformance, 
+    currentPerformance, 
+    startPerformanceRecording, 
+    stopPerformanceRecording
   } = useRecording();
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const { tier } = useUser();
@@ -72,34 +65,32 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
   return (
     <div className={`flex items-center gap-6 w-full ${className}`}>
       {/* Save Button */}
-      <Tooltip content="Save current session" position="top" delay={150}>
-        <button
-          onClick={handleSave}
-          disabled={!onSave || isSaving}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-            saveSuccess
-              ? 'bg-green-500 text-white'
-              : 'bg-audafact-text-secondary text-audafact-bg-primary hover:bg-opacity-90'
-          }`}
-        >
-          {saveSuccess ? (
-            <>
-              <Check size={12} />
-              Saved!
-            </>
-          ) : isSaving ? (
-            <>
-              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save size={12} />
-              Save
-            </>
-          )}
-        </button>
-      </Tooltip>
+      <button
+        onClick={handleSave}
+        disabled={!onSave || isSaving}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+          saveSuccess 
+            ? 'bg-green-500 text-white' 
+            : 'bg-audafact-text-secondary text-audafact-bg-primary hover:bg-opacity-90'
+        }`}
+      >
+        {saveSuccess ? (
+          <>
+            <Check size={12} />
+            Saved!
+          </>
+        ) : isSaving ? (
+          <>
+            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+            Saving...
+          </>
+        ) : (
+          <>
+            <Save size={12} />
+            Save
+          </>
+        )}
+      </button>
 
       {/* Record Button and Status */}
         <div className="flex items-center gap-3">
@@ -108,11 +99,7 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
               <span>
                 {currentPerformance.events.length === 0
                   ? 'Waiting for first trigger...'
-                  : recordMixEnabled && recordEventsEnabled
-                    ? 'Recording mix & events…'
-                    : recordMixEnabled
-                      ? 'Recording mix…'
-                      : 'Recording events…'}
+                  : 'Recording Performance & Audio...'}
               </span>
               <span className="font-mono">
                 {formatDuration(Date.now() - currentPerformance.startTime)}
@@ -121,55 +108,29 @@ const RecordingControls: React.FC<RecordingControlsProps> = ({ className = '', o
           )}
 
           {!isRecordingPerformance ? (
-            <>
-            <div className="flex flex-wrap items-center gap-3 text-xs audafact-text-secondary">
-              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={recordEventsEnabled}
-                  onChange={(e) => setRecordEventsEnabled(e.target.checked)}
-                />
-                Log events
-              </label>
-              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={recordMixEnabled}
-                  onChange={(e) => setRecordMixEnabled(e.target.checked)}
-                />
-                Record mix
-              </label>
-            </div>
-            <Tooltip content="Record performance" position="top" delay={150}>
-              <button
-                onClick={async () => {
-                  // Check if user is authenticated
-                  if (!tier || tier.id === 'guest') {
-                    showSignupModal('record');
-                    return;
-                  }
+            <button
+              onClick={async () => {
+                // Check if user is authenticated
+                if (!tier || tier.id === 'guest') {
+                  showSignupModal('record');
+                  return;
+                }
 
-                  // Check record limits for authenticated users
-                  const canRecord = await canPerformAction('record');
-
-                  if (!canRecord) {
-                    setShowUpgradePrompt(true);
-                    return;
-                  }
-
-                  startPerformanceRecording(audioContext, {
-                    recordEvents: recordEventsEnabled,
-                    recordMix: recordMixEnabled,
-                    continueOverdub: isOverdubEnabled && !!playingPerformanceId,
-                  });
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
-              >
-                <div className="w-3 h-3 bg-current rounded-full"></div>
-                Record
-              </button>
-            </Tooltip>
-            </>
+                // Check record limits for authenticated users
+                const canRecord = await canPerformAction('record');
+                
+                if (!canRecord) {
+                  setShowUpgradePrompt(true);
+                  return;
+                }
+                
+                startPerformanceRecording(audioContext);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-audafact-alert-red text-audafact-text-primary rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
+            >
+              <div className="w-3 h-3 bg-current rounded-full"></div>
+              Record
+            </button>
           ) : (
             <button
               onClick={stopPerformanceRecording}

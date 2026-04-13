@@ -111,9 +111,6 @@ export interface Recording {
   size_bytes?: number;
   content_type?: string;
   original_name?: string;
-  performance_events?: unknown[];
-  event_schema_version?: number;
-  performance_meta?: Record<string, unknown> | null;
 }
 
 // Storage Types

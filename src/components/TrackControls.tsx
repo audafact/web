@@ -1,11 +1,9 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { isIOSWebAudioTarget } from '../context/AudioContext';
 import { useRecording } from '../context/RecordingContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { useUser } from '../hooks/useUser';
-import { PerformanceEvent } from '../types/performanceEvents';
-import { logRegionDragTransport } from '../utils/regionDragTransportDiag';
 
 // Utility function to format cue point timestamps
 const formatCueTimestamp = (seconds: number): string => {
@@ -101,8 +99,7 @@ interface TrackControlsProps {
   loopStart: number;
   loopEnd: number;
   cuePoints: number[];
-  /** Resolves to the AudioContext to use immediately (avoids stale null from props after first init). */
-  ensureAudio: () => Promise<AudioContext | null>;
+  ensureAudio: (callback: () => void) => Promise<void>;
   /** iOS: HTMLAudio warm-up before WebAudio (see AudioContext). Optional reason string is for debug logs. */
   primeIosSessionForWebAudio?: (reason?: string) => Promise<void>;
   isSelected?: boolean;
@@ -137,13 +134,6 @@ interface TrackControlsProps {
   seekFunctionRef?: React.MutableRefObject<((seekTime: number) => void) | null>;
   // Toggle playback function ref (for global space bar trigger)
   togglePlaybackFunctionRef?: React.MutableRefObject<(() => void) | null>;
-  /** Imperative stop when loop/cue region drag starts (Waveform first `update`); keeps resume ref in sync. */
-  suspendTransportForRegionDragSyncRef?: React.MutableRefObject<(() => void) | null>;
-  /**
-   * When false (Studio main deck), loop/cue handle drags do not pause Web Audio transport.
-   * Default true for demos or overlays that need drag to suspend deck playback.
-   */
-  pauseTransportOnRegionDrag?: boolean;
   // Recording destination for audio capture
   recordingDestination?: MediaStreamAudioDestinationNode | null;
   // Add drag state props for real-time timestamp updates
@@ -152,8 +142,6 @@ interface TrackControlsProps {
   loopDragState?: { start: number; end: number } | null;
   /** When mode is 'cue', how pads trigger playback. Default 'cue'. */
   chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
-  /** When set, shows Cue / Hold / One-Shot next to Audio Filters & Cue Points toggles (chop mode). */
-  onChopTriggerStyleChange?: (style: 'cue' | 'hold' | 'one-shot') => void;
 }
 
 const TrackControls = ({ 
@@ -186,42 +174,18 @@ const TrackControls = ({
   trackId,
   seekFunctionRef,
   togglePlaybackFunctionRef,
-  suspendTransportForRegionDragSyncRef,
-  pauseTransportOnRegionDrag = true,
   recordingDestination,
   cueDragState = null,
-  chopTriggerStyle = 'cue',
-  onChopTriggerStyleChange,
+  chopTriggerStyle = 'cue'
 }: TrackControlsProps) => {
-  const {
-    addRecordingEvent,
-    unarmedRecordingTrackIds,
-    toggleRecordingArmForTrack,
-    performances,
-    startLanePlayback,
-    stopPerformancePlayback,
-    playingPerformanceId,
-    engagedTrackIds,
-  } = useRecording();
+  const { addRecordingEvent } = useRecording();
   const { trackEvent } = useAnalytics();
   const { tier } = useUser();
   const [speed, setSpeed] = useState(playbackSpeed);
   const [isPlaying, setIsPlaying] = useState(false);
+  
 
-  const perfForLane = useMemo(() => {
-    if (!trackId) return null;
-    return performances.find((p) => p.events.some((e) => e.trackId === trackId)) ?? null;
-  }, [performances, trackId]);
-
-  const isArmedForRecord = !trackId || !unarmedRecordingTrackIds.includes(trackId);
-  const isLaneLoopPlaying = !!(
-    trackId &&
-    perfForLane &&
-    playingPerformanceId === perfForLane.id &&
-    engagedTrackIds.length === 1 &&
-    engagedTrackIds[0] === trackId
-  );
-
+  
   // Reconnect audio sources when recording destination changes
   useEffect(() => {
     if (recordingDestination && audioSourceRef.current && isPlaying && audioContext) {
@@ -241,7 +205,6 @@ const TrackControls = ({
   const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
   const [internalHighpassFreq, setInternalHighpassFreq] = useState(highpassFreq || 20);
   const [isFilterSectionExpanded, setIsFilterSectionExpanded] = useState(false);
-  const [isCueSectionExpanded, setIsCueSectionExpanded] = useState(false);
   const [lowpassInputValue, setLowpassInputValue] = useState(formatFreqDisplay(lowpassFreq || 20000));
   const [highpassInputValue, setHighpassInputValue] = useState(formatFreqDisplay(highpassFreq || 20));
   const [volumeInputValue, setVolumeInputValue] = useState(() => formatVolumeDisplay(volume));
@@ -257,7 +220,7 @@ const TrackControls = ({
   const animationFrameRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
   const currentVolumeRef = useRef<number>(volume);
-  const currentSpeedRef = useRef<number>(playbackSpeed);
+  const currentSpeedRef = useRef<number>(1);
   const activeCueIndexRef = useRef<number | null>(null);
   const cueStartTimeRef = useRef<number>(0);
   // Track the actual starting position when playback begins
@@ -297,13 +260,12 @@ const TrackControls = ({
   }, [audioContext]);
 
   const ensureIosPrimeForStudioPlayback = useCallback(
-    async (reason: string, resolvedContext?: AudioContext | null) => {
-      const ctx = resolvedContext ?? audioContext;
-      if (!primeIosSessionForWebAudio || !ctx) return;
+    async (reason: string) => {
+      if (!primeIosSessionForWebAudio || !audioContext) return;
       if (!isIOSWebAudioTarget()) return;
       const needsPrime =
         !iosStudioWebAudioPrimedRef.current ||
-        ctx.state !== 'running';
+        audioContext.state !== 'running';
       if (!needsPrime) return;
       await primeIosSessionForWebAudio(reason);
       iosStudioWebAudioPrimedRef.current = true;
@@ -351,14 +313,6 @@ const TrackControls = ({
     }
   }, [speed]);
 
-  // Keep local speed + ref aligned with parent (e.g. restored session) so WebAudio uses the same rate as the UI.
-  useEffect(() => {
-    if (speedInputFocusedRef.current) return;
-    setSpeed(playbackSpeed);
-    currentSpeedRef.current = playbackSpeed;
-    setSpeedInputValue(formatSpeedDisplay(playbackSpeed));
-  }, [playbackSpeed]);
-
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
     const minTempo = Math.max(40, Math.round(trackTempo * 0.5)); // Half tempo, minimum 40 BPM
@@ -402,7 +356,21 @@ const TrackControls = ({
     if (onLowpassFreqChange) {
       onLowpassFreqChange(clampedFreq);
     }
-  }, [audioContext, onLowpassFreqChange]);
+    
+    // Record filter change event
+    if (trackId) {
+      addRecordingEvent({
+        type: 'filter_change',
+        trackId,
+        data: { 
+          filterType: 'lowpass',
+          oldFreq: internalLowpassFreq,
+          newFreq: clampedFreq,
+          mode
+        }
+      });
+    }
+  }, [audioContext, onLowpassFreqChange, trackId, addRecordingEvent, internalLowpassFreq, mode]);
 
   const handleHighpassFreqChange = useCallback((freq: number) => {
     const clampedFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq));
@@ -422,7 +390,21 @@ const TrackControls = ({
     if (onHighpassFreqChange) {
       onHighpassFreqChange(clampedFreq);
     }
-  }, [audioContext, onHighpassFreqChange]);
+    
+    // Record filter change event
+    if (trackId) {
+      addRecordingEvent({
+        type: 'filter_change',
+        trackId,
+        data: { 
+          filterType: 'highpass',
+          oldFreq: internalHighpassFreq,
+          newFreq: clampedFreq,
+          mode
+        }
+      });
+    }
+  }, [audioContext, onHighpassFreqChange, trackId, addRecordingEvent, internalHighpassFreq, mode]);
 
   const handleLowpassInputBlur = useCallback(() => {
     lowpassInputFocusedRef.current = false;
@@ -472,15 +454,14 @@ const TrackControls = ({
   }, [internalLowpassFreq, internalHighpassFreq]);
 
   // Helper function to create audio chain with current volume and speed
-  const createAudioChainWithCurrentSettings = useCallback((resolvedContext?: AudioContext | null) => {
-    const ac = resolvedContext ?? audioContext;
-    if (!ac || !audioBuffer) return null;
-
+  const createAudioChainWithCurrentSettings = useCallback(() => {
+    if (!audioContext) return null;
+    
     const currentVolume = currentVolumeRef.current;
     const currentSpeed = currentSpeedRef.current;
-
-    const sourceNode = ac.createBufferSource();
-    const gainNode = ac.createGain();
+    
+    const sourceNode = audioContext.createBufferSource();
+    const gainNode = audioContext.createGain();
     
     sourceNode.buffer = audioBuffer;
     sourceNode.playbackRate.value = currentSpeed;
@@ -491,12 +472,12 @@ const TrackControls = ({
     const lowpassFreq = currentLowpassFreqRef.current;
     const highpassFreq = currentHighpassFreqRef.current;
     
-    const lowpassFilter = ac.createBiquadFilter();
+    const lowpassFilter = audioContext.createBiquadFilter();
     lowpassFilter.type = 'lowpass';
     lowpassFilter.frequency.value = lowpassFreq;
     lowpassFilter.Q.value = 1;
     
-    const highpassFilter = ac.createBiquadFilter();
+    const highpassFilter = audioContext.createBiquadFilter();
     highpassFilter.type = 'highpass';
     highpassFilter.frequency.value = highpassFreq;
     highpassFilter.Q.value = 1;
@@ -509,11 +490,11 @@ const TrackControls = ({
     sourceNode.connect(highpassFilter);
     highpassFilter.connect(lowpassFilter);
     lowpassFilter.connect(gainNode);
-    gainNode.connect(ac.destination);
-
+    gainNode.connect(audioContext.destination);
+    
     // Also connect to recording destination if available
     if (recordingDestination) {
-      const recordingGain = ac.createGain();
+      const recordingGain = audioContext.createGain();
       recordingGain.gain.value = gainNode.gain.value;
       lowpassFilter.connect(recordingGain);
       recordingGain.connect(recordingDestination);
@@ -626,34 +607,6 @@ const TrackControls = ({
     lastUpdateTimeRef.current = now;
     animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
   }, [isPlaying, audioContext, audioBuffer.duration, onPlaybackTimeChange, mode, loopStart, loopEnd]);
-
-  /** Best-effort audible playhead (for resuming after region-drag pause). */
-  const getLivePlayheadSeconds = useCallback((): number | null => {
-    if (!audioContext || !audioBuffer) return null;
-    if (!audioSourceRef.current) {
-      if (typeof playbackTime === 'number' && Number.isFinite(playbackTime)) return playbackTime;
-      return currentTime;
-    }
-    const ts = audioContext.getOutputTimestamp();
-    const contextTime = ts.contextTime ?? audioContext.currentTime;
-    const elapsed = contextTime - startTimeRef.current;
-    const sourceNode = audioSourceRef.current;
-    const playbackRate = sourceNode.playbackRate.value;
-
-    if (mode === 'loop') {
-      if (!isSourceLoopingRef.current) {
-        const currentPlaybackTime = playbackStartTimeRef.current + elapsed * playbackRate;
-        return Math.min(Math.max(0, currentPlaybackTime), audioBuffer.duration);
-      }
-      const loopDuration = loopEnd - loopStart;
-      if (loopDuration <= 0) return Math.max(0, Math.min(loopStart, audioBuffer.duration));
-      const rawPosition = playbackStartTimeRef.current + elapsed * playbackRate;
-      const offsetInLoop = ((rawPosition - loopStart) % loopDuration + loopDuration) % loopDuration;
-      return Math.min(Math.max(0, loopStart + offsetInLoop), audioBuffer.duration);
-    }
-    const currentPlaybackTime = playbackStartTimeRef.current + elapsed * playbackRate;
-    return Math.min(Math.max(0, currentPlaybackTime), audioBuffer.duration);
-  }, [audioContext, audioBuffer, mode, loopStart, loopEnd, playbackTime, currentTime]);
 
   // Update refs when activeCueIndex changes
   useEffect(() => {
@@ -922,41 +875,6 @@ const TrackControls = ({
     }
   }, [onPlaybackStateChange]);
 
-  const prevRegionDragRef = useRef(false);
-  const wasPlayingWhenRegionDragRef = useRef(false);
-  /** When pausing for region drag, resume `togglePlayback` from this time (seconds). */
-  const resumePlayheadAfterRegionDragRef = useRef<number | null>(null);
-
-  /** Called from Waveform on first region `update` each gesture (WS7 has no `update-start`). */
-  const suspendTransportForRegionDragSync = useCallback(() => {
-    if (!pauseTransportOnRegionDrag) return;
-    const active = isPlaying || !!audioSourceRef.current;
-    wasPlayingWhenRegionDragRef.current = wasPlayingWhenRegionDragRef.current || active;
-    if (active) {
-      const t = getLivePlayheadSeconds();
-      if (t != null && Number.isFinite(t)) {
-        resumePlayheadAfterRegionDragRef.current = t;
-      }
-      stopChopPlayback();
-    }
-  }, [pauseTransportOnRegionDrag, isPlaying, stopChopPlayback, getLivePlayheadSeconds]);
-
-  /** Stop Hold playback for this pad and optionally log `cue_release` (live performance only). */
-  const endHoldAtCueIndex = useCallback(
-    (cueIndex: number, recordRelease: boolean) => {
-      if (holdTriggeredByRef.current !== cueIndex) return;
-      stopChopPlayback();
-      if (recordRelease && trackId) {
-        addRecordingEvent({
-          type: 'cue_release',
-          trackId,
-          data: { cueIndex, mode: 'cue' },
-        });
-      }
-    },
-    [trackId, addRecordingEvent, stopChopPlayback]
-  );
-
   // Handle keyboard events for cue points
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
@@ -1016,13 +934,13 @@ const TrackControls = ({
         '6': 5, '7': 6, '8': 7, '9': 8, '0': 9
       };
       const cueIndex = keyMap[event.key];
-      if (cueIndex !== undefined) {
-        endHoldAtCueIndex(cueIndex, true);
+      if (cueIndex !== undefined && holdTriggeredByRef.current === cueIndex) {
+        stopChopPlaybackRef.current();
       }
     };
     window.addEventListener('keyup', handleKeyUp);
     return () => window.removeEventListener('keyup', handleKeyUp);
-  }, [mode, chopTriggerStyle, isSelected, endHoldAtCueIndex]);
+  }, [mode, chopTriggerStyle, isSelected]);
 
   useEffect(() => {
     stopChopPlaybackRef.current = stopChopPlayback;
@@ -1031,16 +949,13 @@ const TrackControls = ({
   // Handle play/pause functionality
   const togglePlayback = async () => {
     try {
-      // Stop path must run synchronously — do not await ensureAudio first or transport keeps
-      // playing (and region-drag / space-to-pause feels delayed or ineffective).
-      const shouldStop = isPlaying || !!audioSourceRef.current;
-      if (shouldStop) {
+      await ensureAudio(() => {});
+      if (!audioContext || !audioBuffer) return;
+
+      if (isPlaying) {
+        // Stop playback
         if (audioSourceRef.current) {
-          try {
-            audioSourceRef.current.stop();
-          } catch (_) {
-            /* already stopped */
-          }
+          audioSourceRef.current.stop();
           audioSourceRef.current = null;
         }
         if (gainNodeRef.current) {
@@ -1063,7 +978,8 @@ const TrackControls = ({
         if (onPlaybackStateChange) {
           onPlaybackStateChange(false);
         }
-
+        
+        // Record loop stop event
         if (trackId && mode === 'loop') {
           addRecordingEvent({
             type: 'loop_stop',
@@ -1071,131 +987,85 @@ const TrackControls = ({
             data: { mode }
           });
         }
-        return;
-      }
-
-      const ctx = await ensureAudio();
-      if (!ctx || !audioBuffer) return;
-
-      await ensureIosPrimeForStudioPlayback('trackcontrols:toggle-play', ctx);
-
-      // Start playback - create audio chain manually to ensure current volume and speed are applied
-      const audioChain = createAudioChainWithCurrentSettings(ctx);
-      if (!audioChain) return;
-
-      const resumeSnap = resumePlayheadAfterRegionDragRef.current;
-      resumePlayheadAfterRegionDragRef.current = null;
-
-      const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
-
-      if (mode === 'loop') {
-        if (resumeSnap == null) {
+      } else {
+        await ensureIosPrimeForStudioPlayback('trackcontrols:toggle-play');
+        // Start playback - create audio chain manually to ensure current volume and speed are applied
+        const audioChain = createAudioChainWithCurrentSettings();
+        if (!audioChain) return;
+        
+        const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
+        
+        if (mode === 'loop') {
+          // In loop mode, always start from the beginning of the loop region
           sourceNode.loop = true;
           sourceNode.loopStart = loopStart;
           sourceNode.loopEnd = loopEnd;
           isSourceLoopingRef.current = true;
           sourceNode.start(0, loopStart);
           playbackStartTimeRef.current = loopStart;
-          setCurrentTime(loopStart);
+        } else if (mode === 'cue' && activeCueIndex !== null) {
+          const cueStartTime = cuePoints[activeCueIndex];
+          cueStartTimeRef.current = cueStartTime;
+          isSourceLoopingRef.current = false;
+          sourceNode.start(0, cueStartTime);
+          playbackStartTimeRef.current = cueStartTime;
         } else {
-          const startFrom = Math.min(Math.max(0, resumeSnap), audioBuffer.duration);
-          const within = startFrom >= loopStart && startFrom <= loopEnd;
-          if (within) {
-            sourceNode.loop = true;
-            sourceNode.loopStart = loopStart;
-            sourceNode.loopEnd = loopEnd;
-            isSourceLoopingRef.current = true;
-            sourceNode.start(0, startFrom);
-            playbackStartTimeRef.current = startFrom;
-          } else {
-            sourceNode.loop = false;
-            isSourceLoopingRef.current = false;
-            sourceNode.start(0, startFrom);
-            playbackStartTimeRef.current = startFrom;
+          isSourceLoopingRef.current = false;
+          sourceNode.start(0, currentTime);
+          playbackStartTimeRef.current = currentTime;
+        }
+
+        audioSourceRef.current = sourceNode;
+        gainNodeRef.current = gainNode;
+        lowpassFilterRef.current = lowpassFilter;
+        highpassFilterRef.current = highpassFilter;
+        setIsPlaying(true);
+        if (onPlaybackStateChange) {
+          onPlaybackStateChange(true);
+        }
+        
+        // Record loop play event
+        if (trackId && mode === 'loop') {
+          addRecordingEvent({
+            type: 'loop_play',
+            trackId,
+            data: { 
+              mode,
+              loopStart,
+              loopEnd,
+              currentTime: playbackStartTimeRef.current
+            }
+          });
+        }
+        startTimeRef.current = audioContext.currentTime;
+        
+        // Start the animation frame loop for smooth updates
+        lastUpdateTimeRef.current = performance.now();
+        animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
+
+        sourceNode.onended = () => {
+          if (audioSourceRef.current === sourceNode) {
+            setIsPlaying(false);
+            audioSourceRef.current = null;
+            gainNodeRef.current = null;
+            if (lowpassFilterRef.current) {
+              lowpassFilterRef.current.disconnect();
+              lowpassFilterRef.current = null;
+            }
+            if (highpassFilterRef.current) {
+              highpassFilterRef.current.disconnect();
+              highpassFilterRef.current = null;
+            }
+            if (animationFrameRef.current) {
+              cancelAnimationFrame(animationFrameRef.current);
+              animationFrameRef.current = null;
+            }
+            if (onPlaybackStateChange) {
+              onPlaybackStateChange(false);
+            }
           }
-          setCurrentTime(startFrom);
-          if (onPlaybackTimeChange) {
-            onPlaybackTimeChange(startFrom);
-          }
-        }
-      } else if (mode === 'cue' && activeCueIndex !== null) {
-        const cueDefault = cuePoints[activeCueIndex];
-        const startFrom =
-          resumeSnap != null
-            ? Math.min(Math.max(0, resumeSnap), audioBuffer.duration)
-            : cueDefault;
-        cueStartTimeRef.current = startFrom;
-        isSourceLoopingRef.current = false;
-        sourceNode.start(0, startFrom);
-        playbackStartTimeRef.current = startFrom;
-        setCurrentTime(startFrom);
-        if (onPlaybackTimeChange) {
-          onPlaybackTimeChange(startFrom);
-        }
-      } else {
-        const startFrom =
-          resumeSnap != null
-            ? Math.min(Math.max(0, resumeSnap), audioBuffer.duration)
-            : currentTime;
-        isSourceLoopingRef.current = false;
-        sourceNode.start(0, startFrom);
-        playbackStartTimeRef.current = startFrom;
-        setCurrentTime(startFrom);
-        if (resumeSnap != null && onPlaybackTimeChange) {
-          onPlaybackTimeChange(startFrom);
-        }
+        };
       }
-
-      audioSourceRef.current = sourceNode;
-      gainNodeRef.current = gainNode;
-      lowpassFilterRef.current = lowpassFilter;
-      highpassFilterRef.current = highpassFilter;
-      setIsPlaying(true);
-      if (onPlaybackStateChange) {
-        onPlaybackStateChange(true);
-      }
-
-      // Record loop play event
-      if (trackId && mode === 'loop') {
-        addRecordingEvent({
-          type: 'loop_play',
-          trackId,
-          data: {
-            mode,
-            loopStart,
-            loopEnd,
-            currentTime: playbackStartTimeRef.current
-          }
-        });
-      }
-      startTimeRef.current = ctx.currentTime;
-
-      // Start the animation frame loop for smooth updates
-      lastUpdateTimeRef.current = performance.now();
-      animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
-
-      sourceNode.onended = () => {
-        if (audioSourceRef.current === sourceNode) {
-          setIsPlaying(false);
-          audioSourceRef.current = null;
-          gainNodeRef.current = null;
-          if (lowpassFilterRef.current) {
-            lowpassFilterRef.current.disconnect();
-            lowpassFilterRef.current = null;
-          }
-          if (highpassFilterRef.current) {
-            highpassFilterRef.current.disconnect();
-            highpassFilterRef.current = null;
-          }
-          if (animationFrameRef.current) {
-            cancelAnimationFrame(animationFrameRef.current);
-            animationFrameRef.current = null;
-          }
-          if (onPlaybackStateChange) {
-            onPlaybackStateChange(false);
-          }
-        }
-      };
     } catch (error) {
       console.error('Error in togglePlayback:', error);
       setIsPlaying(false);
@@ -1214,87 +1084,14 @@ const TrackControls = ({
     };
   }, [togglePlaybackFunctionRef, togglePlayback]);
 
-  useEffect(() => {
-    if (!suspendTransportForRegionDragSyncRef) return;
-    if (!pauseTransportOnRegionDrag) {
-      suspendTransportForRegionDragSyncRef.current = null;
-      return () => {
-        suspendTransportForRegionDragSyncRef.current = null;
-      };
-    }
-    suspendTransportForRegionDragSyncRef.current = suspendTransportForRegionDragSync;
-    return () => {
-      suspendTransportForRegionDragSyncRef.current = null;
-    };
-  }, [
-    suspendTransportForRegionDragSyncRef,
-    suspendTransportForRegionDragSync,
-    pauseTransportOnRegionDrag,
-  ]);
-
-  // During cue or loop region drag, stop transport; on release resume if it was playing.
-  // WaveformDisplay also calls suspendTransportForRegionDragSync on the first region `update`
-  // so transport stops as soon as the gesture moves (before this effect runs).
-  useEffect(() => {
-    const cueDragging = cueDragState != null && Object.keys(cueDragState).length > 0;
-    const loopDragging = loopDragState != null;
-    const dragging = cueDragging || loopDragging;
-    const wasDragging = prevRegionDragRef.current;
-
-    if (!pauseTransportOnRegionDrag) {
-      prevRegionDragRef.current = dragging;
-      return;
-    }
-
-    if (dragging && !wasDragging) {
-      const transportWasActive = isPlaying || !!audioSourceRef.current;
-      wasPlayingWhenRegionDragRef.current =
-        wasPlayingWhenRegionDragRef.current || transportWasActive;
-      if (transportWasActive && audioSourceRef.current) {
-        const t = getLivePlayheadSeconds();
-        if (t != null && Number.isFinite(t)) {
-          resumePlayheadAfterRegionDragRef.current = t;
-        }
-      }
-      logRegionDragTransport('TrackControls region-drag effect: drag start → stopChopPlayback', {
-        trackId: trackId ?? '(no trackId)',
-        cueDragging,
-        loopDragging,
-        isPlaying,
-        hadAudioSource: !!audioSourceRef.current,
-        willResumeAfter: wasPlayingWhenRegionDragRef.current,
-      });
-      stopChopPlayback();
-    } else if (!dragging && wasDragging) {
-      if (wasPlayingWhenRegionDragRef.current) {
-        logRegionDragTransport('TrackControls region-drag effect: drag end → resume togglePlayback', {
-          trackId: trackId ?? '(no trackId)',
-        });
-        void togglePlayback();
-      } else {
-        resumePlayheadAfterRegionDragRef.current = null;
-        logRegionDragTransport('TrackControls region-drag effect: drag end (no resume)', {
-          trackId: trackId ?? '(no trackId)',
-        });
-      }
-      wasPlayingWhenRegionDragRef.current = false;
-    }
-    prevRegionDragRef.current = dragging;
-  }, [pauseTransportOnRegionDrag, cueDragState, loopDragState, isPlaying, stopChopPlayback, togglePlayback, getLivePlayheadSeconds]);
-
-  type PlayCuePointOptions = {
-    chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
-    /** When false (e.g. performance replay), do not append a recording event */
-    recordEvent?: boolean;
-  };
-
   // Play from a specific cue point (behavior depends on chopTriggerStyle)
-  const playCuePoint = async (index: number, options?: PlayCuePointOptions) => {
-    if (!audioBuffer || index >= cuePoints.length) {
+  const playCuePoint = async (index: number) => {
+    
+    if (!audioContext || !audioBuffer || index >= cuePoints.length) {
       return;
     }
 
-    const style = options?.chopTriggerStyle ?? chopTriggerStyle;
+    const style = chopTriggerStyle;
     const cueTime = getCurrentCueTimestamp(cuePoints, cueDragState, index);
 
     // One-Shot: invalid trigger if this node is at or past the next node (no valid slice)
@@ -1305,9 +1102,8 @@ const TrackControls = ({
     }
 
     try {
-      const ctx = await ensureAudio();
-      if (!ctx) return;
-      await ensureIosPrimeForStudioPlayback('trackcontrols:play-cue-point', ctx);
+      await ensureAudio(() => {});
+      await ensureIosPrimeForStudioPlayback('trackcontrols:play-cue-point');
 
       // Stop current playback if any (monophonic per track)
       if (audioSourceRef.current) {
@@ -1330,7 +1126,7 @@ const TrackControls = ({
       activeCueIndexRef.current = index;
       cueStartTimeRef.current = cueTime;
 
-      const audioChain = createAudioChainWithCurrentSettings(ctx);
+      const audioChain = createAudioChainWithCurrentSettings();
       if (!audioChain) return;
 
       const { sourceNode, gainNode, lowpassFilter, highpassFilter } = audioChain;
@@ -1341,14 +1137,14 @@ const TrackControls = ({
       lowpassFilterRef.current = lowpassFilter;
       highpassFilterRef.current = highpassFilter;
       isSourceLoopingRef.current = false;
-      startTimeRef.current = ctx.currentTime;
+      startTimeRef.current = audioContext.currentTime;
 
       if (style === 'one-shot') {
         const sliceStart = cueTime;
         const sliceEnd = getSliceEnd(cuePoints, index, audioBuffer.duration, sliceStart);
         const durationSec = (sliceEnd - sliceStart) / playbackRate;
         sourceNode.start(0, sliceStart);
-        sourceNode.stop(ctx.currentTime + durationSec);
+        sourceNode.stop(audioContext.currentTime + durationSec);
         playbackStartTimeRef.current = sliceStart;
       } else {
         // Cue or Hold: play from cue to end of buffer
@@ -1374,8 +1170,7 @@ const TrackControls = ({
       lastUpdateTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(updatePlaybackTime);
       
-      const shouldRecord = options?.recordEvent !== false;
-      if (trackId && shouldRecord) {
+      if (trackId) {
         addRecordingEvent({
           type: 'cue_trigger',
           trackId,
@@ -1486,73 +1281,6 @@ const TrackControls = ({
     }
   }, [speed]);
 
-  useEffect(() => {
-    const handlePerformancePlaybackEvent = (evt: Event) => {
-      const customEvent = evt as CustomEvent<PerformanceEvent>;
-      const playbackEvent = customEvent.detail;
-      if (!playbackEvent || !trackId || playbackEvent.trackId !== trackId) return;
-
-      if (playbackEvent.type === 'cue_trigger' && mode === 'cue') {
-        const data = playbackEvent.data;
-        const recordedStyle = data.chopTriggerStyle;
-        const styleOverride =
-          recordedStyle && ['cue', 'hold', 'one-shot'].includes(recordedStyle)
-            ? recordedStyle
-            : undefined;
-        void playCuePointRef.current?.(data.cueIndex, {
-          chopTriggerStyle: styleOverride,
-          recordEvent: false,
-        });
-        return;
-      }
-
-      if (playbackEvent.type === 'cue_release' && mode === 'cue') {
-        const idx = playbackEvent.data.cueIndex;
-        if (holdTriggeredByRef.current === idx) {
-          stopChopPlaybackRef.current();
-        }
-        return;
-      }
-
-      if (playbackEvent.type === 'loop_play' && mode === 'loop' && !isPlaying) {
-        togglePlayback();
-        return;
-      }
-
-      if (playbackEvent.type === 'loop_stop' && mode === 'loop' && isPlaying) {
-        togglePlayback();
-        return;
-      }
-
-      if (playbackEvent.type === 'volume_change') {
-        onVolumeChange?.(playbackEvent.data.newVolume);
-        return;
-      }
-
-      if (playbackEvent.type === 'speed_change') {
-        handleSpeedSliderChange(playbackEvent.data.newSpeed, false);
-      }
-    };
-
-    const handlePlaybackStop = () => {
-      if (!isPlaying) return;
-      if (mode === 'loop') {
-        void togglePlayback();
-        return;
-      }
-      if (mode === 'cue') {
-        stopChopPlaybackRef.current();
-      }
-    };
-
-    window.addEventListener('audafact-performance-playback-event', handlePerformancePlaybackEvent as EventListener);
-    window.addEventListener('audafact-performance-playback-stop', handlePlaybackStop as EventListener);
-    return () => {
-      window.removeEventListener('audafact-performance-playback-event', handlePerformancePlaybackEvent as EventListener);
-      window.removeEventListener('audafact-performance-playback-stop', handlePlaybackStop as EventListener);
-    };
-  }, [trackId, mode, isPlaying, onVolumeChange, handleSpeedSliderChange]);
-
 
   
   // Cleanup on unmount
@@ -1626,42 +1354,6 @@ const TrackControls = ({
           </div>
         )}
       </div>
-
-      {trackId && (
-        <div className="flex flex-wrap items-center gap-2 py-1.5 border-t border-audafact-divider/60">
-          <span className="text-[10px] uppercase tracking-wide audafact-text-secondary">Performance</span>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => toggleRecordingArmForTrack(trackId)}
-            className={`px-2 py-0.5 rounded text-xs border transition-colors ${
-              isArmedForRecord
-                ? 'border-audafact-accent-cyan text-audafact-accent-cyan'
-                : 'border-audafact-divider audafact-text-secondary'
-            }`}
-            title={isArmedForRecord ? 'Events from this track will be logged when recording' : 'This lane is muted for new events'}
-          >
-            {isArmedForRecord ? 'Armed' : 'Muted'}
-          </button>
-          {perfForLane && (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={async () => {
-                if (isLaneLoopPlaying) {
-                  stopPerformancePlayback();
-                  return;
-                }
-                await startLanePlayback(perfForLane.id, trackId, { loop: true });
-              }}
-              className="px-2 py-0.5 rounded text-xs border border-audafact-divider audafact-text-secondary hover:bg-audafact-surface-2"
-              title="Loop replay for this track only (event playback)"
-            >
-              {isLaneLoopPlaying ? 'Stop loop' : 'Loop lane'}
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Volume and Speed Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
@@ -1757,101 +1449,36 @@ const TrackControls = ({
         </div>
       </div>
 
-      {/* Filter Controls + Cue section toggle (chop mode) */}
+      {/* Filter Controls */}
       <div className="space-y-3">
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-y-2 gap-x-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsFilterSectionExpanded(!isFilterSectionExpanded)}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
-              title={isFilterSectionExpanded ? 'Collapse audio filters' : 'Expand audio filters'}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setIsFilterSectionExpanded(!isFilterSectionExpanded)}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
+          >
+            <span>Audio Filters {areFiltersActive() && <span className="text-audafact-accent-cyan">●</span>}</span>
+            <svg 
+              className={`w-3 h-3 transition-transform ${isFilterSectionExpanded ? 'rotate-180' : ''}`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
             >
-              <span>Audio Filters {areFiltersActive() && <span className="text-audafact-accent-cyan">●</span>}</span>
-              <svg
-                className={`w-3 h-3 transition-transform ${isFilterSectionExpanded ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {/* Delete Track Button - positioned opposite to Audio Filters toggle */}
+          {showDeleteButton && onDelete && (
+            <button
+              onClick={onDelete}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary hover:text-audafact-red hover:bg-audafact-surface-2 border border-audafact-divider rounded transition-colors duration-200"
+              title="Delete Track"
+            >
+              <span>Delete</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
-            {mode === 'cue' && (
-              <button
-                type="button"
-                onClick={() => setIsCueSectionExpanded(!isCueSectionExpanded)}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary bg-audafact-surface-1 border border-audafact-divider rounded hover:bg-audafact-surface-2 transition-colors duration-200"
-                title={isCueSectionExpanded ? 'Collapse cue pads' : 'Expand cue pads'}
-              >
-                <span>Cue Points</span>
-                <svg
-                  className={`w-3 h-3 transition-transform ${isCueSectionExpanded ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-            )}
-          </div>
-          {((mode === 'cue' && onChopTriggerStyleChange) || (showDeleteButton && onDelete)) && (
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-              {mode === 'cue' && onChopTriggerStyleChange && (
-                <>
-                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-audafact-text-secondary sm:text-xs sm:normal-case sm:tracking-normal">
-                    Trigger
-                  </span>
-                  <div className="flex shrink-0 items-center rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5">
-                    {(['cue', 'hold', 'one-shot'] as const).map((style) => {
-                      const locked = style !== 'cue' && tier.id === 'guest';
-                      return (
-                        <button
-                          key={style}
-                          type="button"
-                          onClick={() => onChopTriggerStyleChange(style)}
-                          title={
-                            locked
-                              ? 'Sign up to unlock Hold and One-Shot modes'
-                              : style === 'cue'
-                                ? 'Jump to cue and continue'
-                                : style === 'hold'
-                                  ? 'Play while held'
-                                  : 'Play slice once'
-                          }
-                          className={`rounded px-1.5 py-1 text-[11px] font-medium transition-colors sm:px-2 sm:py-1 sm:text-xs ${
-                            chopTriggerStyle === style
-                              ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                              : locked
-                                ? 'text-audafact-text-secondary opacity-50 hover:opacity-80'
-                                : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                          }`}
-                        >
-                          {style === 'one-shot' ? 'One-Shot' : style.charAt(0).toUpperCase() + style.slice(1)}
-                          {locked ? ' 🔒' : ''}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-              {showDeleteButton && onDelete && (
-                <button
-                  type="button"
-                  onClick={onDelete}
-                  className="flex shrink-0 items-center gap-1 px-2 py-1 text-xs font-medium audafact-text-secondary hover:text-audafact-red hover:bg-audafact-surface-2 border border-audafact-divider rounded transition-colors duration-200"
-                  title="Delete Track"
-                >
-                  <span>Delete</span>
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
-            </div>
           )}
         </div>
 
@@ -1952,10 +1579,12 @@ const TrackControls = ({
             </div>
           </div>
         )}
+      </div>
 
-        {/* Cue pads: below filters when both expanded; order unchanged vs previous always-visible block */}
-        {mode === 'cue' && isCueSectionExpanded && (
-          <div>
+      {/* Cue Point Controls */}
+      {mode === 'cue' && (
+        <div>
+          <h4 className="text-xs font-medium mb-2 audafact-text-secondary">Cue Points</h4>
           {/* First row: 1-5 (indexes 0-4) */}
           <div className="grid grid-cols-5 gap-0.5 md:gap-1 mb-1">
             {cuePoints.slice(0, 5).map((_, index) => {
@@ -1970,8 +1599,8 @@ const TrackControls = ({
                   key={`cue-top-${index}`}
                   type="button"
                   onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
-                  onPointerUp={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
-                  onPointerLeave={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
+                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   onContextMenu={(e) => e.preventDefault()}
                   style={{ WebkitTouchCallout: 'none' }}
                   disabled={disabled}
@@ -2010,8 +1639,8 @@ const TrackControls = ({
                   key={`cue-bottom-${index}`}
                   type="button"
                   onPointerDown={() => !disabled && !isOneShotInvalidTrigger && playCuePoint(index)}
-                  onPointerUp={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
-                  onPointerLeave={isHold ? () => endHoldAtCueIndex(index, true) : undefined}
+                  onPointerUp={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
+                  onPointerLeave={isHold ? () => { if (holdTriggeredByRef.current === index) stopChopPlaybackRef.current(); } : undefined}
                   onContextMenu={(e) => e.preventDefault()}
                   style={{ WebkitTouchCallout: 'none' }}
                   disabled={disabled}
@@ -2035,8 +1664,7 @@ const TrackControls = ({
             })}
           </div>
         </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };
