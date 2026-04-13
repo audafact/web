@@ -8,7 +8,6 @@ import {
   NewPerformanceEvent,
   parsePerformanceEvents,
   PerformanceEvent,
-  clonePerformanceEventsForDb,
 } from '../types/performanceEvents';
 import { StorageService } from '../services/storageService';
 import { useAuth } from './AuthContext';
@@ -179,12 +178,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   });
   const performanceStartTimeRef = useRef<number>(0);
-  const performancesRef = useRef<Performance[]>([]);
-
-  useEffect(() => {
-    performancesRef.current = performances;
-  }, [performances]);
-
+  
   // Audio recording state
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [currentAudioRecording, setCurrentAudioRecording] = useState<AudioRecording | null>(null);
@@ -378,7 +372,6 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const endTime = Date.now();
       const duration = endTime - startTime;
       const eventCount = performanceEventsRef.current.length;
-      const eventsForDb = clonePerformanceEventsForDb(performanceEventsRef.current);
 
       const completedPerformance: Performance = {
         id: performanceId,
@@ -479,7 +472,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     size_bytes: r2Result.size_bytes,
                     content_type: r2Result.content_type,
                     original_name: r2Result.original_name,
-                    performance_events: eventsForDb,
+                    performance_events: performanceEventsRef.current,
                     event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
                     performance_meta: { capture_model: captureModel },
                   });
@@ -496,7 +489,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 recording_url: `local://recording_${Date.now()}.wav`,
                 length: duration / 1000,
                 notes,
-                performance_events: eventsForDb,
+                performance_events: performanceEventsRef.current,
                 event_schema_version: PERFORMANCE_EVENT_SCHEMA_VERSION,
                 performance_meta: { capture_model: captureModel },
               });
@@ -920,18 +913,15 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [user?.id, refreshSavedRecordings, trackStudioAction]);
 
   const savePerformanceName = useCallback(async (performanceId: string, filename: string) => {
-    const performance = performancesRef.current.find(p => p.id === performanceId);
+    const performance = performances.find(p => p.id === performanceId);
     if (!performance || !user?.id) return;
     if (performance.databaseId) {
       await DatabaseService.updateRecordingOriginalName(performance.databaseId, user.id, filename);
       refreshSavedRecordings();
       return;
     }
-    // No databaseId yet: create the save with user's filename (save-only flow).
-    // Event-log-only captures have no audioBlob; auto-save still supports them — mirror that here.
-    const eventsForDb = clonePerformanceEventsForDb(performance.events);
-    const eventCount = eventsForDb.length;
-    if (!performance.audioBlob && eventCount === 0) return;
+    // No databaseId yet: create the save with user's filename (save-only flow)
+    if (!performance.audioBlob) return;
     try {
       const { count: recordingCount } = await supabase
         .from('recordings')
@@ -949,49 +939,33 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const maxRecordings = getNumericLimitsForDbTier(normalized).maxRecordings;
       if ((recordingCount ?? 0) >= maxRecordings) return;
       const baseName = filename.replace(/\.(mp3|wav)$/i, '') || 'recording';
-      const notes = `Performance recording with ${eventCount} events`;
+      const notes = `Performance recording with ${performance.events?.length ?? 0} events`;
+      const r2Result = await StorageService.uploadRecordingBlob(
+        performance.audioBlob,
+        user.id,
+        undefined,
+        notes,
+        baseName
+      );
       let recordingRecord: Awaited<ReturnType<typeof DatabaseService.createRecording>> = null;
-      let r2Result: Awaited<ReturnType<typeof StorageService.uploadRecordingBlob>> = null;
-
-      if (performance.audioBlob) {
-        r2Result = await StorageService.uploadRecordingBlob(
-          performance.audioBlob,
-          user.id,
-          undefined,
+      if (r2Result) {
+        recordingRecord = await DatabaseService.createRecording({
+          user_id: user.id,
+          session_id: undefined,
+          recording_url: `https://media.audafact.com/${r2Result.key}`,
+          length: performance.duration / 1000,
           notes,
-          baseName
-        );
-        if (r2Result) {
-          recordingRecord = await DatabaseService.createRecording({
-            user_id: user.id,
-            session_id: undefined,
-            recording_url: `https://media.audafact.com/${r2Result.key}`,
-            length: performance.duration / 1000,
-            notes,
-            file_key: r2Result.key,
-            content_hash: r2Result.content_hash,
-            size_bytes: r2Result.size_bytes,
-            content_type: r2Result.content_type,
-            original_name: filename,
-            performance_events: eventsForDb,
-            event_schema_version: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
-            performance_meta: { capture_model: 'audio_plus_events' },
-          });
-        }
-        if (!recordingRecord) {
-          recordingRecord = await DatabaseService.createRecording({
-            user_id: user.id,
-            session_id: undefined,
-            recording_url: `local://recording_${Date.now()}.wav`,
-            length: performance.duration / 1000,
-            notes,
-            original_name: filename,
-            performance_events: eventsForDb,
-            event_schema_version: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
-            performance_meta: { capture_model: 'events_only_fallback' },
-          });
-        }
-      } else {
+          file_key: r2Result.key,
+          content_hash: r2Result.content_hash,
+          size_bytes: r2Result.size_bytes,
+          content_type: r2Result.content_type,
+          original_name: filename,
+          performance_events: performance.events,
+          event_schema_version: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
+          performance_meta: { capture_model: 'audio_plus_events' },
+        });
+      }
+      if (!recordingRecord) {
         recordingRecord = await DatabaseService.createRecording({
           user_id: user.id,
           session_id: undefined,
@@ -999,9 +973,9 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           length: performance.duration / 1000,
           notes,
           original_name: filename,
-          performance_events: eventsForDb,
+          performance_events: performance.events,
           event_schema_version: performance.eventSchemaVersion ?? PERFORMANCE_EVENT_SCHEMA_VERSION,
-          performance_meta: { capture_model: 'events_only' },
+          performance_meta: { capture_model: 'events_only_fallback' },
         });
       }
       if (recordingRecord) {
@@ -1016,7 +990,7 @@ export const RecordingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (error) {
       console.error('Failed to save performance to app:', error);
     }
-  }, [user?.id, refreshSavedRecordings]);
+  }, [performances, user?.id, refreshSavedRecordings]);
 
   const updateRecordingName = useCallback(async (recordingId: string, filename: string) => {
     if (!user?.id) return;
