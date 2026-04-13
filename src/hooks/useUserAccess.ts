@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../services/supabase';
+import { fetchUserProfileRow } from '../services/userProfileFetch';
 
 interface UserAccess {
   accessTier: 'free' | 'starter' | 'pro' | null;
@@ -38,11 +38,7 @@ export const useUserAccess = (): UserAccess => {
         setLoading(true);
         setError(null);
 
-        const { data, error: fetchError } = await supabase
-          .from('users')
-          .select('access_tier, subscription_id, plan_interval, pro_access_source, pro_expires_at')
-          .eq('id', user.id)
-          .single();
+        const { data, error: fetchError } = await fetchUserProfileRow(user.id);
 
         if (fetchError) {
           setError(fetchError.message);
@@ -53,8 +49,8 @@ export const useUserAccess = (): UserAccess => {
           else if (t === 'starter') setAccessTier('starter');
           else setAccessTier('free');
           setSubscriptionId(data?.subscription_id || null);
-          setPlanInterval(data?.plan_interval || null);
-          setProAccessSource(data?.pro_access_source || null);
+          setPlanInterval((data?.plan_interval as 'monthly' | 'yearly') || null);
+          setProAccessSource((data?.pro_access_source as 'founder_manual' | 'invite_code') || null);
           setProExpiresAt(data?.pro_expires_at || null);
         }
       } catch (err) {
