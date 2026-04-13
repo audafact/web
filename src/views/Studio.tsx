@@ -138,6 +138,8 @@ const Studio = () => {
   
   // Ref to prevent multiple track loads
   const hasLoadedTrack = useRef(false);
+  // Prevent duplicate signed-in auto-load while first track is bootstrapping.
+  const signedInRandomLoadStartedRef = useRef(false);
   const isRestoringRef = useRef(false);
   /** Creative metrics: emit sampler_ready only once per session when first track is playable */
   const hasEmittedSamplerReady = useRef(false);
@@ -1253,10 +1255,32 @@ const Studio = () => {
         }
       }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
 
+  // Signed-in users: auto-load one random library track after auth + library are ready.
+  useEffect(() => {
+    if (isGuestMode || !user || authLoading || userLoading) return;
+    if (availableAssets.length === 0 || tracks.length > 0) return;
+    if (error || isManuallyAddingTrack || isTrackLoading) return;
+    if (signedInRandomLoadStartedRef.current) return;
+    signedInRandomLoadStartedRef.current = true;
+    void loadRandomTrack();
+  }, [
+    isGuestMode,
+    user,
+    authLoading,
+    userLoading,
+    availableAssets.length,
+    tracks.length,
+    error,
+    isManuallyAddingTrack,
+    isTrackLoading,
+    loadRandomTrack,
+  ]);
+
   // Reset the hasLoadedTrack flag when tracks are cleared
   useEffect(() => {
     if (tracks.length === 0) {
       hasLoadedTrack.current = false;
+      signedInRandomLoadStartedRef.current = false;
     }
   }, [tracks.length]);
 
