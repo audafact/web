@@ -2622,7 +2622,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                     </div>
                                   </div>
                                   <p className="text-[11px] audafact-text-secondary mt-1">
-                                    {item.durationStr} • {item.eventsCount} events • {item.tracksCount} track{item.tracksCount !== 1 ? 's' : ''}
+                                    {item.durationStr}
                                     {item.audioBlob && ' • Audio'}
                                   </p>
                                   {canEventReplay && performanceForPlayback && (
