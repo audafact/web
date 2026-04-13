@@ -22,6 +22,7 @@ import {
   CRISTIAN_SIGLER_DEMO_COLLECTION_KEY,
   isDemoLibraryAccount,
 } from "../config/demoLibrary";
+import { fetchUserProfileRow } from "../services/userProfileFetch";
 
 type ResolvedTier = "free" | "starter" | "pro";
 
@@ -52,11 +53,7 @@ export const useUser = () => {
         setError(null);
         setDemoCollectionTracks([]);
 
-        const { data: userData, error: userError } = await supabase
-          .from("users")
-          .select("access_tier")
-          .eq("id", user.id)
-          .single();
+        const { data: userData, error: userError } = await fetchUserProfileRow(user.id);
 
         if (userError) {
           console.error("❌ Error fetching user tier:", userError);

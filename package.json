@@ -44,7 +44,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "chromatic": "chromatic",
-    "test:visual": "node scripts/test-visual-regression.js"
+    "test:visual": "node scripts/test-visual-regression.js",
+    "migrate:sessions-to-staging": "node scripts/migrate-sessions-recordings-to-staging.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^3.8.1",
@@ -95,6 +96,7 @@
     "eslint-plugin-storybook": "^0.10.1",
     "happy-dom": "^20.8.9",
     "jsdom": "^28.1.0",
+    "pg": "^8.16.0",
     "postcss": "^8.0.0",
     "storybook": "^8.6.17",
     "supabase": "^2.78.1",
