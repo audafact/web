@@ -101,7 +101,7 @@ interface TrackControlsProps {
   loopEnd: number;
   cuePoints: number[];
   /** Resolves to the AudioContext to use immediately (avoids stale null from props after first init). */
-  ensureAudio: (callback: () => void) => Promise<void>;
+  ensureAudio: () => Promise<AudioContext | null>;
   /** iOS: HTMLAudio warm-up before WebAudio (see AudioContext). Optional reason string is for debug logs. */
   primeIosSessionForWebAudio?: (reason?: string) => Promise<void>;
   isSelected?: boolean;
@@ -1073,8 +1073,7 @@ const TrackControls = ({
         return;
       }
 
-      await ensureAudio(() => {});
-      const ctx = audioContext;
+      const ctx = await ensureAudio();
       if (!ctx || !audioBuffer) return;
 
       await ensureIosPrimeForStudioPlayback('trackcontrols:toggle-play', ctx);
@@ -1305,8 +1304,7 @@ const TrackControls = ({
     }
 
     try {
-      await ensureAudio(() => {});
-      const ctx = audioContext;
+      const ctx = await ensureAudio();
       if (!ctx) return;
       await ensureIosPrimeForStudioPlayback('trackcontrols:play-cue-point', ctx);
 

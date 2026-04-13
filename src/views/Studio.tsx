@@ -2467,19 +2467,21 @@ const Studio = () => {
     saveTrackSettingsToLocal(trackId, { ...settings, chopTriggerStyle });
   };
 
-  // Add a function to handle play requests and ensure audio context is running
-  const ensureAudioBeforeAction = async (callback: () => void) => {
+  // Ensure a usable AudioContext for playback/scrub actions.
+  const ensureAudioBeforeAction = async (): Promise<AudioContext | null> => {
     try {
       if (!isAudioInitialized) {
-        await initializeAudio();
+        const ctx = await initializeAudio();
         setIsAudioInitialized(true);
+        return ctx;
       } else if (audioContext?.state === 'suspended') {
         await resumeAudioContext();
       }
-      callback();
+      return audioContext ?? null;
     } catch (error) {
       console.error('Failed to initialize audio context:', error);
       setError('Failed to initialize audio context. Please try again.');
+      return null;
     }
   };
 
