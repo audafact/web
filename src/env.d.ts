@@ -32,6 +32,8 @@ interface ImportMetaEnv {
   readonly VITE_DEBUG_API_BASE?: string;
   /** Optional; surfaced in API base debug payload if set in CI. */
   readonly VITE_USE_STAGING_API?: string;
+  /** Enables in-progress advanced performance controls/replay UI when "true"/"1". */
+  readonly VITE_EXPOSE_ADVANCED_PERFORMANCE_UI?: string;
   readonly MODE: string;
   readonly PROD: boolean;
   readonly DEV: boolean;
