@@ -213,6 +213,7 @@ We use a phased approach to testing due to React 18 compatibility issues:
 - [Component Development Guide](./docs/component-development.md)
 - [Testing Guide](./docs/testing-guide.md)
 - [Performance Guide](./docs/performance-guide.md)
+- [Advanced Performance Gating State](./docs/ADVANCED_PERFORMANCE_GATING_STATE.md) - Current flag behavior, dark-launch posture, and release checklist
 
 ## 🤝 **Contributing**
 

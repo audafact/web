@@ -313,7 +313,9 @@ const TrackControls = ({
   const isSeekingRef = useRef<boolean>(false);
   // Track if current source is looping - avoids stale currentTime in updatePlaybackTime closure
   const isSourceLoopingRef = useRef<boolean>(false);
-  const playCuePointRef = useRef<(index: number) => void>(() => {});
+  const playCuePointRef = useRef<
+    (index: number, options?: { chopTriggerStyle?: 'cue' | 'hold' | 'one-shot'; recordEvent?: boolean }) => void | Promise<void>
+  >(() => {});
   /**
    * iOS: `AudioContext` can be `running` (e.g. after early resume) while WebAudio still
    * has no speaker route until HTMLMediaElement.play runs in a user gesture. Track prime
@@ -390,8 +392,8 @@ const TrackControls = ({
 
   // Calculate tempo-based speed range and step size
   const getTempoSpeedRange = useCallback(() => {
-    const minTempo = Math.max(40, Math.round(trackTempo * 0.5)); // Half tempo, minimum 40 BPM
-    const maxTempo = Math.min(300, Math.round(trackTempo * 2)); // Double tempo, maximum 300 BPM
+    const minTempo = Math.max(20, Math.round(trackTempo * 0.25)); // Quarter tempo, minimum 20 BPM
+    const maxTempo = Math.min(400, Math.round(trackTempo * 3)); // Triple tempo, maximum 400 BPM
     
     // Calculate step size to ensure ~1 BPM change per step
     // We want the step size to be approximately 1/trackTempo
