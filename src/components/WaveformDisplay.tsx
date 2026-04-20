@@ -1092,10 +1092,10 @@ const WaveformDisplay = ({
         let cueRegionGestureActive = false;
 
         region.on('update', () => {
+          const scrubDiag = getWaveformScrubDiag();
           if (!cueRegionGestureActive) {
             cueRegionGestureActive = true;
             suspendTransportOnRegionDragStartRef.current?.();
-            const scrubDiag = getWaveformScrubDiag();
             regionDragActiveRef.current = true;
             setSuppressBeatHighlightForRegionDrag(true);
             logWaveformScrubHtmlMediaOnceDev(wavesurfer, `cue-region[${index}]`);
@@ -1129,6 +1129,9 @@ const WaveformDisplay = ({
           const mid = region.start + (region.end - region.start) * 0.5;
           const dur = wavesurfer.getDuration();
           const head = Math.max(0, Math.min(mid, dur - 0.001));
+          if (!scrubDiag.noParent) {
+            onCueDragStateChangeRef.current?.(index, head);
+          }
           queueRegionScrubGrainAfterPointer(head);
         });
 
