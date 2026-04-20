@@ -2325,18 +2325,20 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             >
                               Load Session
                             </button>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
-                              onClick={async () => {
-                                const sharedPerformanceId = sharedBundle.importedPerformanceId ?? sharedBundle.performance?.id;
-                                if (sharedPerformanceId) {
-                                  await startPerformancePlayback(sharedPerformanceId, { loop: true });
-                                }
-                              }}
-                            >
-                              Auto Play
-                            </button>
+                            {exposeAdvancedPerformanceUi && (
+                              <button
+                                type="button"
+                                className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
+                                onClick={async () => {
+                                  const sharedPerformanceId = sharedBundle.importedPerformanceId ?? sharedBundle.performance?.id;
+                                  if (sharedPerformanceId) {
+                                    await startPerformancePlayback(sharedPerformanceId, { loop: true });
+                                  }
+                                }}
+                              >
+                                Auto Play
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="text-xs px-2 py-1 border border-audafact-divider rounded hover:bg-audafact-surface-2"
@@ -2480,7 +2482,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                   : isCurrentKey(recordingPlaybackId))
                               );
                               const performanceForPlayback = item.performance ?? performances.find(p => p.databaseId === item.dbId) ?? null;
-                              const canEventReplay = !!(performanceForPlayback && performanceForPlayback.events.length > 0);
+                              const canEventReplay = !!(
+                                exposeAdvancedPerformanceUi &&
+                                performanceForPlayback &&
+                                performanceForPlayback.events.length > 0
+                              );
                               const isPerformancePlaying = playingPerformanceId === performanceForPlayback?.id;
                               const showMainPlayControl = !!((canPlay && playSrc) || canEventReplay);
                               return (
