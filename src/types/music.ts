@@ -111,6 +111,8 @@ export interface Recording {
   size_bytes?: number;
   content_type?: string;
   original_name?: string;
+  // Events-only recordings may persist performance metadata without a mix file.
+  performance_events?: unknown[];
 }
 
 // Storage Types

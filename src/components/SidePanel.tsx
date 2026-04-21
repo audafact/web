@@ -41,6 +41,15 @@ interface AudioAsset {
   beats?: number[];
 }
 
+const toAudioAssetType = (value: string): AudioAsset['type'] =>
+  value === 'wav' || value === 'mp3' || value === 'm4a' ? value : 'mp3';
+
+const getRecordingPerformanceEvents = (recording: unknown): unknown[] => {
+  if (!recording || typeof recording !== 'object') return [];
+  const maybeEvents = (recording as Record<string, unknown>).performance_events;
+  return Array.isArray(maybeEvents) ? maybeEvents : [];
+};
+
 interface UploadButtonProps {
   user: any;
   guestUploadUsed: boolean;
@@ -560,11 +569,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
       }),
       ...dbOnly
         .filter((r) => {
-          const ev = Array.isArray(r.performance_events) ? r.performance_events : [];
+          const ev = getRecordingPerformanceEvents(r);
           return !!r.file_key || ev.length > 0;
         })
         .map((r) => {
-          const events = Array.isArray(r.performance_events) ? r.performance_events : [];
+          const events = getRecordingPerformanceEvents(r);
           const tracksCount = new Set(
             events
               .map((event: any) => (typeof event?.trackId === 'string' ? event.trackId : null))
@@ -1429,17 +1438,14 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                         <button
                                           type="button"
                                           onClick={() =>
-                                            handlePreviewPlay(
-                                              {
-                                                id: track.id,
-                                                name: track.name,
-                                                fileKey: track.fileKey,
-                                                type: track.type,
-                                                size: track.size,
-                                                bpm: track.bpm,
-                                              },
-                                              false
-                                            )
+                                            handlePreviewPlay({
+                                              id: track.id,
+                                              name: track.name,
+                                              fileKey: track.fileKey,
+                                              type: toAudioAssetType(track.type),
+                                              size: track.size,
+                                              bpm: track.bpm,
+                                            } as AudioAsset, false)
                                           }
                                           className={`p-2 rounded-md border border-audafact-divider text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 ${
                                             isPlaying && currentPreviewTrackId === track.id
@@ -1476,11 +1482,11 @@ const SidePanel: React.FC<SidePanelProps> = ({
                                                 id: track.id,
                                                 name: track.name,
                                                 fileKey: track.fileKey,
-                                                type: track.type,
+                                                type: toAudioAssetType(track.type),
                                                 size: track.size,
                                                 bpm: track.bpm,
                                                 key: track.key ?? undefined,
-                                              },
+                                              } as AudioAsset,
                                               false
                                             );
                                           }}
