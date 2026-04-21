@@ -1312,7 +1312,11 @@ const Studio = () => {
     } catch (error) {
       console.error('❌ Error loading guided demo session:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setError(`Error loading guided demo session: ${errorMessage}`);
+      // Fails soft for guided guest bootstrap so users are not blocked by decoder quirks.
+      trackGuestEvent('guided_demo_load_failed', {
+        message: errorMessage,
+        timestamp: Date.now(),
+      });
     } finally {
       setIsTrackLoading(false);
     }
