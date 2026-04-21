@@ -481,7 +481,7 @@ const Home = () => {
                 
                 <button
                   type="button"
-                  onClick={() => openBetaAccessModal('hero')}
+                  onClick={() => handleStartCreating('hero_secondary')}
                   className="inline-flex items-center justify-center px-6 py-4 border border-slate-600 text-slate-300 font-medium rounded-lg hover:border-audafact-accent-cyan hover:text-audafact-accent-cyan transition-all duration-200"
                 >
                   Try it now
