@@ -42,6 +42,7 @@ import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 import { decodeAudioFileToBufferWithoutRunningContext } from '../utils/decodeAudioFile';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
 import {
+  GUIDED_SESSION_PAIRS,
   pickRandomGuidedSessionPair,
   type GuidedAssetType,
 } from '../config/onboardingSessionConfig';
@@ -1192,51 +1193,79 @@ const Studio = () => {
     setIsTrackLoading(true);
     setError(null);
     try {
-      const pair = pickRandomGuidedSessionPair();
-      const breakAsset = pair.breakAsset;
-      const genAiAsset = pair.genAiAsset;
+      // Try all guided pairs in randomized order so one bad asset cannot break guest startup.
+      const attemptedPairIds = new Set<string>();
+      let pair = pickRandomGuidedSessionPair();
+      let breakFile: File | null = null;
+      let genAiFile: File | null = null;
+      let breakBuffer: AudioBuffer | null = null;
+      let genAiBuffer: AudioBuffer | null = null;
 
-      const [breakRes, genAiRes] = await Promise.all([
-        fetch(breakAsset.file),
-        fetch(genAiAsset.file),
-      ]);
-      const [breakBlob, genAiBlob] = await Promise.all([
-        breakRes.blob(),
-        genAiRes.blob(),
-      ]);
+      while (attemptedPairIds.size < GUIDED_SESSION_PAIRS.length) {
+        attemptedPairIds.add(pair.id);
+        const breakAsset = pair.breakAsset;
+        const genAiAsset = pair.genAiAsset;
+        try {
+          const [breakRes, genAiRes] = await Promise.all([
+            fetch(breakAsset.file),
+            fetch(genAiAsset.file),
+          ]);
 
-      const breakFile = new File([breakBlob], `${breakAsset.name}.${breakAsset.type}`, {
-        type: guidedMimeType(breakAsset.type),
-      });
-      const genAiFile = new File([genAiBlob], `${genAiAsset.name}.${genAiAsset.type}`, {
-        type: guidedMimeType(genAiAsset.type),
-      });
+          if (!breakRes.ok || !genAiRes.ok) {
+            throw new Error(`Failed to fetch guided assets (break=${breakRes.status}, genAi=${genAiRes.status})`);
+          }
 
-      const [breakBuffer, genAiBuffer] = await Promise.all([
-        decodeAudioFileToBufferWithoutRunningContext(breakFile),
-        decodeAudioFileToBufferWithoutRunningContext(genAiFile),
-      ]);
+          const [breakBlob, genAiBlob] = await Promise.all([
+            breakRes.blob(),
+            genAiRes.blob(),
+          ]);
+
+          breakFile = new File([breakBlob], `${breakAsset.name}.${breakAsset.type}`, {
+            type: guidedMimeType(breakAsset.type),
+          });
+          genAiFile = new File([genAiBlob], `${genAiAsset.name}.${genAiAsset.type}`, {
+            type: guidedMimeType(genAiAsset.type),
+          });
+
+          [breakBuffer, genAiBuffer] = await Promise.all([
+            decodeAudioFileToBufferWithoutRunningContext(breakFile),
+            decodeAudioFileToBufferWithoutRunningContext(genAiFile),
+          ]);
+          break;
+        } catch (pairError) {
+          console.error("Guided pair failed, trying fallback pair", { pairId: pair.id, error: pairError });
+          const remaining = GUIDED_SESSION_PAIRS.filter((p) => !attemptedPairIds.has(p.id));
+          if (remaining.length === 0) {
+            throw pairError;
+          }
+          pair = remaining[Math.floor(Math.random() * remaining.length)];
+        }
+      }
+
+      if (!breakFile || !genAiFile || !breakBuffer || !genAiBuffer) {
+        throw new Error("Unable to prepare guided demo audio");
+      }
 
       const breakTrack: Track = {
-        id: breakAsset.id,
-        sourceAssetId: breakAsset.id,
+        id: pair.breakAsset.id,
+        sourceAssetId: pair.breakAsset.id,
         file: breakFile,
         buffer: breakBuffer,
         peaks: extractPeaksFromBuffer(breakBuffer),
         mode: 'loop',
-        loopStart: breakAsset.loopStart,
-        loopEnd: Math.min(breakAsset.loopEnd, breakBuffer.duration),
+        loopStart: pair.breakAsset.loopStart,
+        loopEnd: Math.min(pair.breakAsset.loopEnd, breakBuffer.duration),
         cuePoints: Array.from({ length: 10 }, (_, i) => breakBuffer.duration * (i / 10)),
-        tempo: breakAsset.bpm || 120,
-        key: breakAsset.key,
+        tempo: pair.breakAsset.bpm || 120,
+        key: pair.breakAsset.key,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false,
       };
 
       const genAiTrack: Track = {
-        id: genAiAsset.id,
-        sourceAssetId: genAiAsset.id,
+        id: pair.genAiAsset.id,
+        sourceAssetId: pair.genAiAsset.id,
         file: genAiFile,
         buffer: genAiBuffer,
         peaks: extractPeaksFromBuffer(genAiBuffer),
@@ -1245,8 +1274,8 @@ const Studio = () => {
         loopStart: 0,
         loopEnd: genAiBuffer.duration,
         cuePoints: Array.from({ length: 10 }, (_, i) => genAiBuffer.duration * (i / 10)),
-        tempo: genAiAsset.bpm || 120,
-        key: genAiAsset.key,
+        tempo: pair.genAiAsset.bpm || 120,
+        key: pair.genAiAsset.key,
         timeSignature: { numerator: 4, denominator: 4 },
         firstMeasureTime: 0,
         showMeasures: false,
