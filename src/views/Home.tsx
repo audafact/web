@@ -1,7 +1,6 @@
 // import { useNavigate } from 'react-router-dom';
 // import { useAuth } from '../context/AuthContext';
-import { useResponsiveDesign } from '../hooks/useResponsiveDesign';
-import { useEffect, useMemo, memo, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { getUTMParameters } from '../utils/hubspotUtils';
 import { hashEmailForMeta, generateEventId } from '../utils/cryptoUtils';
 import { getFacebookTrackingParams } from '../utils/facebookUtils';
@@ -28,7 +27,6 @@ declare global {
 const Home = () => {
   // const { user } = useAuth();
   // const navigate = useNavigate();
-  const { isMobile } = useResponsiveDesign();
   const [, setIsScrolling] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -150,16 +148,6 @@ const Home = () => {
       }
     }
   }, [isModalOpen]);
-
-  const handleLaunchDemo = (location: string) => {
-    pushToDataLayer({
-      event: "click_cta_tertiary",
-      cta_type: "demo_launch",
-      cta_text: "Watch 60-sec demo",
-      location,
-    });
-    window.open('/60-sec-demo.mp4', '_blank');
-  };
 
   const handleStartCreating = (location: string) => {
     pushToDataLayer({
@@ -413,44 +401,6 @@ const Home = () => {
   };
 
 
-  // Note: vinylGrooves removed as it's no longer used in the new design
-
-  // Memoize key benefits to prevent unnecessary re-renders
-  const keyBenefits = useMemo(() => [
-    {
-      icon: '⚡',
-      title: 'Built for fast idea generation',
-      description:
-        'Flip ideas in minutes: map cues, loop slices, and trigger from the keyboard without opening a DAW.',
-    },
-    {
-      icon: '🎵',
-      title: 'Experiment in the browser',
-      description:
-        'Try provided royalty-free practice sounds or—when you’re ready—upload your own tracks with a free account.',
-    },
-    {
-      icon: '🔄',
-      title: 'Rework your own material',
-      description:
-        'Use Audafact as a sampler sketchpad alongside your main setup. Capture the chop, then take it wherever you mix.',
-    },
-  ], []);
-
-  // Memoized FeatureCard component
-  const FeatureCard = memo(({ icon, title, description }: { icon: string; title: string; description: string }) => (
-    <div className="relative overflow-hidden audafact-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300 sm:hover:transform sm:hover:scale-105">
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-slate-600"></div>
-      </div>
-      <div className="relative z-10">
-        <div className="text-audafact-accent-cyan text-2xl sm:text-3xl mb-3 sm:mb-4">{icon}</div>
-        <h3 className="text-lg sm:text-xl font-semibold bg-gradient-to-r from-audafact-accent-cyan bg-clip-text text-transparent mb-2 sm:mb-3">{title}</h3>
-        <p className="text-slate-300 leading-relaxed">{description}</p>
-      </div>
-    </div>
-  ));
-
   return (
     <div className="min-h-screen">
       {/* Sticky Header */}
@@ -494,18 +444,12 @@ const Home = () => {
               
               {/* Headline */}
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent tracking-tight leading-tight">
-                Drop a track. Start chopping. Build something in seconds.
+                Make your first sample-based beat in seconds.
               </h1>
               
-              {/* Subhead — one clarity line + existing hook */}
+              {/* Subhead */}
               <p className="text-lg sm:text-xl text-slate-300 leading-relaxed">
-                A browser-based sampler. No setup. No DAW. Same workflow you came for: looping, slicing, and flipping—fast.
-              </p>
-              <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
-                Open the studio and play: demo chops load instantly as a guest; sign in for your own tracks, cue editing, saves, and export.
-              </p>
-              <p className="text-sm text-audafact-accent-cyan/90 font-medium">
-                No signup required to try it.
+                Try it instantly in your browser. No download required.
               </p>
               
               {/* Micro reassurance */}
@@ -514,13 +458,13 @@ const Home = () => {
                   <svg className="w-5 h-5 text-green-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  <span>Royalty-free practice sounds to learn on—plus more with a free account</span>
+                  <span>No install. No plugins.</span>
                 </div>
                 <div className="flex items-center text-slate-300">
                   <svg className="w-5 h-5 text-green-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  <span>Free account unlocks uploads, saves, MP3 export, and deeper catalog browsing</span>
+                  <span>Works on desktop + phone.</span>
                 </div>
               </div>
 
@@ -531,7 +475,7 @@ const Home = () => {
                   onClick={() => handleStartCreating('hero')}
                   className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
                 >
-                  <span className="relative z-10">Start creating</span>
+                  <span className="relative z-10">Start making something</span>
                   <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                 </button>
                 
@@ -540,7 +484,7 @@ const Home = () => {
                   onClick={() => openBetaAccessModal('hero')}
                   className="inline-flex items-center justify-center px-6 py-4 border border-slate-600 text-slate-300 font-medium rounded-lg hover:border-audafact-accent-cyan hover:text-audafact-accent-cyan transition-all duration-200"
                 >
-                  Join beta
+                  Try it now
                 </button>
               </div>
             </div>
@@ -568,412 +512,51 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Product Features Strip */}
+        {/* Friction + outcome sections */}
         <section className="py-12 sm:py-16">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-              Core Features
-              </h2>
-            <p className="text-slate-300 max-w-2xl mx-auto">
-              One browser sampler: loop mode and chop mode in the same workspace—plus waveform and sounds when you need them.
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
+              <h2 className="text-xl font-semibold text-white mb-4">Start instantly</h2>
+              <ul className="space-y-2 text-slate-300">
+                <li>• No install</li>
+                <li>• No plugins</li>
+                <li>• Works on desktop + phone</li>
+              </ul>
+            </div>
+            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
+              <h2 className="text-xl font-semibold text-white mb-4">What you can make</h2>
+              <ul className="space-y-2 text-slate-300">
+                <li>• Turn any sound into a loop</li>
+                <li>• Sketch ideas instantly</li>
+                <li>• Export your flip</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-8 relative overflow-hidden audafact-card p-4 sm:p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
+            <div className="text-center mb-3">
+              <p className="text-sm text-slate-300">See the flow: load, chop, trigger, loop.</p>
+            </div>
+            <video
+              preload="metadata"
+              className="w-full h-auto rounded-lg shadow-lg"
+              autoPlay
+              muted
+              loop
+              playsInline
+              poster="/landing-mini-sampler-vid-cropped-poster.jpg"
+            >
+              <source src="/landing-mini-sampler-vid-cropped.mp4" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          </div>
+
+          <div className="mt-8 relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl text-center">
+            <p className="text-slate-300 italic">
+              "I was making something in under a minute. That&apos;s the whole point."
             </p>
           </div>
-          
-          {/* Feature Cards */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            {/* Single tool: loop + chop modes */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
-                  <span className="text-2xl">🎛️</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white mb-2">Loop mode &amp; chop mode</h3>
-                  <p className="text-sm text-slate-300 leading-relaxed">
-                    <span className="text-slate-200 font-medium">Loop mode</span> locks in the section you don&apos;t want to stop.
-                    <span className="text-slate-200 font-medium"> Chop mode</span> fires slices from the keyboard or on-screen controls—same sampler, two ways to play.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Waveform */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
-                  <span className="text-2xl">📊</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white mb-2">Waveform-first</h3>
-                  <p className="text-sm text-slate-300 leading-relaxed">
-                    Work from a clear picture of the audio so you can place loops and chops with confidence—not a separate “analysis” tool.
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Library */}
-            <div className="relative overflow-hidden audafact-card p-6 md:col-span-2 lg:col-span-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
-              <div className="space-y-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center">
-                  <span className="text-2xl">🎼</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white mb-2">Sounds &amp; uploads</h3>
-                  <p className="text-sm text-slate-300 leading-relaxed">
-                    Start from provided royalty-free tracks, or sign in to upload your own and browse more of the catalog.
-                  </p>
-                </div>
-              </div>
-            </div>
-              </div>
-
-          {/* Mini Sampler Demo */}
-          <div className="relative overflow-hidden audafact-card p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
-            <div className="text-center mb-6">
-              <h3 className="text-xl font-semibold text-white mb-2">Mini Sampler Demo</h3>
-              <p className="text-slate-400 mb-3">
-                Signed-in creators place cues on the waveform and fire them from the keyboard; guests get preset chops to trigger and loop—this clip shows the feel.
-              </p>
-              <button
-                type="button"
-                onClick={() => handleLaunchDemo('mini_sampler')}
-                className="text-sm text-audafact-accent-cyan hover:text-audafact-accent-cyan/80 underline underline-offset-2"
-              >
-                Watch 60-sec overview (opens in new tab)
-              </button>
-            </div>
-            
-            {/* Mini Sampler Demo Video */}
-            <div className="relative">
-              <video 
-                preload="metadata"
-                className="w-full h-auto rounded-lg shadow-lg"
-                autoPlay 
-                muted 
-                loop
-                playsInline
-                poster="/landing-mini-sampler-vid-cropped-poster.jpg"
-              >
-                <source src="/landing-mini-sampler-vid-cropped.mp4" type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
-            </div>
-            
-            {/* Demo Explanation */}
-            <div className="mt-6 text-center">
-              <p className="text-sm text-slate-400 leading-relaxed">
-                <span className="font-medium text-white">Cues</span> on the waveform fire from{' '}
-                <span className="font-medium text-audafact-accent-cyan">number keys 1–0</span> or{' '}
-                <span className="font-medium text-audafact-accent-cyan">buttons</span> in the panel—add a cue, trigger it on the next beat.
-              </p>
-            </div>
-          </div>
         </section>
-
-        {/* Key Benefits Section */}
-        <section className="py-12 sm:py-16">
-          <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
-            {keyBenefits.map((benefit, index) => (
-            <FeatureCard
-              key={index}
-                icon={benefit.icon}
-                title={benefit.title}
-                description={benefit.description}
-            />
-          ))}
-        </div>
-      </section>
-
-        {/* Vision — single paragraph (tone preserved, less page weight) */}
-        <section className="py-10 sm:py-12">
-          <p className="text-slate-300 max-w-3xl mx-auto text-center text-lg leading-relaxed">
-            Longer term, I care about tools where independent creators work with each other directly—not
-            as a promise for next week, but as the direction behind the product. Right now the focus is
-            this sampler: fast chops, honest transparency, and features that ship because people asked
-            for them.
-          </p>
-        </section>
-
-        {/* How It Works Section */}
-        <section className="py-12 sm:py-16">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-              How It Works
-            </h2>
-          </div>
-          
-          <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
-            {/* Step 1 */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
-                1
-              </div>
-              <h3 className="text-xl font-semibold text-white">Load a track</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Guests get a rotating demo to try the workflow. Sign in for your uploads and a bigger slice of the catalog.
-              </p>
-            </div>
-            
-            {/* Step 2 */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
-                2
-              </div>
-              <h3 className="text-xl font-semibold text-white">Auto-map & trigger</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Auto-map & tweak cues, trigger from your keyboard, loop sections.
-              </p>
-            </div>
-            
-            {/* Step 3 */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center mx-auto text-2xl font-bold text-white">
-                3
-              </div>
-              <h3 className="text-xl font-semibold text-white">Keep and export</h3>
-              <p className="text-slate-300 leading-relaxed">
-                With a free account: save sessions and export MP3. Shareable flip snippet links are still on the way.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Transparency Panel */}
-        <section className="py-12 sm:py-16">
-          <div className="relative overflow-hidden audafact-card p-8 sm:p-12 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-2xl">
-            {/* Background balance elements */}
-            <div className="absolute top-8 right-8 opacity-10">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-full"></div>
-            </div>
-            <div className="absolute bottom-12 right-16 opacity-5">
-              <div className="w-24 h-24 border-2 border-audafact-accent-cyan rounded-lg rotate-12"></div>
-            </div>
-            
-            <div className="text-center mb-8">
-              <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-                What&apos;s live now—and what&apos;s next
-              </h2>
-            </div>
-            
-            <div className="grid md:grid-cols-3 gap-8 md:ml-4 lg:ml-12">
-              {/* Where we are today */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white flex items-center">
-                  <span className="text-green-400 mr-2">✔️</span>
-                  What&apos;s live now
-                </h3>
-                <ul className="space-y-2 text-slate-300 ml-4">
-                  <li>• Guest try: loop and trigger on preset demo chops (account needed to place or edit cues)</li>
-                  <li>• Free account: uploads, saved sessions, MP3 export, cues &amp; loops</li>
-                  <li>• Curated royalty-free starters + expanded catalog when signed in</li>
-                </ul>
-              </div>
-              
-              {/* What's shipping next */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white flex items-center">
-                  <span className="text-blue-400 mr-2">➡️</span>
-                  In motion
-                </h3>
-                <ul className="space-y-2 text-slate-300 ml-4">
-                  <li>• Sharper session sync and export options</li>
-                  <li>• Shareable flip snippets / links</li>
-                  <li>• A clearer &ldquo;stash&rdquo; for works in progress</li>
-                </ul>
-              </div>
-              
-              {/* Direction */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-white flex items-center">
-                  <span className="text-purple-400 mr-2">🧭</span>
-                  Direction (not a timeline)
-                </h3>
-                <p className="text-slate-300 ml-1 leading-relaxed">
-                  I&apos;m thinking about creator-to-creator collaboration and fewer gatekeepers in the long
-                  run—not as a feature promise for this sprint, but as context for why Audafact exists.
-                </p>
-              </div>
-            </div>
-            
-            {/* Collaboration / feedback — light touch */}
-            <div className="mt-12 pt-8 border-t border-slate-700/50">
-              <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50">
-                <div className="text-center">
-                  <h3 className="text-lg font-semibold text-white mb-2">Want to collaborate or contribute ideas?</h3>
-                  <p className="text-slate-300 text-sm leading-relaxed mb-4 max-w-xl mx-auto">
-                    If you&apos;re thinking about sound, partnerships, or something that doesn&apos;t fit the form—say hi.
-                  </p>
-                  <a 
-                    href="/contact" 
-                    className="inline-flex items-center justify-center px-4 py-2 border border-audafact-accent-cyan text-audafact-accent-cyan font-medium rounded-lg hover:bg-audafact-accent-cyan hover:text-white transition-all duration-200"
-                  >
-                    Contact
-                  </a>
-                </div>
-              </div>
-            </div>
-            
-            {/* Credibility stats */}
-            <div className="mt-12 pt-8 border-t border-slate-700/50">
-              <div className="grid md:grid-cols-3 gap-8 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">Your tracks</div>
-                  <div className="text-slate-300">Uploads and saves with a free account; guest mode for a quick try</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">More to explore</div>
-                  <div className="text-slate-300">Additional sounds are added throughout beta</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-audafact-accent-cyan mb-2">Latency-friendly</div>
-                  <div className="text-slate-300">Engine in the browser</div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Founder note */}
-            <div className="mt-12 pt-8 border-t border-slate-700/50">
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-audafact-accent-cyan rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-white font-bold text-lg">D</span>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-2">Hey, I'm David</h4>
-                  <p className="text-slate-300 leading-relaxed">
-                    I built Audafact to make chopping a sample and turning it into an idea faster and more fun—browser-first,
-                    honest about what ships when, and shaped by people who actually flip samples. Try the studio, or join
-                    beta access if you want early features and a direct line to me. Tell me what gets you to the next idea;
-                    I&apos;ll build toward that.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Beta path — compact secondary funnel */}
-            <div className="mt-12 pt-8 border-t border-slate-700/50">
-              <div className="max-w-2xl mx-auto text-center space-y-4">
-                <h3 className="text-xl font-semibold text-white">Want deeper access?</h3>
-                <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                  I work closely with a small group of creators to shape what ships next—not a mass blast, just people who care about the workflow.
-                </p>
-                <ul className="text-left text-slate-300 text-sm space-y-2 max-w-md mx-auto">
-                  <li>• Early feature access when it&apos;s ready</li>
-                  <li>• Direct feedback back to me</li>
-                  <li>• Heads-up on support and beta perks</li>
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => openBetaAccessModal('transparency_beta_band')}
-                  className="inline-flex items-center justify-center px-6 py-3 border border-audafact-accent-cyan text-audafact-accent-cyan font-medium rounded-lg hover:bg-audafact-accent-cyan hover:text-white transition-all duration-200"
-                >
-                  Join beta
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Use Cases Section */}
-        <section className="py-12 sm:py-16">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-              Use Cases
-            </h2>
-            <p className="text-slate-300 max-w-2xl mx-auto">
-              Real scenarios where Audafact accelerates your creative workflow
-            </p>
-          </div>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold text-white">Speed-flip a sample</h3>
-              <p className="text-slate-300 leading-relaxed">
-                For an IG clip or beat battle. Make 8 bars of magic in your lunch break.
-              </p>
-            </div>
-            
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold text-white">Create hook-ready chops</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Before moving into the DAW. Get your ideas down fast without losing momentum.
-              </p>
-            </div>
-            
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-audafact-accent-cyan rounded-lg flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold text-white">Practice flipping legally</h3>
-              <p className="text-slate-300 leading-relaxed">
-                With royalty-free provided material for sampling practice. Learn the craft without the legal stress.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ Section */}
-        <section className="py-12 sm:py-16">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-4">
-              Frequently Asked Questions
-            </h2>
-          </div>
-          
-          <div className="max-w-3xl mx-auto space-y-6">
-            {/* FAQ Item 1 */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
-              <h3 className="text-lg font-semibold text-white mb-3">Are provided tracks royalty-free?</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Yes. Tracks we provide for sampling practice are royalty-free and specifically designed for flipping workflows. Use them for practice, flips, and creative projects without worrying about copyright issues.
-              </p>
-            </div>
-            
-            {/* FAQ Item 2 */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
-              <h3 className="text-lg font-semibold text-white mb-3">Can I upload my own audio?</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Yes—with a free account. Guests can explore the sampler on demo material first; sign in to upload and unlock the full workflow.
-              </p>
-            </div>
-            
-            {/* FAQ Item 3 */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
-              <h3 className="text-lg font-semibold text-white mb-3">Will this replace my DAW?</h3>
-              <p className="text-slate-300 leading-relaxed">
-                No. Audafact is designed for fast sample exploration & idea capture. Think of it as a creative spark tool that works alongside your existing DAW workflow.
-              </p>
-            </div>
-            
-            {/* FAQ Item 4 */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
-              <h3 className="text-lg font-semibold text-white mb-3">What about pricing?</h3>
-              <p className="text-slate-300 leading-relaxed">
-                Founders&apos;-style pricing for people in beta is the plan; details are still TBD. Join for beta access and you&apos;ll be first to hear when pricing is real—not vapor.
-              </p>
-            </div>
-            
-            {/* FAQ Item 5 */}
-            <div className="relative overflow-hidden audafact-card p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 shadow-xl">
-              <h3 className="text-lg font-semibold text-white mb-3">What&apos;s your vision for independent creators?</h3>
-              <p className="text-slate-300 leading-relaxed">
-                I want fewer gatekeepers between people making music—long term. Near term, that shows up as a tight sampler, straight talk on the landing page, and features driven by real feedback. The FAQ above stays grounded in what you can do today.
-              </p>
-            </div>
-        </div>
-      </section>
 
       {/* Call to Action */}
       <section className="py-5">
@@ -986,12 +569,10 @@ const Home = () => {
           
           <div className="relative z-10">
             <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-audafact-accent-cyan to-audafact-accent-cyan bg-clip-text text-transparent mb-3 sm:mb-4">
-              Try it now—or go deeper
+              Ready to flip something?
             </h2>
             <p className="text-slate-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
-              {isMobile
-                ? 'Open the studio and flip a demo in seconds. Want early features and a direct line? Join beta access.'
-                : 'Open the studio on demo material with no signup, then sign in when you want uploads, saves, and export. If you want closer involvement—early features, feedback, heads-up on support—join beta access.'}
+              Open the studio and start immediately. Feel the workflow first, then decide if you want to save and export.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-stretch sm:items-center">
               <button
@@ -999,7 +580,7 @@ const Home = () => {
                 className="group relative inline-flex items-center justify-center w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-audafact-accent-cyan text-white font-semibold rounded-lg shadow-lg hover:shadow-xl sm:transform sm:hover:scale-105 transition-all duration-200"
                 onClick={() => handleStartCreating('final_cta')}
               >
-                <span className="relative z-10">Start creating now</span>
+                <span className="relative z-10">Try it now</span>
                 <div className="absolute inset-0 bg-gradient-to-r from-audafact-accent-cyan rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
               </button>
               <button

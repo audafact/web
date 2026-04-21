@@ -5,13 +5,15 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
+  containerClassName?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({ 
   isOpen, 
   onClose, 
   children, 
-  className = '' 
+  className = '',
+  containerClassName = ''
 }) => {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -34,10 +36,10 @@ export const Modal: React.FC<ModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center ${containerClassName}`}>
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
         data-testid="modal-backdrop"
       />

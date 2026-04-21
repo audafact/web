@@ -155,6 +155,10 @@ interface TrackControlsProps {
   chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
   /** When set, shows Cue / Hold / One-Shot next to Audio Filters & Cue Points toggles (chop mode). */
   onChopTriggerStyleChange?: (style: 'cue' | 'hold' | 'one-shot') => void;
+  /** Start cue pad section expanded (used for guided onboarding). */
+  defaultCueSectionExpanded?: boolean;
+  /** Called after a cue/pad is successfully triggered. */
+  onCueTriggered?: () => void;
 }
 
 const TrackControls = ({ 
@@ -191,8 +195,10 @@ const TrackControls = ({
   pauseTransportOnRegionDrag = true,
   recordingDestination,
   cueDragState = null,
-  chopTriggerStyle = 'cue',
+  chopTriggerStyle = 'hold',
   onChopTriggerStyleChange,
+  defaultCueSectionExpanded = false,
+  onCueTriggered,
 }: TrackControlsProps) => {
   const {
     addRecordingEvent,
@@ -270,7 +276,7 @@ const TrackControls = ({
   const [internalLowpassFreq, setInternalLowpassFreq] = useState(lowpassFreq || 20000);
   const [internalHighpassFreq, setInternalHighpassFreq] = useState(highpassFreq || 20);
   const [isFilterSectionExpanded, setIsFilterSectionExpanded] = useState(false);
-  const [isCueSectionExpanded, setIsCueSectionExpanded] = useState(false);
+  const [isCueSectionExpanded, setIsCueSectionExpanded] = useState(defaultCueSectionExpanded);
   const [lowpassInputValue, setLowpassInputValue] = useState(formatFreqDisplay(lowpassFreq || 20000));
   const [highpassInputValue, setHighpassInputValue] = useState(formatFreqDisplay(highpassFreq || 20));
   const [volumeInputValue, setVolumeInputValue] = useState(() => formatVolumeDisplay(volume));
@@ -1399,6 +1405,7 @@ const TrackControls = ({
       if (onPlaybackTimeChange) {
         onPlaybackTimeChange(cueTime);
       }
+      onCueTriggered?.();
 
       setIsPlaying(true);
       if (onPlaybackStateChange) {
@@ -1841,16 +1848,13 @@ const TrackControls = ({
                   </span>
                   <div className="flex shrink-0 items-center rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5">
                     {(['cue', 'hold', 'one-shot'] as const).map((style) => {
-                      const locked = style !== 'cue' && tier.id === 'guest';
                       return (
                         <button
                           key={style}
                           type="button"
                           onClick={() => onChopTriggerStyleChange(style)}
                           title={
-                            locked
-                              ? 'Sign up to unlock Hold and One-Shot modes'
-                              : style === 'cue'
+                            style === 'cue'
                                 ? 'Jump to cue and continue'
                                 : style === 'hold'
                                   ? 'Play while held'
@@ -1859,13 +1863,10 @@ const TrackControls = ({
                           className={`rounded px-1.5 py-1 text-[11px] font-medium transition-colors sm:px-2 sm:py-1 sm:text-xs ${
                             chopTriggerStyle === style
                               ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                              : locked
-                                ? 'text-audafact-text-secondary opacity-50 hover:opacity-80'
-                                : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                              : 'text-audafact-text-secondary hover:text-audafact-text-primary'
                           }`}
                         >
                           {style === 'one-shot' ? 'One-Shot' : style.charAt(0).toUpperCase() + style.slice(1)}
-                          {locked ? ' 🔒' : ''}
                         </button>
                       );
                     })}

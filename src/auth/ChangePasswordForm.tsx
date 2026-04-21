@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from "../context/AuthContext";
 import { Link } from "react-router-dom";
 
@@ -13,6 +14,8 @@ export const ChangePasswordForm: React.FC<{ onSuccessMessage?: string }> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,16 +67,26 @@ export const ChangePasswordForm: React.FC<{ onSuccessMessage?: string }> = ({
         >
           New password
         </label>
-        <input
-          type="password"
-          id="profile-new-password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          className="w-full px-3 py-2 bg-audafact-surface-2 border border-audafact-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-audafact-accent-cyan text-audafact-text-primary placeholder-audafact-text-secondary"
-          placeholder="Enter new password"
-          autoComplete="new-password"
-          required
-        />
+        <div className="relative">
+          <input
+            type={showNewPassword ? 'text' : 'password'}
+            id="profile-new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="w-full px-3 py-2 pr-11 bg-audafact-surface-2 border border-audafact-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-audafact-accent-cyan text-audafact-text-primary placeholder-audafact-text-secondary"
+            placeholder="Enter new password"
+            autoComplete="new-password"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowNewPassword(prev => !prev)}
+            className="absolute inset-y-0 right-0 flex items-center px-3 audafact-text-secondary hover:audafact-text-primary"
+            aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+          >
+            {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
       </div>
 
       <div>
@@ -83,16 +96,26 @@ export const ChangePasswordForm: React.FC<{ onSuccessMessage?: string }> = ({
         >
           Confirm new password
         </label>
-        <input
-          type="password"
-          id="profile-confirm-password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          className="w-full px-3 py-2 bg-audafact-surface-2 border border-audafact-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-audafact-accent-cyan text-audafact-text-primary placeholder-audafact-text-secondary"
-          placeholder="Confirm new password"
-          autoComplete="new-password"
-          required
-        />
+        <div className="relative">
+          <input
+            type={showConfirmPassword ? 'text' : 'password'}
+            id="profile-confirm-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="w-full px-3 py-2 pr-11 bg-audafact-surface-2 border border-audafact-divider rounded-lg focus:outline-none focus:ring-2 focus:ring-audafact-accent-cyan focus:border-audafact-accent-cyan text-audafact-text-primary placeholder-audafact-text-secondary"
+            placeholder="Confirm new password"
+            autoComplete="new-password"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirmPassword(prev => !prev)}
+            className="absolute inset-y-0 right-0 flex items-center px-3 audafact-text-secondary hover:audafact-text-primary"
+            aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+          >
+            {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
       </div>
 
       {error && (
