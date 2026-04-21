@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { GUIDED_GEN_AI } from '../config/onboardingSessionConfig';
 
 // Define AudioAsset interface for guest tracks
 export interface AudioAsset {
@@ -8,54 +9,24 @@ export interface AudioAsset {
   genre: string;
   bpm: number;
   file: string; // URL to bundled guest track
-  type: 'wav' | 'mp3';
+  type: 'wav' | 'mp3' | 'm4a';
   size: string;
   duration?: number;
   is_guest?: boolean;
 }
 
-// Guest tracks for anonymous users
+// Guest randomization pool (used only for optional exploration after guided demo)
 const GUEST_TRACKS: AudioAsset[] = [
-  {
-    id: 'hearts-are-golden',
-    name: 'Hearts Are Golden',
-    genre: 'ambient',
-    bpm: 120,
-    file: '/assets/library-inbox/hearts-are-golden.mp3',
-    type: 'mp3',
+  ...GUIDED_GEN_AI.map((track) => ({
+    id: track.id,
+    name: track.name,
+    genre: 'gen-ai',
+    bpm: track.bpm,
+    file: track.file,
+    type: track.type,
     size: 'Unknown',
-    is_guest: true
-  },
-  {
-    id: 'break-the-chains-version-1',
-    name: 'Break the Chains (Version 1)',
-    genre: 'electronic',
-    bpm: 128,
-    file: '/assets/library-inbox/break-the-chains-version-1.mp3',
-    type: 'mp3',
-    size: 'Unknown',
-    is_guest: true
-  },
-  {
-    id: 'feel-the-rhythm-now-version-1',
-    name: 'Feel the Rhythm Now (Version 1)',
-    genre: 'electronic',
-    bpm: 128,
-    file: '/assets/library-inbox/feel-the-rhythm-now-version-1.mp3',
-    type: 'mp3',
-    size: 'Unknown',
-    is_guest: true
-  },
-  {
-    id: 'groove-vibes-version-3',
-    name: 'Groove Vibes (Version 3)',
-    genre: 'electronic',
-    bpm: 128,
-    file: '/assets/library-inbox/groove-vibes-version-3.mp3',
-    type: 'mp3',
-    size: 'Unknown',
-    is_guest: true
-  }
+    is_guest: true,
+  })),
 ];
 
 // Random selection helper preserving no-repeat behavior

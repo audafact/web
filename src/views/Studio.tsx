@@ -38,10 +38,13 @@ import type { SuggestionReference } from '../services/sampleSuggestionService';
 import { fetchLibraryAudioBlob } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
-import { BREAKPOINTS } from '../hooks/useResponsiveDesign';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 import { decodeAudioFileToBufferWithoutRunningContext } from '../utils/decodeAudioFile';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
+import {
+  pickRandomGuidedSessionPair,
+  type GuidedAssetType,
+} from '../config/onboardingSessionConfig';
 
 // Define a Track type
 interface Track {
@@ -84,6 +87,8 @@ interface AudioAsset {
   beats?: number[];
 }
 
+type OnboardingMode = 'demoFirst' | 'explorationEligible';
+
 /** Pick newest studio snapshot from RecordingContext sessions (by embedded `timestamp`, else `startTime`). */
 function pickLatestSavedSessionForRestore(sessions: unknown[]) {
   if (!sessions.length) return null;
@@ -119,6 +124,18 @@ function fingerprintTracksCueLoopMode(tracks: Array<Pick<Track, 'id' | 'cuePoint
   );
 }
 
+const GUEST_ONBOARDING_MODE_KEY = 'onboardingMode:guest';
+
+const getUserOnboardingModeKey = (userId: string) => `onboardingMode:user:${userId}`;
+
+const getUserOnboardingFirstValueKey = (userId: string) => `onboardingFirstValueAt:user:${userId}`;
+
+const guidedMimeType = (type: GuidedAssetType): string => {
+  if (type === 'm4a') return 'audio/mp4';
+  if (type === 'mp3') return 'audio/mpeg';
+  return 'audio/wav';
+};
+
 const Studio = () => {
   const [searchParams] = useSearchParams();
   const { audioContext, initializeAudio, resumeAudioContext, primeIosSessionForWebAudio } =
@@ -140,9 +157,10 @@ const Studio = () => {
     signalMixRecordingPlayback,
   } = useRecording();
   const { loading: authLoading } = useAuth();
-  const { isGuestMode, currentGuestTrack, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent} = useGuest();
+  const { isGuestMode, loadRandomGuestTrack, isLoading: isGuestLoading, trackGuestEvent } = useGuest();
 
   const { modalState, closeSignupModal, showSignupModal: openSignupModal } = useSignupModal();
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const { canPerformAction, getUpgradeMessage } = useAccessControl();
   const {
     user,
@@ -177,11 +195,9 @@ const Studio = () => {
     trackEvent('sampler_opened', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- fire once on mount
 
-  // Below `lg` (1024px): ensure side panel closed on studio entry (matches provider initial state).
+  // Ensure side panel is closed on studio entry.
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < BREAKPOINTS.tablet) {
-      closeSidePanel();
-    }
+    closeSidePanel();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- studio entry only, match initial viewport
 
   useEffect(() => {
@@ -205,10 +221,18 @@ const Studio = () => {
   const [hadTracksOnce, setHadTracksOnce] = useState(false);
   /** Prevents duplicate signed-in auto-load when effect runs before isTrackLoading state updates (e.g. Strict Mode). */
   const signedInRandomLoadStartedRef = useRef(false);
+  const [onboardingMode, setOnboardingMode] = useState<OnboardingMode>('demoFirst');
+  const onboardingModeRef = useRef<OnboardingMode>('demoFirst');
+  const firstValueMilestoneAtRef = useRef<number | null>(null);
+  const [guestHintStep, setGuestHintStep] = useState<0 | 1 | 2 | 3 | 4>(0);
+  const guestHintTimeoutRef = useRef<number | null>(null);
+  const guestFirstInteractionCapturedRef = useRef(false);
+  const guestSecondInteractionCapturedRef = useRef(false);
   /** Bumped when signed-in bootstrap random starts or when Restore begins — stale completions must not call setTracks. */
   const signedInLibraryBootstrapGenRef = useRef(0);
   /** True from first sync line of handleRestore until finally (covers gap before isRestoringRef). */
   const studioRestoreInProgressRef = useRef(false);
+  const guidedRestoreAttemptedRef = useRef(false);
   /**
    * Set when signed-in random bootstrap finishes; matches cue/loop/mode until the user edits.
    * Debounced persistence skips overwriting `studioRestoreSnapshot-*` while equal — preserves pre-refresh restore data.
@@ -257,6 +281,82 @@ const Studio = () => {
       window.history.replaceState({}, '', newUrl.toString());
     }
   }, [isDemoMode, isGuestMode, user, trackGuestEvent]);
+
+  useEffect(() => {
+    if (isGuestMode || !user) {
+      const saved = localStorage.getItem(GUEST_ONBOARDING_MODE_KEY);
+      const mode: OnboardingMode = saved === 'explorationEligible' ? 'explorationEligible' : 'demoFirst';
+      setOnboardingMode(mode);
+      onboardingModeRef.current = mode;
+      return;
+    }
+
+    const key = getUserOnboardingModeKey(user.id);
+    const saved = localStorage.getItem(key);
+    const mode: OnboardingMode = saved === 'explorationEligible' ? 'explorationEligible' : 'demoFirst';
+    setOnboardingMode(mode);
+    onboardingModeRef.current = mode;
+    guidedRestoreAttemptedRef.current = false;
+  }, [isGuestMode, user?.id]);
+
+  useEffect(() => {
+    if (!isGuestMode) {
+      setGuestHintStep(0);
+      guestFirstInteractionCapturedRef.current = false;
+      guestSecondInteractionCapturedRef.current = false;
+      return;
+    }
+    if (tracks.length >= 2 && !guestFirstInteractionCapturedRef.current) {
+      setGuestHintStep(1);
+    }
+  }, [isGuestMode, tracks.length]);
+
+  const markOnboardingValueMilestone = useCallback(() => {
+    const ts = Date.now();
+    if (firstValueMilestoneAtRef.current) return;
+    firstValueMilestoneAtRef.current = ts;
+    if (user) {
+      localStorage.setItem(getUserOnboardingFirstValueKey(user.id), String(ts));
+      localStorage.setItem(getUserOnboardingModeKey(user.id), 'explorationEligible');
+    } else {
+      localStorage.setItem(GUEST_ONBOARDING_MODE_KEY, 'explorationEligible');
+    }
+    onboardingModeRef.current = 'explorationEligible';
+    setOnboardingMode('explorationEligible');
+  }, [user]);
+
+  const markGuestFirstInteraction = useCallback(() => {
+    if (!isGuestMode || guestFirstInteractionCapturedRef.current) return;
+    guestFirstInteractionCapturedRef.current = true;
+    const chopTrack = tracks.find((t) => t.mode === 'cue');
+    if (chopTrack) {
+      setSuggestionReferenceTrackId(chopTrack.id);
+      setSelectedCueTrackId(chopTrack.id);
+    }
+    setGuestHintStep(2);
+  }, [isGuestMode, tracks]);
+
+  const markGuestSecondInteraction = useCallback(() => {
+    if (!isGuestMode) return;
+    if (!guestFirstInteractionCapturedRef.current || guestSecondInteractionCapturedRef.current) return;
+    guestSecondInteractionCapturedRef.current = true;
+    setGuestHintStep(3);
+    if (guestHintTimeoutRef.current) window.clearTimeout(guestHintTimeoutRef.current);
+    guestHintTimeoutRef.current = window.setTimeout(() => {
+      setGuestHintStep(4);
+      guestHintTimeoutRef.current = window.setTimeout(() => {
+        setGuestHintStep(0);
+      }, 5000);
+    }, 5000);
+  }, [isGuestMode]);
+
+  useEffect(() => {
+    return () => {
+      if (guestHintTimeoutRef.current) {
+        window.clearTimeout(guestHintTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Determine if we should show demo mode indicator (only for URL-based demo mode)
   const shouldShowDemoIndicator = isDemoMode;
@@ -475,6 +575,8 @@ const Studio = () => {
   // Global play: play/pause all armed loop tracks (same as space bar)
   const handleGlobalPlay = useCallback(() => {
     if (armedLoopTrackIds.size === 0) return;
+    markGuestFirstInteraction();
+    markOnboardingValueMilestone();
     const anyArmedPlaying = [...armedLoopTrackIds].some(id => playbackStates[id]);
     armedLoopTrackIds.forEach(trackId => {
       const isPlaying = playbackStates[trackId];
@@ -482,7 +584,7 @@ const Studio = () => {
         getTogglePlaybackRef(trackId).current?.();
       }
     });
-  }, [armedLoopTrackIds, playbackStates, getTogglePlaybackRef]);
+  }, [armedLoopTrackIds, playbackStates, getTogglePlaybackRef, markOnboardingValueMilestone, markGuestFirstInteraction]);
 
   // Stop all track playback (loops and chops) - used when recording completes
   const stopAllPlayback = useCallback(() => {
@@ -492,6 +594,14 @@ const Studio = () => {
       }
     });
   }, [tracks, playbackStates, getTogglePlaybackRef]);
+
+  useEffect(() => {
+    if (!isGuestMode || guestFirstInteractionCapturedRef.current) return;
+    const anyPlaying = Object.values(playbackStates).some(Boolean);
+    if (anyPlaying) {
+      markGuestFirstInteraction();
+    }
+  }, [isGuestMode, playbackStates, markGuestFirstInteraction]);
 
   const closeSampleEditMode = useCallback(() => {
     const snap = sampleEditPlaybackSnapshotRef.current;
@@ -537,6 +647,25 @@ const Studio = () => {
     window.addEventListener('recordingCompleted', handleRecordingCompleted);
     return () => window.removeEventListener('recordingCompleted', handleRecordingCompleted);
   }, [stopAllPlayback]);
+
+  useEffect(() => {
+    const handleAuthModalVisibility = (event: Event) => {
+      const customEvent = event as CustomEvent<{ isOpen?: boolean }>;
+      setIsAuthModalOpen(Boolean(customEvent.detail?.isOpen));
+    };
+    window.addEventListener('authModalVisibilityChange', handleAuthModalVisibility as EventListener);
+    return () =>
+      window.removeEventListener('authModalVisibilityChange', handleAuthModalVisibility as EventListener);
+  }, []);
+
+  // Freeze studio transport while auth modal is open.
+  useEffect(() => {
+    if (!isAuthModalOpen && !modalState.isOpen) return;
+    if (isRecordingPerformance) {
+      stopPerformanceRecording();
+    }
+    stopAllPlayback();
+  }, [isAuthModalOpen, modalState.isOpen, isRecordingPerformance, stopPerformanceRecording, stopAllPlayback]);
 
   // Clear suggestion reference if that track was removed
   useEffect(() => {
@@ -918,9 +1047,6 @@ const Studio = () => {
             savedTrack.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(savedTrack.chopTriggerStyle)
               ? savedTrack.chopTriggerStyle
               : 'cue';
-          if (tier.id !== 'pro' && (validChopStyle === 'hold' || validChopStyle === 'one-shot')) {
-            validChopStyle = 'cue';
-          }
           const restoredTrack: Track = {
             id: savedTrack.id,
             sourceAssetId: savedTrack.sourceAssetId ?? savedTrack.id,
@@ -1062,92 +1188,114 @@ const Studio = () => {
   // Signed-in users: random track loads after library is ready (see effect below). Guests still use Start digging / Get started.
   // Restore previous (saved studio state) remains an explicit action (button).
 
+  const loadGuidedDemoSession = useCallback(async () => {
+    setIsTrackLoading(true);
+    setError(null);
+    try {
+      const pair = pickRandomGuidedSessionPair();
+      const breakAsset = pair.breakAsset;
+      const genAiAsset = pair.genAiAsset;
+
+      const [breakRes, genAiRes] = await Promise.all([
+        fetch(breakAsset.file),
+        fetch(genAiAsset.file),
+      ]);
+      const [breakBlob, genAiBlob] = await Promise.all([
+        breakRes.blob(),
+        genAiRes.blob(),
+      ]);
+
+      const breakFile = new File([breakBlob], `${breakAsset.name}.${breakAsset.type}`, {
+        type: guidedMimeType(breakAsset.type),
+      });
+      const genAiFile = new File([genAiBlob], `${genAiAsset.name}.${genAiAsset.type}`, {
+        type: guidedMimeType(genAiAsset.type),
+      });
+
+      const [breakBuffer, genAiBuffer] = await Promise.all([
+        decodeAudioFileToBufferWithoutRunningContext(breakFile),
+        decodeAudioFileToBufferWithoutRunningContext(genAiFile),
+      ]);
+
+      const breakTrack: Track = {
+        id: breakAsset.id,
+        sourceAssetId: breakAsset.id,
+        file: breakFile,
+        buffer: breakBuffer,
+        peaks: extractPeaksFromBuffer(breakBuffer),
+        mode: 'loop',
+        loopStart: breakAsset.loopStart,
+        loopEnd: Math.min(breakAsset.loopEnd, breakBuffer.duration),
+        cuePoints: Array.from({ length: 10 }, (_, i) => breakBuffer.duration * (i / 10)),
+        tempo: breakAsset.bpm || 120,
+        key: breakAsset.key,
+        timeSignature: { numerator: 4, denominator: 4 },
+        firstMeasureTime: 0,
+        showMeasures: false,
+      };
+
+      const genAiTrack: Track = {
+        id: genAiAsset.id,
+        sourceAssetId: genAiAsset.id,
+        file: genAiFile,
+        buffer: genAiBuffer,
+        peaks: extractPeaksFromBuffer(genAiBuffer),
+        mode: 'cue',
+        chopTriggerStyle: 'hold',
+        loopStart: 0,
+        loopEnd: genAiBuffer.duration,
+        cuePoints: Array.from({ length: 10 }, (_, i) => genAiBuffer.duration * (i / 10)),
+        tempo: genAiAsset.bpm || 120,
+        key: genAiAsset.key,
+        timeSignature: { numerator: 4, denominator: 4 },
+        firstMeasureTime: 0,
+        showMeasures: false,
+      };
+
+      setTracks([breakTrack, genAiTrack]);
+      setCurrentTrackIndex(0);
+      setSelectedCueTrackId(genAiTrack.id);
+      setArmedLoopTrackIds(new Set([breakTrack.id]));
+      setShowCueThumbs((prev) => ({ ...prev, [breakTrack.id]: false, [genAiTrack.id]: true }));
+      setShowMeasures((prev) => ({ ...prev, [breakTrack.id]: false, [genAiTrack.id]: false }));
+      setZoomLevels((prev) => ({ ...prev, [breakTrack.id]: 1, [genAiTrack.id]: 1 }));
+      setPlaybackSpeeds((prev) => ({ ...prev, [breakTrack.id]: 1, [genAiTrack.id]: pair.genAiPlaybackSpeed }));
+      setVolume((prev) => ({
+        ...prev,
+        [breakTrack.id]: lastUsedVolumeRef.current,
+        [genAiTrack.id]: pair.genAiVolume,
+      }));
+      setLowpassFreqs((prev) => ({ ...prev, [breakTrack.id]: 20000, [genAiTrack.id]: 20000 }));
+      setHighpassFreqs((prev) => ({ ...prev, [breakTrack.id]: 20, [genAiTrack.id]: 20 }));
+      setFilterEnabled((prev) => ({ ...prev, [breakTrack.id]: false, [genAiTrack.id]: false }));
+
+      trackEvent('track_loaded', { trackId: breakTrack.id, trackIndex: 0, source: 'guided-break', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+      trackEvent('track_loaded', { trackId: genAiTrack.id, trackIndex: 1, source: 'guided-gen-ai', userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+      trackGuestEvent('session_started', {
+        breakTrackId: breakTrack.id,
+        genAiTrackId: genAiTrack.id,
+        timestamp: Date.now(),
+      });
+      if (!hasEmittedSamplerReady.current) {
+        trackEvent('sampler_ready', { trackId: genAiTrack.id, userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
+        hasEmittedSamplerReady.current = true;
+      }
+    } catch (error) {
+      console.error('❌ Error loading guided demo session:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      setError(`Error loading guided demo session: ${errorMessage}`);
+    } finally {
+      setIsTrackLoading(false);
+    }
+  }, [tier?.id, trackEvent, trackGuestEvent]);
+
   const loadRandomTrack = useCallback(async () => {
       try {
         setIsTrackLoading(true);
         setError(null);
         
-        // Anonymous only: bundled guest assets. Signed-in users use library + Worker (staging/prod).
-        if (isGuestMode) {
-          let guestTrack = currentGuestTrack;
-          if (!guestTrack) {
-            guestTrack = await loadRandomGuestTrack();
-            if (!guestTrack) {
-              setIsTrackLoading(false);
-              return;
-            }
-          }
-
-          let context = audioContext;
-          if (!context) {
-            try {
-              context = await initializeAudio();
-              setIsAudioInitialized(true);
-            } catch (initError) {
-              console.error('Error initializing audio context:', initError);
-              setNeedsUserInteraction(true);
-              setIsTrackLoading(false);
-              return;
-            }
-          }
-
-          if (context.state === 'suspended') {
-            setNeedsUserInteraction(true);
-            setIsTrackLoading(false);
-            return;
-          }
-
-          const response = await fetch(guestTrack.file);
-          const blob = await response.blob();
-          const file = new File([blob], `${guestTrack.name}.${guestTrack.type}`, {
-            type: `audio/${guestTrack.type}`,
-          });
-
-          const buffer = await loadAudioBuffer(file, context);
-
-          const newTrack: Track = {
-            id: guestTrack.id,
-            file,
-            buffer,
-            peaks: extractPeaksFromBuffer(buffer),
-            mode: 'cue',
-            chopTriggerStyle: 'cue',
-            loopStart: 0,
-            loopEnd: buffer.duration,
-            cuePoints: Array.from({ length: 10 }, (_, i) =>
-              buffer.duration * (i / 10)
-            ),
-            tempo: guestTrack.bpm || 120,
-            timeSignature: { numerator: 4, denominator: 4 },
-            firstMeasureTime: 0,
-            showMeasures: false,
-          };
-
-          setTracks([newTrack]);
-          setCurrentTrackIndex(0);
-          setShowCueThumbs((prev) => ({ ...prev, [newTrack.id]: true }));
-          setSelectedCueTrackId(newTrack.id);
-          setIsTrackLoading(false);
-
-          if (!hasEmittedSamplerReady.current) {
-            trackEvent('sampler_ready', {
-              trackId: guestTrack.id,
-              userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
-            });
-            hasEmittedSamplerReady.current = true;
-          }
-          trackEvent('track_loaded', {
-            trackId: guestTrack.id,
-            trackIndex: 0,
-            source: 'guest',
-            userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro',
-          });
-
-          trackGuestEvent('session_started', {
-            trackId: guestTrack.id,
-            timestamp: Date.now(),
-          });
-
+        if (isGuestMode || onboardingModeRef.current === 'demoFirst') {
+          await loadGuidedDemoSession();
           return;
         }
         
@@ -1185,7 +1333,7 @@ const Studio = () => {
         const newMode = settings.mode || 'cue';
         const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
           ? settings.chopTriggerStyle
-          : 'cue';
+              : 'hold';
         const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
           ? asset.bpm
           : (settings.tempo || 120);
@@ -1266,7 +1414,7 @@ const Studio = () => {
           setError(`Error loading track: ${errorMessage}`);
         }
       }
-    }, [audioContext, initializeAudio, isGuestMode, currentGuestTrack, loadRandomGuestTrack, availableAssets, user, trackGuestEvent, trackEvent, tier]);
+    }, [isGuestMode, availableAssets, user, trackEvent, tier, loadGuidedDemoSession, trackLoadRetryCount]);
 
   /** Clear the deck and load one random track (signed-in: library; guest: demo) — same end state as first visit. */
   const handleNewSession = useCallback(() => {
@@ -1318,13 +1466,22 @@ const Studio = () => {
     tier?.id,
   ]);
 
-  // Signed-in only: load a random library track once auth + library are ready. Audio may stay suspended until play/space/cue (ensureAudio in TrackControls).
+  // Load bootstrap session once auth/library are ready.
   useEffect(() => {
-    if (isGuestMode || !user || authLoading || userLoading) return;
-    if (availableAssets.length === 0 || tracks.length > 0 || hadTracksOnce) return;
+    if (tracks.length > 0 || hadTracksOnce) return;
     if (error) return;
     if (isManuallyAddingTrack || isTrackLoading) return;
     if (signedInRandomLoadStartedRef.current) return;
+
+    if (isGuestMode) {
+      signedInRandomLoadStartedRef.current = true;
+      void loadRandomTrack();
+      return;
+    }
+
+    if (!user || authLoading || userLoading) return;
+    if (onboardingMode === 'explorationEligible' && availableAssets.length === 0) return;
+
     signedInRandomLoadStartedRef.current = true;
     void loadRandomTrack();
   }, [
@@ -1332,6 +1489,7 @@ const Studio = () => {
     user,
     authLoading,
     userLoading,
+    onboardingMode,
     availableAssets.length,
     tracks.length,
     hadTracksOnce,
@@ -1341,9 +1499,37 @@ const Studio = () => {
     loadRandomTrack,
   ]);
 
+  useEffect(() => {
+    if (!user || isGuestMode) return;
+    if (onboardingMode !== 'demoFirst') return;
+    if (tracks.length > 0 || hadTracksOnce) return;
+    if (authLoading || userLoading || isTrackLoading) return;
+    if (guidedRestoreAttemptedRef.current) return;
+
+    const local = loadRestoreSnapshotFromLocal();
+    if (!local?.tracks?.length) {
+      guidedRestoreAttemptedRef.current = true;
+      return;
+    }
+
+    guidedRestoreAttemptedRef.current = true;
+    void restoreFromState(local);
+  }, [
+    user,
+    isGuestMode,
+    onboardingMode,
+    tracks.length,
+    hadTracksOnce,
+    authLoading,
+    userLoading,
+    isTrackLoading,
+    restoreFromState,
+  ]);
+
   // Global keyboard shortcuts (Space, help, zoom) — track switching uses Prev/Next or swipe only
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      if (modalState.isOpen || isAuthModalOpen) return;
       // Skip shortcuts when user is typing in an input (volume, speed, filters, etc.)
       const active = document.activeElement;
       const isTypingInput =
@@ -1404,76 +1590,7 @@ const Studio = () => {
 
     window.addEventListener('keydown', handleKeyPress, true); // Capture phase: handle Space before focused buttons or default scroll
     return () => window.removeEventListener('keydown', handleKeyPress, true);
-  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay, sampleEditTrackId, getTogglePlaybackRef]);
-
-        // Handle demo track changes
-      useEffect(() => {
-        if (isGuestMode && currentGuestTrack && audioContext && tracks.length > 0) {
-          // If the currently loaded track already matches the bundled track, do nothing
-          if (tracks[0]?.id === currentGuestTrack.id) return;
-          
-          // Reload the guest buffer so next/prev actually swaps the loaded audio + cue points.
-          (async () => {
-            try {
-              setIsInitializingAudio(true);
-              setError(null);
-
-              const response = await fetch(currentGuestTrack.file);
-              const blob = await response.blob();
-              const file = new File([blob], `${currentGuestTrack.name}.${currentGuestTrack.type}`, {
-                type: `audio/${currentGuestTrack.type}`,
-              });
-
-              const buffer = await loadAudioBuffer(file, audioContext);
-              const trackId = currentGuestTrack.id;
-              const mode: 'cue' | 'loop' = tracks[0]?.mode === 'loop' ? 'loop' : 'cue';
-
-              const newTrack: Track = {
-                id: trackId,
-                file,
-                buffer,
-                peaks: extractPeaksFromBuffer(buffer),
-                mode,
-                chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
-                loopStart: 0,
-                loopEnd: buffer.duration,
-                cuePoints: Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10)),
-                tempo: currentGuestTrack.bpm || 120,
-                timeSignature: { numerator: 4, denominator: 4 },
-                firstMeasureTime: 0,
-                showMeasures: false,
-              };
-
-              setTracks([newTrack]);
-              setCurrentTrackIndex(0);
-              setShowMeasures((prev) => ({ ...prev, [trackId]: false }));
-              setShowCueThumbs((prev) => ({ ...prev, [trackId]: mode === 'cue' }));
-              if (mode === 'cue') setSelectedCueTrackId(trackId);
-              setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
-              setZoomLevels((prev) => ({ ...prev, [trackId]: 1 }));
-              setPlaybackSpeeds((prev) => ({ ...prev, [trackId]: 1 }));
-              setVolume((prev) => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
-              setExpandedControls((prev) => ({ ...prev, [trackId]: false }));
-              setPlaybackTimes((prev) => ({ ...prev, [trackId]: 0 }));
-              setPlaybackStates((prev) => ({ ...prev, [trackId]: false }));
-              setLowpassFreqs((prev) => ({ ...prev, [trackId]: 20000 }));
-              setHighpassFreqs((prev) => ({ ...prev, [trackId]: 20 }));
-              setFilterEnabled((prev) => ({ ...prev, [trackId]: false }));
-
-              trackGuestEvent('next_track', {
-                fromTrackId: tracks[0]?.id,
-                toTrackId: currentGuestTrack.id,
-              });
-            } catch (error) {
-              console.error('Failed to reload guest track:', error);
-              const msg = error instanceof Error ? error.message : '';
-              setError(msg || 'Failed to load guest track');
-            } finally {
-              setIsInitializingAudio(false);
-            }
-          })();
-        }
-      }, [isGuestMode, currentGuestTrack, audioContext, tracks.length, trackGuestEvent]);
+  }, [tracks, currentTrackIndex, isTapTempoActive, handleGlobalPlay, sampleEditTrackId, getTogglePlaybackRef, modalState.isOpen, isAuthModalOpen]);
 
   // Reset the hasLoadedTrack flag when tracks are cleared
   useEffect(() => {
@@ -1842,8 +1959,11 @@ const Studio = () => {
     if (tracks.length === 0) return;
     
     if (isGuestMode) {
-      // In demo mode, load next bundled track
-      loadRandomGuestTrack();
+      if (onboardingModeRef.current === 'demoFirst') {
+        await loadGuidedDemoSession();
+      } else {
+        loadRandomGuestTrack();
+      }
     } else {
       const assetsLength = (availableAssets || []).length;
       const nextIndex = getRandomNextIndex(assetsLength, currentTrackIndex);
@@ -1854,15 +1974,18 @@ const Studio = () => {
       }
       await loadTrackByIndex(nextIndex, { replaceSlotIndex: 0 });
     }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex, loadGuidedDemoSession]);
 
   const handlePreviousTrack = useCallback(async () => {
     if (isTrackLoading || isGuestLoading) return; // Disable during loading
     if (tracks.length === 0) return;
     
     if (isGuestMode) {
-      // In demo mode, load next bundled track (since we don't have previous bundled track concept)
-      loadRandomGuestTrack();
+      if (onboardingModeRef.current === 'demoFirst') {
+        await loadGuidedDemoSession();
+      } else {
+        loadRandomGuestTrack();
+      }
     } else {
       const assetsLength = (availableAssets || []).length;
       if (assetsLength <= 0) return;
@@ -1875,7 +1998,7 @@ const Studio = () => {
 
       await loadTrackByIndex(prevIndex, { replaceSlotIndex: 0 });
     }
-  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex]);
+  }, [tracks.length, currentTrackIndex, isTrackLoading, isGuestLoading, isGuestMode, loadRandomGuestTrack, availableAssets, getRandomNextIndex, loadGuidedDemoSession]);
 
   const loadTrackByIndex = async (
     index: number,
@@ -1959,7 +2082,7 @@ const Studio = () => {
       const newMode = settings.mode || 'cue';
       const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
-        : 'cue';
+          : 'hold';
       const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
         ? asset.bpm
         : (settings.tempo || 120);
@@ -2164,7 +2287,7 @@ const Studio = () => {
         buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: 'cue', // New tracks always start as cue
-        chopTriggerStyle: 'cue',
+        chopTriggerStyle: 'hold',
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: Array.from({ length: 10 }, (_, i) => 
@@ -2301,23 +2424,27 @@ const Studio = () => {
       if (!track) return;
       const settings: any = {
         mode: track.mode,
+        chopTriggerStyle: track.chopTriggerStyle ?? 'hold',
         loopStart: track.loopStart,
         loopEnd: track.loopEnd,
+        cuePoints: track.cuePoints,
         tempo: track.tempo,
         timeSignature: track.timeSignature,
         firstMeasureTime: track.firstMeasureTime,
         showMeasures: showMeasures[track.id] || false,
         showCueThumbs: (showCueThumbs[track.id] ?? true),
         zoomLevel: zoomLevels[track.id] || 1,
-        playbackSpeed: playbackSpeeds[track.id] || 1   };
-      
-      // Only save volume for loop and cue tracks
-      if (track.mode !== 'preview') {
-        settings.volume = volume[track.id] || 1    }
+        playbackSpeed: playbackSpeeds[track.id] || 1,
+        volume: volume[track.id] || 1,
+        lowpassFreq: lowpassFreqs[track.id] || 20000,
+        highpassFreq: highpassFreqs[track.id] || 20,
+        filterEnabled: filterEnabled[track.id] || false,
+        expandedControls: expandedControls[track.id] || false,
+      };
       
       saveTrackSettingsToLocal(track.id, settings);
     });
-  }, [tracks, showMeasures, showCueThumbs, zoomLevels, playbackSpeeds, volume]);
+  }, [tracks, showMeasures, showCueThumbs, zoomLevels, playbackSpeeds, volume, lowpassFreqs, highpassFreqs, filterEnabled, expandedControls]);
 
   // Persist selected cue track id
   useEffect(() => {
@@ -2586,10 +2713,6 @@ const Studio = () => {
   };
 
   const handleChopTriggerStyleChange = (trackId: string, chopTriggerStyle: 'cue' | 'hold' | 'one-shot') => {
-    if (chopTriggerStyle !== 'cue' && tier.id === 'guest') {
-      openSignupModal('trigger_styles');
-      return;
-    }
     setTracks(prev =>
       prev.map(track =>
         track.id === trackId ? { ...track, chopTriggerStyle } : track
@@ -3035,6 +3158,7 @@ const Studio = () => {
 
   // Save session to DB / saved-sessions list; also mirrors `studioState-${user.id}` (full UI incl. zoom, playback) for Restore previous.
   const handleSaveCurrentState = async () => {
+    markOnboardingValueMilestone();
     // Check session save limits
     const canSaveSession = await canPerformAction('save_session');
     if (!canSaveSession) {
@@ -3085,7 +3209,7 @@ const Studio = () => {
           highpassFreq: highpassFreqs[track.id] || 20,
           filterEnabled: filterEnabled[track.id] || false,
           expandedControls: expandedControls[track.id] || false,
-          chopTriggerStyle: track.chopTriggerStyle ?? 'cue'
+          chopTriggerStyle: track.chopTriggerStyle ?? 'hold'
         };
       }),
       selectedCueTrackId,
@@ -3140,11 +3264,11 @@ const Studio = () => {
           buffer,
           peaks: extractPeaksFromBuffer(buffer),
           mode: 'cue',
-          chopTriggerStyle: 'cue',
+          chopTriggerStyle: 'hold',
           loopStart: 0,
           loopEnd: buffer.duration,
           cuePoints,
-          tempo: currentGuestTrack?.bpm || 120,
+          tempo: 120,
           timeSignature: { numerator: 4, denominator: 4 },
           firstMeasureTime: 0,
           showMeasures: false,
@@ -3184,7 +3308,7 @@ const Studio = () => {
         buffer: buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,
-        chopTriggerStyle: trackType === 'cue' ? 'cue' : undefined,
+        chopTriggerStyle: trackType === 'cue' ? 'hold' : undefined,
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: [],
@@ -3291,7 +3415,7 @@ const Studio = () => {
         file: file,
         buffer: buffer,
         mode: trackType,
-        chopTriggerStyle: trackType === 'cue' ? 'cue' : undefined,
+        chopTriggerStyle: trackType === 'cue' ? 'hold' : undefined,
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
@@ -3423,7 +3547,7 @@ const Studio = () => {
         buffer: buffer,
         peaks: extractPeaksFromBuffer(buffer),
         mode: trackType,
-        chopTriggerStyle: trackType === 'cue' ? 'cue' : undefined,
+        chopTriggerStyle: trackType === 'cue' ? 'hold' : undefined,
         loopStart: 0,
         loopEnd: buffer.duration,
         cuePoints: trackType === 'cue' ? Array.from({ length: 10 }, (_, i) => 
@@ -3498,14 +3622,14 @@ const Studio = () => {
         await resumeAudioContext();
         setNeedsUserInteraction(false);
         // Retry loading the track after audio context is resumed
-        if (isGuestMode && currentGuestTrack && tracks.length === 0) {
+        if (isGuestMode && tracks.length === 0) {
           loadRandomTrack();
         }
       } catch (error) {
         console.error('Failed to resume audio context:', error);
       }
     }
-  }, [needsUserInteraction, audioContext, resumeAudioContext, isGuestMode, currentGuestTrack, tracks.length, loadRandomTrack]);
+  }, [needsUserInteraction, audioContext, resumeAudioContext, isGuestMode, tracks.length, loadRandomTrack]);
 
   // Add this useEffect to handle user interactions:
   useEffect(() => {
@@ -3538,61 +3662,8 @@ const Studio = () => {
       const context = await initializeAudio();
       setIsAudioInitialized(true);
       
-      if (isGuestMode) {
-        // Anonymous only: bundled /assets/library-inbox/* — signed-in users use library + Worker above.
-        let guestTrack = currentGuestTrack;
-        if (!guestTrack) {
-          guestTrack = await loadRandomGuestTrack();
-          if (!guestTrack) {
-            throw new Error('Failed to load bundled track. Please try again.');
-          }
-        }
-
-        const response = await fetch(guestTrack.file);
-        const blob = await response.blob();
-        const file = new File([blob], `${guestTrack.name}.${guestTrack.type}`, { 
-          type: `audio/${guestTrack.type}` 
-        });
-        
-        const buffer = await loadAudioBuffer(file, context);
-        const trackId = guestTrack.id;
-        const mode: 'cue' | 'loop' = preferredMode ?? 'cue';
-        
-        const newTrack: Track = {
-          id: trackId,
-          file,
-          buffer,
-          peaks: extractPeaksFromBuffer(buffer),
-          mode,
-          chopTriggerStyle: mode === 'cue' ? 'cue' : undefined,
-          loopStart: 0,
-          loopEnd: buffer.duration,
-          cuePoints: Array.from({ length: 10 }, (_, i) => 
-            buffer.duration * (i / 10)
-          ),
-          tempo: guestTrack.bpm || 120,
-          timeSignature: { numerator: 4, denominator: 4 },
-          firstMeasureTime: 0,
-          showMeasures: false
-        };
-        
-        setTracks([newTrack]);
-        setCurrentTrackIndex(0);
-        setShowMeasures(prev => ({ ...prev, [trackId]: false }));
-        setShowCueThumbs(prev => ({ ...prev, [trackId]: mode === 'cue' }));
-        setArmedLoopTrackIds(mode === 'loop' ? new Set([trackId]) : new Set());
-        setZoomLevels(prev => ({ ...prev, [trackId]: 1 }));
-        setPlaybackSpeeds(prev => ({ ...prev, [trackId]: 1 }));
-        setVolume(prev => ({ ...prev, [trackId]: lastUsedVolumeRef.current }));
-        setExpandedControls(prev => ({ ...prev, [trackId]: false }));
-        if (mode === 'cue') setSelectedCueTrackId(trackId);
-        
-        // Track demo event
-        trackGuestEvent('session_started', { 
-          trackId: guestTrack.id,
-          timestamp: Date.now()
-        });
-        
+      if (isGuestMode || onboardingModeRef.current === 'demoFirst') {
+        await loadGuidedDemoSession();
         setIsInitializingAudio(false);
         return;
       }
@@ -3629,7 +3700,7 @@ const Studio = () => {
       const mode = preferredMode ?? settings.mode ?? loadPreferredMode() ?? 'cue';
       const chopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
-        : 'cue';
+        : 'hold';
       const trackTempo = (asset.bpm != null && asset.bpm >= 40 && asset.bpm <= 300)
         ? asset.bpm
         : (settings.tempo || 120);
@@ -4510,6 +4581,25 @@ const Studio = () => {
           </div>
         )}
 
+        {isGuestMode && guestHintStep > 0 && (
+          <div className="fixed top-20 left-1/2 z-[9999] w-[min(83vw-2rem,80rem)] -translate-x-1/2 pointer-events-none">
+            <div className="rounded-lg border border-audafact-accent-cyan/40 bg-audafact-accent-cyan/10 px-3 py-2 text-xs text-audafact-text-primary animate-pulse shadow-2xl backdrop-blur-sm">
+              {guestHintStep === 1 && (
+                <>Press <span className="font-semibold">Space</span> to loop.</>
+              )}
+              {guestHintStep === 2 && (
+                <>Press and hold any pad beneath track 2 below or any key from <span className="font-semibold">1-0</span> to trigger chops.</>
+              )}
+              {guestHintStep === 3 && (
+                <>Make it yours, drag cue points to find new chops.</>
+              )}
+              {guestHintStep === 4 && (
+                <>Dig deeper with volume, playback speed, and filters for each track.</>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Save + Record row; New session + Restore previous right-aligned. Keyboard hints on next row. */}
         <div className="mb-4 w-full space-y-2 min-w-0 max-w-full">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 w-full min-w-0">
@@ -5323,8 +5413,8 @@ const Studio = () => {
                 isPlaying={playbackStates[track.id] || false}
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
-                isGuestMode={isGuestMode}
-                chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                isGuestMode={false}
+                chopTriggerStyle={track.chopTriggerStyle ?? 'hold'}
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
                 onReady={() => handleWaveformReady(track.id)}
                 suppressLoadingOverlay={!!(loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id))}
@@ -5371,8 +5461,10 @@ const Studio = () => {
                 pauseTransportOnRegionDrag={false}
                 recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
                 cueDragState={cueDragStates[track.id] || null}
-                chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                chopTriggerStyle={track.chopTriggerStyle ?? 'hold'}
                 onChopTriggerStyleChange={(style) => handleChopTriggerStyleChange(track.id, style)}
+                defaultCueSectionExpanded={isGuestMode && track.mode === 'cue'}
+                onCueTriggered={markGuestSecondInteraction}
               />
 
               {track.mode === 'cue' && track.id === selectedCueTrackId && (
@@ -5585,8 +5677,8 @@ const Studio = () => {
                   isPlaying={playbackStates[track.id] || false}
                   onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                   onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
-                  isGuestMode={isGuestMode}
-                  chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                  isGuestMode={false}
+                  chopTriggerStyle={track.chopTriggerStyle ?? 'hold'}
                   onCueDragStateChange={(ci, time) => handleCueDragStateChange(track.id, ci, time)}
                   onReady={() => handleWaveformReady(track.id)}
                   suppressLoadingOverlay={
@@ -5641,8 +5733,10 @@ const Studio = () => {
                   pauseTransportOnRegionDrag
                   recordingDestination={isRecordingPerformance ? getRecordingDestination() : null}
                   cueDragState={cueDragStates[track.id] || null}
-                  chopTriggerStyle={track.chopTriggerStyle ?? 'cue'}
+                  chopTriggerStyle={track.chopTriggerStyle ?? 'hold'}
                   onChopTriggerStyleChange={(style) => handleChopTriggerStyleChange(track.id, style)}
+                  defaultCueSectionExpanded={isGuestMode && track.mode === 'cue'}
+                  onCueTriggered={markGuestSecondInteraction}
                 />
                 {track.mode === 'cue' && track.id === selectedCueTrackId && (
                   <div className="mt-3 rounded bg-audafact-accent-blue bg-opacity-10 p-2 text-xs text-audafact-accent-blue">
