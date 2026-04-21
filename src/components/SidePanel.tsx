@@ -20,6 +20,7 @@ import { toPrettySize, normalizeLegacyUrlToKey } from '@/utils/media';
 import { deleteByKey } from '@/lib/storage';
 import { buildApiUrl, API_CONFIG } from '@/config/api';
 import { CRISTIAN_SIGLER_DEMO_SIDE_PANEL_LABEL } from '@/config/demoLibrary';
+import { GUIDED_BREAKS } from '@/config/onboardingSessionConfig';
 import { supabase } from '@/services/supabase';
 import { useSingleAudio } from '@/hooks/useSingleAudio';
 import { ExportRecordingModal } from './ExportRecordingModal';
@@ -67,6 +68,12 @@ type SidePanelAudioTab = 'my-tracks' | 'library' | 'demo-pack';
 const IconBookmark = () => (
   <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+  </svg>
+);
+const IconDrum = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="12" cy="16" rx="7" ry="3" />
+    <path d="M5 16V8m14 8V8M5 8c0-1.7 3.1-3 7-3s7 1.3 7 3M9 4l2 2m4-2-2 2" />
   </svg>
 );
 const IconShare = () => (
@@ -332,6 +339,28 @@ const SidePanel: React.FC<SidePanelProps> = ({
       isDemo: true,
     }));
   }, [user, guestTracks]);
+
+  const guestDemoCollectionTracks = useMemo<LibraryTrack[]>(() => {
+    if (user) return [];
+    return GUIDED_BREAKS.map((track) => ({
+      id: `guest-demo-${track.id}`,
+      name: track.name,
+      genre: 'drums',
+      bpm: track.bpm,
+      duration: Math.max(0, track.loopEnd - track.loopStart),
+      fileKey: track.file,
+      previewUrl: track.file,
+      type: track.type,
+      size: 'N/A',
+      tags: ['demo-pack'],
+      isDemo: true,
+    }));
+  }, [user]);
+
+  const visibleDemoCollectionTracks = useMemo<LibraryTrack[]>(
+    () => (demoCollectionTracks.length > 0 ? demoCollectionTracks : guestDemoCollectionTracks),
+    [demoCollectionTracks, guestDemoCollectionTracks]
+  );
   
   // Collapsible menu state - Tracks open by default, but Sessions/Recordings use saved preference
   const [expandedMenus, setExpandedMenus] = useState<{ [key: string]: boolean }>(() => {
@@ -584,10 +613,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
   }, [pendingSession, savedSessions, user]);
 
   useEffect(() => {
-    if (demoCollectionTracks.length === 0) {
+    if (visibleDemoCollectionTracks.length === 0) {
       demoTabRestoredRef.current = false;
     }
-  }, [demoCollectionTracks.length]);
+  }, [visibleDemoCollectionTracks.length]);
 
   const importSharedBundle = useCallback(async (file: File) => {
     try {
@@ -606,7 +635,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
   useEffect(() => {
     if (
-      demoCollectionTracks.length === 0 ||
+      visibleDemoCollectionTracks.length === 0 ||
       demoTabRestoredRef.current
     ) {
       return;
@@ -617,14 +646,14 @@ const SidePanel: React.FC<SidePanelProps> = ({
       setAllowEmptyAudioTab(false);
       demoTabRestoredRef.current = true;
     }
-  }, [demoCollectionTracks.length]);
+  }, [visibleDemoCollectionTracks.length]);
 
   useEffect(() => {
-    if (activeAudioTab === 'demo-pack' && demoCollectionTracks.length === 0) {
+    if (activeAudioTab === 'demo-pack' && visibleDemoCollectionTracks.length === 0) {
       setActiveAudioTab(null);
       setAllowEmptyAudioTab(true);
     }
-  }, [activeAudioTab, demoCollectionTracks.length]);
+  }, [activeAudioTab, visibleDemoCollectionTracks.length]);
 
   const suggestedLibraryMatches = useMemo(() => {
     const libraryPool = tier.id === 'guest' ? guestLibraryTracks : userLibraryTracks;
@@ -1245,10 +1274,10 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     ariaControls="my-tracks-content"
                     id="my-tracks-tab"
                   />
-                  {demoCollectionTracks.length > 0 && (
+                  {visibleDemoCollectionTracks.length > 0 && (
                     <SidePanelSubMenuItem
                       label={CRISTIAN_SIGLER_DEMO_SIDE_PANEL_LABEL}
-                      icon={<IconBookmark />}
+                      icon={<IconDrum />}
                       isActive={activeAudioTab === 'demo-pack'}
                       onClick={() => handleAudioTabSelect('demo-pack')}
                       role="tab"
@@ -1565,7 +1594,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                   </div>
                 )}
 
-                {activeAudioTab === 'demo-pack' && demoCollectionTracks.length > 0 && (
+                {activeAudioTab === 'demo-pack' && visibleDemoCollectionTracks.length > 0 && (
                   <div
                     id="cristian-sigler-demo-pack-content"
                     role="tabpanel"
@@ -1578,6 +1607,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           {CRISTIAN_SIGLER_DEMO_SIDE_PANEL_LABEL}
                         </h3>
                       </div>
+                      <p className="text-audafact-text-primary/95">{libraryCatalogBanner}</p>
                       <div className="space-y-3">
                         {demoCollectionLoading ? (
                           <div className="text-center py-4">
@@ -1587,7 +1617,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                             </p>
                           </div>
                         ) : (
-                          demoCollectionTracks.map((track) => (
+                          visibleDemoCollectionTracks.map((track) => (
                             <LibraryTrackItem
                               key={track.id}
                               track={track}
