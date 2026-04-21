@@ -20,7 +20,6 @@ import {
 } from "../services/libraryService";
 import {
   CRISTIAN_SIGLER_DEMO_COLLECTION_KEY,
-  isDemoLibraryAccount,
 } from "../config/demoLibrary";
 import { fetchUserProfileRow } from "../services/userProfileFetch";
 
@@ -86,26 +85,24 @@ export const useUser = () => {
           }
         }
 
-        if (isDemoLibraryAccount(user.email)) {
-          try {
-            setDemoCollectionLoading(true);
-            const { data: demoData, error: demoErr } = await supabase.rpc(
-              "get_demo_collection_tracks",
-              { p_slug: CRISTIAN_SIGLER_DEMO_COLLECTION_KEY }
+        try {
+          setDemoCollectionLoading(true);
+          const { data: demoData, error: demoErr } = await supabase.rpc(
+            "get_demo_collection_tracks",
+            { p_slug: CRISTIAN_SIGLER_DEMO_COLLECTION_KEY }
+          );
+          if (demoErr) {
+            console.error("❌ Error fetching demo collection tracks:", demoErr);
+            setDemoCollectionTracks([]);
+          } else {
+            setDemoCollectionTracks(
+              LibraryService.transformDatabaseTracks(
+                (demoData ?? []) as DatabaseLibraryTrack[]
+              )
             );
-            if (demoErr) {
-              console.error("❌ Error fetching demo collection tracks:", demoErr);
-              setDemoCollectionTracks([]);
-            } else {
-              setDemoCollectionTracks(
-                LibraryService.transformDatabaseTracks(
-                  (demoData ?? []) as DatabaseLibraryTrack[]
-                )
-              );
-            }
-          } finally {
-            setDemoCollectionLoading(false);
           }
+        } finally {
+          setDemoCollectionLoading(false);
         }
       } catch (err) {
         console.error("❌ Exception fetching user data:", err);
