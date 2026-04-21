@@ -14,7 +14,7 @@ export const LIBRARY_CATALOG_TOTAL_ACTIVE = 59;
 
 /** Max catalog tracks visible per app tier (guest = bundled demo only). */
 export const LIBRARY_TIER_VISIBLE_CAPS = {
-  guest: 4,
+  guest: 2,
   free: 15,
   starter: 35,
   pro: LIBRARY_CATALOG_TOTAL_ACTIVE,
