@@ -158,6 +158,7 @@ const WaveformDisplay = ({
   const [internalShowMeasures, setInternalShowMeasures] = useState(false);
   const [internalIsPlaying, setInternalIsPlaying] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [didReadyTimeoutElapse, setDidReadyTimeoutElapse] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Refs to track regions and prevent recreation
@@ -458,6 +459,23 @@ const WaveformDisplay = ({
     onReadyCalledRef.current = true;
     onReady();
   }, [isReady, onReady]);
+
+  // Hard fallback for stalled WaveSurfer ready state on large restores.
+  useEffect(() => {
+    if (!audioUrl) return;
+    setDidReadyTimeoutElapse(false);
+    if (isReady) return;
+    const timeoutId = setTimeout(() => {
+      setDidReadyTimeoutElapse(true);
+      if (!onReadyCalledRef.current && onReadyRef.current) {
+        onReadyCalledRef.current = true;
+        onReadyRef.current();
+      }
+    }, 15000);
+    return () => clearTimeout(timeoutId);
+  }, [audioUrl, isReady]);
+
+  const isDisplayReady = isReady || didReadyTimeoutElapse;
 
   // Track playback state internally
   useEffect(() => {
@@ -2053,13 +2071,13 @@ const WaveformDisplay = ({
           </svg>
         </button>
       </div>
-      {!isReady && !suppressLoadingOverlay && (
+      {!isDisplayReady && !suppressLoadingOverlay && (
         <div className="absolute inset-0 flex items-center justify-center audafact-text-secondary bg-audafact-surface-1 z-10">
           {`Loading waveform... ${mode}`}
         </div>
       )}
 
-      <div className={`transition-opacity duration-300 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`transition-opacity duration-300 ${isDisplayReady ? 'opacity-100' : 'opacity-0'}`}>
         <div 
           ref={scrollContainerRef}
           style={{ 

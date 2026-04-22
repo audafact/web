@@ -727,6 +727,7 @@ const Studio = () => {
   const [waveformReadyTrackIds, setWaveformReadyTrackIds] = useState<Set<string>>(() => new Set());
   // When adding a track, defer clearing placeholder until this track's waveform is ready
   const addingTrackIdRef = useRef<string | null>(null);
+  const waveformFallbackTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const analysisTimeoutIdsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const trackIdsKey = useMemo(() => tracks.map(t => t.id).join(','), [tracks]);
   // Only prune removed tracks - keep ready status for existing tracks (avoids all tracks loading when adding one)
@@ -742,11 +743,52 @@ const Studio = () => {
   }, [trackIdsKey]);
   const handleWaveformReady = useCallback((trackId: string) => {
     setWaveformReadyTrackIds(prev => new Set(prev).add(trackId));
+    const fallbackTimeout = waveformFallbackTimeoutsRef.current[trackId];
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout);
+      delete waveformFallbackTimeoutsRef.current[trackId];
+    }
     if (addingTrackIdRef.current === trackId) {
       addingTrackIdRef.current = null;
       setLoadingTrackPlaceholder(null);
       setWaveformsSettled(true); // Skip 200ms debounce — existing tracks were already shown, avoid skeleton flash
     }
+  }, []);
+
+  const tracksToRender = useMemo(() =>
+    loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks,
+    [tracks, loadingTrackPlaceholder?.mode]);
+
+  useEffect(() => {
+    const WAVEFORM_READY_FALLBACK_MS = 15000;
+    const activeTrackIds = new Set(tracksToRender.map((track) => track.id));
+
+    // Clear fallback timers for removed tracks
+    Object.entries(waveformFallbackTimeoutsRef.current).forEach(([trackId, timeoutId]) => {
+      if (!activeTrackIds.has(trackId)) {
+        clearTimeout(timeoutId);
+        delete waveformFallbackTimeoutsRef.current[trackId];
+      }
+    });
+
+    // Ensure every rendered track has a fallback ready timer
+    tracksToRender.forEach((track) => {
+      if (waveformReadyTrackIds.has(track.id) || waveformFallbackTimeoutsRef.current[track.id]) return;
+      waveformFallbackTimeoutsRef.current[track.id] = setTimeout(() => {
+        setWaveformReadyTrackIds((prev) => {
+          if (prev.has(track.id)) return prev;
+          return new Set(prev).add(track.id);
+        });
+        delete waveformFallbackTimeoutsRef.current[track.id];
+      }, WAVEFORM_READY_FALLBACK_MS);
+    });
+  }, [tracksToRender, waveformReadyTrackIds]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(waveformFallbackTimeoutsRef.current).forEach((timeoutId) => clearTimeout(timeoutId));
+      waveformFallbackTimeoutsRef.current = {};
+    };
   }, []);
 
   // Fallback: if waveform never reports ready (e.g. WaveSurfer stalls on certain files), clear loading after timeout
@@ -767,10 +809,6 @@ const Studio = () => {
 
     return () => clearTimeout(timer);
   }, [loadingTrackPlaceholder, tracks, waveformReadyTrackIds]);
-
-  const tracksToRender = useMemo(() =>
-    loadingTrackPlaceholder?.mode === 'replace' ? tracks.slice(1) : tracks,
-    [tracks, loadingTrackPlaceholder?.mode]);
   const allWaveformsReady = tracksToRender.length === 0 || tracksToRender.every(t => waveformReadyTrackIds.has(t.id));
 
   // Debounce: only show tracks after waveforms have been ready for 200ms (reduces restore flicker)
@@ -784,7 +822,14 @@ const Studio = () => {
     return () => clearTimeout(t);
   }, [allWaveformsReady]);
 
-  const showTrackSkeletons = !loadingTrackPlaceholder && tracksToRender.length > 0 && !waveformsSettled;
+  // Progressive reveal: never block the full stack waiting for all waveforms to settle.
+  // Each track renders immediately and WaveformDisplay handles its own loading state.
+  const useGlobalTrackSkeletonGate = false;
+  const showTrackSkeletons =
+    useGlobalTrackSkeletonGate &&
+    !loadingTrackPlaceholder &&
+    tracksToRender.length > 0 &&
+    !waveformsSettled;
 
   // Add drag and drop state
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
@@ -1017,7 +1062,12 @@ const Studio = () => {
 
   // --- PATCH: Settings persistence ---
   const saveTrackSettingsToLocal = (trackId: string, settings: any) => {
-    localStorage.setItem(`trackSettings-${trackId}`, JSON.stringify(settings));
+    const sourceAssetId = tracks.find((track) => track.id === trackId)?.sourceAssetId;
+    const nextSettings =
+      sourceAssetId && (settings?.sourceAssetId == null || settings.sourceAssetId === '')
+        ? { ...settings, sourceAssetId }
+        : settings;
+    localStorage.setItem(`trackSettings-${trackId}`, JSON.stringify(nextSettings));
   };
   const loadTrackSettingsFromLocal = (trackId: string): any | null => {
     const saved = localStorage.getItem(`trackSettings-${trackId}`);
@@ -1085,17 +1135,16 @@ const Studio = () => {
       isRestoringRef.current = true;
       // Decode with OfflineAudioContext (same as random load) — no shared AudioContext required
       // before decode, so restore is not blocked by autoplay / suspended context.
+      setTracks([]);
+      setWaveformReadyTrackIds(new Set());
 
       const restoredTracks: Track[] = [];
+      const usedRestoredTrackIds = new Set<string>();
       const assets = availableAssets || [];
 
       for (let i = 0; i < savedState.tracks.length; i++) {
         const savedTrack = savedState.tracks[i];
         try {
-          if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-
           let fileKeyToUse: string | undefined;
           let guidedAssetFilePath: string | undefined;
           let guidedAssetMimeType: string | undefined;
@@ -1163,9 +1212,21 @@ const Studio = () => {
             savedTrack.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(savedTrack.chopTriggerStyle)
               ? savedTrack.chopTriggerStyle
               : 'cue';
+          const requestedTrackId =
+            typeof savedTrack.id === 'string' && savedTrack.id.trim().length > 0
+              ? savedTrack.id.trim()
+              : `restored-track-${i + 1}`;
+          let resolvedTrackId = requestedTrackId;
+          let dedupeSuffix = 1;
+          while (usedRestoredTrackIds.has(resolvedTrackId)) {
+            resolvedTrackId = `${requestedTrackId}-restored-${dedupeSuffix}`;
+            dedupeSuffix += 1;
+          }
+          usedRestoredTrackIds.add(resolvedTrackId);
+
           const restoredTrack: Track = {
-            id: savedTrack.id,
-            sourceAssetId: savedTrack.sourceAssetId ?? savedTrack.id,
+            id: resolvedTrackId,
+            sourceAssetId: savedTrack.sourceAssetId ?? requestedTrackId,
             fileKey: fileKeyToUse,
             file,
             buffer,
@@ -1186,6 +1247,7 @@ const Studio = () => {
           const restoredLoopStart = typeof savedTrack.loopStart === 'number' ? savedTrack.loopStart : 0;
           const restoredLoopEnd = typeof savedTrack.loopEnd === 'number' ? savedTrack.loopEnd : buffer.duration;
           const trackSettings = {
+            sourceAssetId: savedTrack.sourceAssetId ?? requestedTrackId,
             mode: restoredMode,
             chopTriggerStyle: validChopStyle,
             loopStart: restoredLoopStart,
@@ -1203,21 +1265,22 @@ const Studio = () => {
             highpassFreq: savedTrack.highpassFreq ?? 20,
             filterEnabled: savedTrack.filterEnabled ?? false
           };
-          saveTrackSettingsToLocal(savedTrack.id, trackSettings);
-          saveCuePointsToLocal(savedTrack.id, validCuePoints);
+          saveTrackSettingsToLocal(resolvedTrackId, trackSettings);
+          saveCuePointsToLocal(resolvedTrackId, validCuePoints);
 
           restoredTracks.push(restoredTrack);
+          setTracks(prev => [...prev, restoredTrack]);
 
-          setShowMeasures(prev => ({ ...prev, [savedTrack.id]: savedTrack.showMeasures ?? false }));
-          setShowCueThumbs(prev => ({ ...prev, [savedTrack.id]: savedTrack.showCueThumbs ?? true }));
-          setZoomLevels(prev => ({ ...prev, [savedTrack.id]: savedTrack.zoomLevel ?? 1 }));
-          setPlaybackSpeeds(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackSpeed ?? 1 }));
-          setVolume(prev => ({ ...prev, [savedTrack.id]: savedTrack.volume ?? 1 }));
-          setLowpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.lowpassFreq ?? 20000 }));
-          setHighpassFreqs(prev => ({ ...prev, [savedTrack.id]: savedTrack.highpassFreq ?? 20 }));
-          setFilterEnabled(prev => ({ ...prev, [savedTrack.id]: savedTrack.filterEnabled ?? false }));
-          setExpandedControls(prev => ({ ...prev, [savedTrack.id]: savedTrack.expandedControls ?? false }));
-          setPlaybackTimes(prev => ({ ...prev, [savedTrack.id]: savedTrack.playbackTime ?? 0 }));
+          setShowMeasures(prev => ({ ...prev, [resolvedTrackId]: savedTrack.showMeasures ?? false }));
+          setShowCueThumbs(prev => ({ ...prev, [resolvedTrackId]: savedTrack.showCueThumbs ?? true }));
+          setZoomLevels(prev => ({ ...prev, [resolvedTrackId]: savedTrack.zoomLevel ?? 1 }));
+          setPlaybackSpeeds(prev => ({ ...prev, [resolvedTrackId]: savedTrack.playbackSpeed ?? 1 }));
+          setVolume(prev => ({ ...prev, [resolvedTrackId]: savedTrack.volume ?? 1 }));
+          setLowpassFreqs(prev => ({ ...prev, [resolvedTrackId]: savedTrack.lowpassFreq ?? 20000 }));
+          setHighpassFreqs(prev => ({ ...prev, [resolvedTrackId]: savedTrack.highpassFreq ?? 20 }));
+          setFilterEnabled(prev => ({ ...prev, [resolvedTrackId]: savedTrack.filterEnabled ?? false }));
+          setExpandedControls(prev => ({ ...prev, [resolvedTrackId]: savedTrack.expandedControls ?? false }));
+          setPlaybackTimes(prev => ({ ...prev, [resolvedTrackId]: savedTrack.playbackTime ?? 0 }));
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
           if (msg.includes('429')) {
@@ -1231,10 +1294,17 @@ const Studio = () => {
         return false;
       }
       if (restoredTracks.length > 0) {
-        setTracks(restoredTracks);
         setCurrentTrackIndex(savedState.currentTrackIndex ?? 0);
-        setSelectedCueTrackId(savedState.selectedCueTrackId ?? null);
-        setArmedLoopTrackIds(Array.isArray(savedState.armedLoopTrackIds) ? new Set(savedState.armedLoopTrackIds) : new Set());
+        const restoredTrackIdSet = new Set(restoredTracks.map((track) => track.id));
+        const selectedCueTrackId =
+          typeof savedState.selectedCueTrackId === 'string' && restoredTrackIdSet.has(savedState.selectedCueTrackId)
+            ? savedState.selectedCueTrackId
+            : (restoredTracks.find((track) => track.mode === 'cue')?.id ?? restoredTracks[0].id);
+        setSelectedCueTrackId(selectedCueTrackId);
+        const armedLoopTrackIds = Array.isArray(savedState.armedLoopTrackIds)
+          ? savedState.armedLoopTrackIds.filter((id: unknown): id is string => typeof id === 'string' && restoredTrackIdSet.has(id))
+          : [];
+        setArmedLoopTrackIds(new Set(armedLoopTrackIds));
         setLastUsedVolume(savedState.lastUsedVolume ?? 1);
         return true;
       }
@@ -2259,6 +2329,23 @@ const Studio = () => {
       
       // Try to load settings from localStorage
       const settings = loadTrackSettingsFromLocal(trackId) || {};
+      const hasValidSavedCues =
+        Array.isArray(settings.cuePoints) &&
+        settings.cuePoints.length > 0 &&
+        settings.cuePoints.every((point: unknown) => typeof point === 'number' && Number.isFinite(point));
+      const settingsSourceAssetId =
+        typeof settings.sourceAssetId === 'string' && settings.sourceAssetId.length > 0
+          ? settings.sourceAssetId
+          : null;
+      // When replacing a slot in-place, trackId stays stable while source asset changes.
+      // Reuse saved cues only if they were stored for this exact source asset.
+      const canReuseSavedCues = hasValidSavedCues && (
+        !replaceOneSlot ||
+        (settingsSourceAssetId != null && settingsSourceAssetId === asset.id)
+      );
+      const cuePoints = canReuseSavedCues
+        ? settings.cuePoints.map((point: number) => Math.max(0, Math.min(point, buffer.duration)))
+        : Array.from({ length: 10 }, (_, i) => buffer.duration * (i / 10));
       const newMode = settings.mode || 'cue';
       const newChopStyle = (settings.chopTriggerStyle && ['cue', 'hold', 'one-shot'].includes(settings.chopTriggerStyle))
         ? settings.chopTriggerStyle
@@ -2277,9 +2364,7 @@ const Studio = () => {
         chopTriggerStyle: newMode === 'cue' ? newChopStyle : undefined,
         loopStart: settings.loopStart || 0,
         loopEnd: settings.loopEnd || buffer.duration,
-        cuePoints: settings.cuePoints || Array.from({ length: 10 }, (_, i) => 
-          buffer.duration * (i / 10)
-        ),
+        cuePoints,
         tempo: trackTempo,
         timeSignature: settings.timeSignature || { numerator: 4, denominator: 4 },
         firstMeasureTime: settings.firstMeasureTime || 0,
