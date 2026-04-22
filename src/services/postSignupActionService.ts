@@ -4,15 +4,8 @@ import { analytics } from './analyticsService';
 
 // Action Executor Implementations
 class UploadActionExecutor implements ActionExecutor {
-  async execute(action: PostSignupAction): Promise<void> {
-    // Trigger upload panel
-    this.setSidePanelMode('upload');
-    
-    // If there's file context, pre-populate
-    if (action.context.file) {
-      // Handle file upload logic
-      console.log('Handling file upload with context:', action.context.file);
-    }
+  async execute(_action: PostSignupAction): Promise<void> {
+    // UI handoff is handled centrally via postSignupAction event.
   }
   
   canExecute(action: PostSignupAction, userTier: string): boolean {
@@ -22,17 +15,11 @@ class UploadActionExecutor implements ActionExecutor {
   getSuccessMessage(action: PostSignupAction): string {
     return "🎉 Welcome! You can now upload your own tracks.";
   }
-  
-  private setSidePanelMode(mode: string): void {
-    // TODO: Integrate with actual side panel system
-    console.log('Setting side panel mode:', mode);
-  }
 }
 
 class SaveSessionActionExecutor implements ActionExecutor {
-  async execute(action: PostSignupAction): Promise<void> {
-    // Trigger save session flow
-    await this.handleSaveSession();
+  async execute(_action: PostSignupAction): Promise<void> {
+    // UI handoff is handled centrally via postSignupAction event.
   }
   
   canExecute(action: PostSignupAction, userTier: string): boolean {
@@ -42,23 +29,11 @@ class SaveSessionActionExecutor implements ActionExecutor {
   getSuccessMessage(action: PostSignupAction): string {
     return "💾 Session saved! You can now save unlimited sessions.";
   }
-  
-  private async handleSaveSession(): Promise<void> {
-    // TODO: Integrate with actual save session system
-    console.log('Handling save session');
-  }
 }
 
 class AddLibraryTrackActionExecutor implements ActionExecutor {
-  async execute(action: PostSignupAction): Promise<void> {
-    // Switch to library panel
-    this.setSidePanelMode('library');
-    
-    // If specific track context, highlight it
-    if (action.context.trackId) {
-      // Highlight the specific track
-      console.log('Highlighting track:', action.context.trackId);
-    }
+  async execute(_action: PostSignupAction): Promise<void> {
+    // UI handoff is handled centrally via postSignupAction event.
   }
   
   canExecute(action: PostSignupAction, userTier: string): boolean {
@@ -68,16 +43,11 @@ class AddLibraryTrackActionExecutor implements ActionExecutor {
   getSuccessMessage(action: PostSignupAction): string {
     return "🎵 Browse available sounds and add tracks to your studio!";
   }
-  
-  private setSidePanelMode(mode: string): void {
-    // TODO: Integrate with actual side panel system
-    console.log('Setting side panel mode:', mode);
-  }
 }
 
 class AddSecondSourceExecutor implements ActionExecutor {
   async execute(_action: PostSignupAction): Promise<void> {
-    console.log('Post-signup: user can add multiple tracks');
+    // UI handoff is handled centrally via postSignupAction event.
   }
 
   canExecute(_action: PostSignupAction, userTier: string): boolean {
@@ -90,15 +60,8 @@ class AddSecondSourceExecutor implements ActionExecutor {
 }
 
 class EditCuesActionExecutor implements ActionExecutor {
-  async execute(action: PostSignupAction): Promise<void> {
-    // Enable cue editing mode
-    this.setCueEditingMode(true);
-    
-    // If specific cue context, focus on it
-    if (action.context.cueIndex !== undefined) {
-      // Focus on specific cue
-      console.log('Focusing on cue index:', action.context.cueIndex);
-    }
+  async execute(_action: PostSignupAction): Promise<void> {
+    // UI handoff is handled centrally via postSignupAction event.
   }
   
   canExecute(action: PostSignupAction, userTier: string): boolean {
@@ -108,17 +71,11 @@ class EditCuesActionExecutor implements ActionExecutor {
   getSuccessMessage(action: PostSignupAction): string {
     return "🎯 You can now customize cue points and loops!";
   }
-  
-  private setCueEditingMode(enabled: boolean): void {
-    // TODO: Integrate with actual cue editing system
-    console.log('Setting cue editing mode:', enabled);
-  }
 }
 
 class RecordActionExecutor implements ActionExecutor {
-  async execute(action: PostSignupAction): Promise<void> {
-    // Show recording tutorial or enable recording
-    this.setRecordingMode(true);
+  async execute(_action: PostSignupAction): Promise<void> {
+    // UI handoff is handled centrally via postSignupAction event.
   }
   
   canExecute(action: PostSignupAction, userTier: string): boolean {
@@ -128,17 +85,11 @@ class RecordActionExecutor implements ActionExecutor {
   getSuccessMessage(action: PostSignupAction): string {
     return "🎙 Start recording your performances!";
   }
-  
-  private setRecordingMode(enabled: boolean): void {
-    // TODO: Integrate with actual recording system
-    console.log('Setting recording mode:', enabled);
-  }
 }
 
 class DownloadActionExecutor implements ActionExecutor {
-  async execute(action: PostSignupAction): Promise<void> {
-    // Enable download functionality
-    this.setDownloadMode(true);
+  async execute(_action: PostSignupAction): Promise<void> {
+    // UI handoff is handled centrally via postSignupAction event.
   }
   
   canExecute(action: PostSignupAction, userTier: string): boolean {
@@ -147,11 +98,6 @@ class DownloadActionExecutor implements ActionExecutor {
   
   getSuccessMessage(action: PostSignupAction): string {
     return "📥 Download your mixes and share them!";
-  }
-  
-  private setDownloadMode(enabled: boolean): void {
-    // TODO: Integrate with actual download system
-    console.log('Setting download mode:', enabled);
   }
 }
 
@@ -214,6 +160,7 @@ export class PostSignupActionService {
         const executor = this.executors.get(action.type);
         if (executor) {
           await executor.execute(action);
+          window.dispatchEvent(new CustomEvent('postSignupAction', { detail: { action: action.type } }));
           
           // Show success message
           const message = executor.getSuccessMessage(action);
