@@ -5,6 +5,7 @@ import { authService, AuthResponse } from '../auth/authService';
 import { analytics } from '../services/analyticsService';
 import { IntentManagementService } from '../services/intentManagementService';
 import { PostSignupFlowHandler } from '../services/postSignupFlowHandler';
+import { DemoSessionManager } from '../services/demoSessionManager';
 
 interface AuthContextType {
   user: User | null;
@@ -36,6 +37,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        // Support redirect-based auth flows where INITIAL_SESSION hydrates without a SIGNED_IN event.
+        DemoSessionManager.getInstance().migrateGuestSnapshotToUser(session.user.id);
+      }
       setUser(session?.user ?? null);
       setLoading(false);
       

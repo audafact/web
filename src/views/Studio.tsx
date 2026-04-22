@@ -1412,7 +1412,8 @@ const Studio = () => {
       const genAiAsset = pair.genAiAsset;
 
       const fetchGuidedAudioBlob = async (assetPath: string, assetLabel: string): Promise<Blob> => {
-        const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+        const env = import.meta.env as unknown as Record<string, string | undefined>;
+        const baseUrl = (env.BASE_URL || '/').replace(/\/$/, '');
         const candidates = assetPath.startsWith('/')
           ? [assetPath, `${baseUrl}${assetPath}`]
           : [assetPath];
@@ -1738,6 +1739,10 @@ const Studio = () => {
     if (signedInRandomLoadStartedRef.current) return;
 
     if (isGuestMode) {
+      // During auth/session hydration, avoid booting guest tracks too early.
+      // If guest track bootstrap wins this race, restore is blocked by tracks.length > 0.
+      if (authLoading || userLoading) return;
+      if (localStorage.getItem(PRELOGIN_TRANSITION_PENDING_KEY)) return;
       signedInRandomLoadStartedRef.current = true;
       void loadRandomTrack();
       return;
