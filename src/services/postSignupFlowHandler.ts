@@ -34,12 +34,12 @@ export class PostSignupFlowHandler implements SignupSuccessHandler {
       // Execute pending actions
       await PostSignupActionService.getInstance().executePendingActions("free");
 
-      // Restore demo session if available
+      // Mark any guest transition snapshot for one-time signed-in restore.
       const demoManager = DemoSessionManager.getInstance();
-      const restored = demoManager.restoreDemoState();
+      const hasPendingTransitionRestore = demoManager.migrateGuestSnapshotToUser(user.id);
 
-      if (restored) {
-        showSuccessMessage("🎉 Welcome back! Your session has been restored.");
+      if (hasPendingTransitionRestore) {
+        showSuccessMessage("🎉 Welcome back! Your pre-login session is ready.");
       } else {
         showSuccessMessage(
           "🎉 Welcome to Audafact! Start creating your mixes."

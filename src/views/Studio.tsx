@@ -30,7 +30,7 @@ import Tooltip from '../components/Tooltip';
 import SampleEditMode from '../components/SampleEditMode';
 import { logRegionDragTransport } from '../utils/regionDragTransportDiag';
 // import { AccessService } from '../services/accessService';
-import { TimeSignature, UserTrack } from '../types/music';
+import { SessionFullState, TimeSignature, UserTrack } from '../types/music';
 import { useUser } from '../hooks/useUser';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { LibraryService } from '../services/libraryService';
@@ -42,6 +42,11 @@ import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 import { decodeAudioFileToBufferWithoutRunningContext } from '../utils/decodeAudioFile';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
 import {
+  getScopedArmedLoopTrackIdsKey,
+  getScopedSelectedCueTrackIdKey,
+} from '../context/sessionStorageScope';
+import {
+  GUIDED_SESSION_PAIRS,
   pickRandomGuidedSessionPair,
   type GuidedAssetType,
 } from '../config/onboardingSessionConfig';
@@ -125,10 +130,21 @@ function fingerprintTracksCueLoopMode(tracks: Array<Pick<Track, 'id' | 'cuePoint
 }
 
 const GUEST_ONBOARDING_MODE_KEY = 'onboardingMode:guest';
+const PRELOGIN_TRANSITION_SNAPSHOT_KEY = 'preloginTransitionSnapshot:guest';
+const PRELOGIN_TRANSITION_PENDING_KEY = 'preloginTransitionPendingUser';
+const PRELOGIN_TRANSITION_RESTORED_KEY = 'preloginTransitionRestored';
 
 const getUserOnboardingModeKey = (userId: string) => `onboardingMode:user:${userId}`;
+const getStudioRestoreSnapshotKeyForUser = (userId: string) => `studioRestoreSnapshot-${userId}`;
+const getStudioManualRestorePriorKeyForUser = (userId: string) => `studioManualRestorePrior-${userId}`;
 
 const getUserOnboardingFirstValueKey = (userId: string) => `onboardingFirstValueAt:user:${userId}`;
+const GUIDED_ASSET_BY_ID = new Map(
+  GUIDED_SESSION_PAIRS.flatMap((pair) => [
+    [pair.breakAsset.id, pair.breakAsset],
+    [pair.genAiAsset.id, pair.genAiAsset],
+  ])
+);
 
 const guidedMimeType = (type: GuidedAssetType): string => {
   if (type === 'm4a') return 'audio/mp4';
@@ -179,6 +195,7 @@ const Studio = () => {
   const [showEarlyCreatorModal, setShowEarlyCreatorModal] = useState<boolean>(false);
   const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [restoreNoticeVisible, setRestoreNoticeVisible] = useState(false);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
   // Track drag state for real-time timestamp updates
   const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
@@ -230,6 +247,8 @@ const Studio = () => {
   const guestSecondInteractionCapturedRef = useRef(false);
   /** Bumped when signed-in bootstrap random starts or when Restore begins — stale completions must not call setTracks. */
   const signedInLibraryBootstrapGenRef = useRef(0);
+  /** True only when this runtime consumed a pending guest->signed-in transition snapshot. */
+  const consumedPreloginTransitionRestoreRef = useRef(false);
   /** True from first sync line of handleRestore until finally (covers gap before isRestoringRef). */
   const studioRestoreInProgressRef = useRef(false);
   const guidedRestoreAttemptedRef = useRef(false);
@@ -791,91 +810,105 @@ const Studio = () => {
     localStorage.removeItem(`cuePoints-${trackId}`);
   };
 
-  // --- Studio State Persistence (for authorized users only) ---
+  const getStorageScope = useCallback(() => (user?.id ? `user:${user.id}` : 'guest'), [user?.id]);
+
+  const buildStudioSnapshotFromRef = useCallback((): SessionFullState | null => {
+    const ref = studioStateForSaveRef.current;
+    if (!ref.tracks.length) return null;
+
+    return {
+      tracks: ref.tracks.map((track) => {
+        let fileKey =
+          track.fileKey ??
+          (track.sourceAssetId && ref.availableAssets.find((a) => a.id === track.sourceAssetId)?.fileKey);
+        if (!fileKey && (track.sourceAssetId || track.id)) {
+          const lookupId = track.sourceAssetId ?? track.id;
+          const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
+          let fallbackAsset = ref.availableAssets.find(
+            (a) => a.id === basePrefix || a.id.startsWith(basePrefix + '-')
+          );
+          if (!fallbackAsset && track.file?.name) {
+            const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
+            fallbackAsset =
+              ref.availableAssets.find(
+                (a) =>
+                  a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) ||
+                  a.id.toLowerCase().includes(fn)
+              ) ?? undefined;
+          }
+          fileKey = fallbackAsset?.fileKey;
+        }
+        return {
+          id: track.id,
+          sourceAssetId: track.sourceAssetId ?? track.id,
+          fileKey: fileKey ?? undefined,
+          fileName: track.file.name,
+          fileSize: track.file.size,
+          fileType: track.file.type,
+          mode: track.mode,
+          chopTriggerStyle: track.chopTriggerStyle,
+          loopStart: track.loopStart,
+          loopEnd: track.loopEnd,
+          cuePoints: track.cuePoints,
+          tempo: track.tempo,
+          timeSignature: track.timeSignature,
+          firstMeasureTime: track.firstMeasureTime,
+          showMeasures: ref.showMeasures[track.id] || false,
+          showCueThumbs: ref.showCueThumbs[track.id] ?? true,
+          beats: track.beats,
+          zoomLevel: ref.zoomLevels[track.id] || 1,
+          playbackSpeed: ref.playbackSpeeds[track.id] || 1,
+          playbackTime: ref.playbackTimes[track.id] || 0,
+          volume: ref.volume[track.id] || 1,
+          lowpassFreq: ref.lowpassFreqs[track.id] || 20000,
+          highpassFreq: ref.highpassFreqs[track.id] || 20,
+          filterEnabled: ref.filterEnabled[track.id] || false,
+          expandedControls: ref.expandedControls[track.id] || false,
+        };
+      }),
+      selectedCueTrackId: ref.selectedCueTrackId,
+      armedLoopTrackIds: [...ref.armedLoopTrackIds],
+      currentTrackIndex: ref.currentTrackIndex,
+      lastUsedVolume: ref.lastUsedVolume,
+      timestamp: Date.now(),
+      version: 1,
+    };
+  }, []);
+
+  // --- Studio State Persistence ---
   /** Legacy key — migration only; active restore data lives in `studioRestoreSnapshot-*`. */
   const getStudioStateKey = () => (user ? `studioState-${user.id}` : null);
-  const getStudioRestoreSnapshotKey = () => (user ? `studioRestoreSnapshot-${user.id}` : null);
+  const getStudioRestoreSnapshotKey = () => (user ? getStudioRestoreSnapshotKeyForUser(user.id) : null);
 
   const saveStudioStateToLocal = useCallback(
-    (reason: 'debounced' | 'beforeunload' | 'explicit') => {
+    (_reason: 'debounced' | 'beforeunload' | 'explicit') => {
+      const snapshot = buildStudioSnapshotFromRef();
+      if (!snapshot?.tracks?.length) return;
+
       const restoreKey = getStudioRestoreSnapshotKey();
-      if (!restoreKey || !user || isGuestMode) return;
-
-      const ref = studioStateForSaveRef.current;
-      if (!ref.tracks.length) return;
-
-      if (
-        reason === 'debounced' &&
-        signedInBootstrapOnlyFingerprintRef.current !== null &&
-        fingerprintTracksCueLoopMode(ref.tracks) === signedInBootstrapOnlyFingerprintRef.current
-      ) {
-        return;
-      }
+      const transitionKey = PRELOGIN_TRANSITION_SNAPSHOT_KEY;
+      const shouldWriteUserRestore = !!restoreKey && !!user && !isGuestMode;
+      const shouldWriteGuestTransition = !user || isGuestMode;
 
       try {
-        const studioState = {
-          tracks: ref.tracks.map((track) => {
-            let fileKey =
-              track.fileKey ??
-              (track.sourceAssetId && ref.availableAssets.find((a) => a.id === track.sourceAssetId)?.fileKey);
-            if (!fileKey && (track.sourceAssetId || track.id)) {
-              const lookupId = track.sourceAssetId ?? track.id;
-              const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
-              let fallbackAsset = ref.availableAssets.find(
-                (a) => a.id === basePrefix || a.id.startsWith(basePrefix + '-')
-              );
-              if (!fallbackAsset && track.file?.name) {
-                const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
-                fallbackAsset =
-                  ref.availableAssets.find(
-                    (a) =>
-                      a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) ||
-                      a.id.toLowerCase().includes(fn)
-                  ) ?? undefined;
-              }
-              fileKey = fallbackAsset?.fileKey;
-            }
-            return {
-              id: track.id,
-              sourceAssetId: track.sourceAssetId ?? track.id,
-              fileKey: fileKey ?? undefined,
-              fileName: track.file.name,
-              fileSize: track.file.size,
-              fileType: track.file.type,
-              mode: track.mode,
-              chopTriggerStyle: track.chopTriggerStyle,
-              loopStart: track.loopStart,
-              loopEnd: track.loopEnd,
-              cuePoints: track.cuePoints,
-              tempo: track.tempo,
-              timeSignature: track.timeSignature,
-              firstMeasureTime: track.firstMeasureTime,
-              showMeasures: ref.showMeasures[track.id] || false,
-              showCueThumbs: ref.showCueThumbs[track.id] ?? true,
-              zoomLevel: ref.zoomLevels[track.id] || 1,
-              playbackSpeed: ref.playbackSpeeds[track.id] || 1,
-              volume: ref.volume[track.id] || 1,
-              lowpassFreq: ref.lowpassFreqs[track.id] || 20000,
-              highpassFreq: ref.highpassFreqs[track.id] || 20,
-              filterEnabled: ref.filterEnabled[track.id] || false,
-              expandedControls: ref.expandedControls[track.id] || false,
-              playbackTime: ref.playbackTimes[track.id] || 0,
-            };
-          }),
-          selectedCueTrackId: ref.selectedCueTrackId,
-          armedLoopTrackIds: [...ref.armedLoopTrackIds],
-          currentTrackIndex: ref.currentTrackIndex,
-          lastUsedVolume: ref.lastUsedVolume,
-          timestamp: Date.now(),
-          version: 1,
-        };
-
-        localStorage.setItem(restoreKey, JSON.stringify(studioState));
+        if (shouldWriteUserRestore && restoreKey) {
+          localStorage.setItem(restoreKey, JSON.stringify(snapshot));
+        }
+        if (shouldWriteGuestTransition) {
+          localStorage.setItem(
+            transitionKey,
+            JSON.stringify({
+              ...snapshot,
+              scope: 'guest',
+              expiresAt: Date.now() + 60 * 60 * 1000,
+            })
+          );
+        }
       } catch (error) {
         console.warn('Failed to save studio restore snapshot:', error);
       }
     },
-    [user, isGuestMode]
+    [user, isGuestMode, buildStudioSnapshotFromRef]
   );
   
   // Keep ref in sync for reliable save (beforeunload/debounce can fire with stale closures)
@@ -898,12 +931,34 @@ const Studio = () => {
     lastUsedVolume,
   };
 
-  const loadRestoreSnapshotFromLocal = (): any | null => {
+  const loadRestoreSnapshotFromLocal = (): SessionFullState | null => {
     const restoreKey = getStudioRestoreSnapshotKey();
     const legacyKey = getStudioStateKey();
     if (!restoreKey && !legacyKey) return null;
 
     try {
+      if (user?.id) {
+        const pendingForUser = localStorage.getItem(PRELOGIN_TRANSITION_PENDING_KEY);
+        if (pendingForUser === user.id) {
+          const transitionRaw = localStorage.getItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
+          if (transitionRaw) {
+            const transition = JSON.parse(transitionRaw);
+            const isExpired =
+              typeof transition?.expiresAt === 'number' && Date.now() > transition.expiresAt;
+            if (isExpired) {
+              localStorage.removeItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
+              localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
+            } else if (restoreKey) {
+              localStorage.setItem(restoreKey, JSON.stringify(transition));
+              localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
+              localStorage.setItem(PRELOGIN_TRANSITION_RESTORED_KEY, user.id);
+              localStorage.removeItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
+              consumedPreloginTransitionRestoreRef.current = true;
+            }
+          }
+        }
+      }
+
       let raw = restoreKey ? localStorage.getItem(restoreKey) : null;
       if (!raw && legacyKey) {
         raw = localStorage.getItem(legacyKey);
@@ -917,23 +972,48 @@ const Studio = () => {
       }
       if (!raw) return null;
 
-      return JSON.parse(raw);
+      return JSON.parse(raw) as SessionFullState;
     } catch (error) {
       console.warn('Failed to load studio restore snapshot:', error);
       return null;
     }
   };
 
+  const hasPendingTransitionRestoreForUser = useCallback((): boolean => {
+    if (!user?.id) return false;
+    return localStorage.getItem(PRELOGIN_TRANSITION_PENDING_KEY) === user.id;
+  }, [user?.id]);
+
+  const consumePreloginRestoreToastFlag = useCallback((): boolean => {
+    if (!consumedPreloginTransitionRestoreRef.current) return false;
+    consumedPreloginTransitionRestoreRef.current = false;
+    return true;
+  }, []);
+
   const clearStudioStateFromLocal = () => {
     const restoreKey = getStudioRestoreSnapshotKey();
+    const manualPriorKey = user ? getStudioManualRestorePriorKeyForUser(user.id) : null;
     const legacyKey = getStudioStateKey();
     try {
       if (restoreKey) localStorage.removeItem(restoreKey);
+      if (manualPriorKey) localStorage.removeItem(manualPriorKey);
       if (legacyKey) localStorage.removeItem(legacyKey);
     } catch (error) {
       console.warn('Failed to clear studio state:', error);
     }
   };
+
+  const loadManualRestorePriorSnapshot = useCallback((): SessionFullState | null => {
+    if (!user?.id) return null;
+    try {
+      const raw = localStorage.getItem(getStudioManualRestorePriorKeyForUser(user.id));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as SessionFullState;
+      return parsed?.tracks?.length ? parsed : null;
+    } catch {
+      return null;
+    }
+  }, [user?.id]);
 
   // --- PATCH: Settings persistence ---
   const saveTrackSettingsToLocal = (trackId: string, settings: any) => {
@@ -946,41 +1026,60 @@ const Studio = () => {
   const removeTrackSettingsFromLocal = (trackId: string) => {
     localStorage.removeItem(`trackSettings-${trackId}`);
   };
+  const migrateLegacyTrackSelectionKeys = useCallback(() => {
+    const scope = getStorageScope();
+    const scopedCueKey = getScopedSelectedCueTrackIdKey(scope);
+    const scopedArmedKey = getScopedArmedLoopTrackIdsKey(scope);
+    const legacyCue = localStorage.getItem('selectedCueTrackId');
+    const legacyArmed = localStorage.getItem('armedLoopTrackIds');
+    if (legacyCue && !localStorage.getItem(scopedCueKey)) {
+      localStorage.setItem(scopedCueKey, legacyCue);
+    }
+    if (legacyArmed && !localStorage.getItem(scopedArmedKey)) {
+      localStorage.setItem(scopedArmedKey, legacyArmed);
+    }
+    localStorage.removeItem('selectedCueTrackId');
+    localStorage.removeItem('armedLoopTrackIds');
+  }, [getStorageScope]);
   const saveSelectedCueTrackIdToLocal = (trackId: string | null) => {
+    const key = getScopedSelectedCueTrackIdKey(getStorageScope());
     if (trackId) {
-      localStorage.setItem('selectedCueTrackId', trackId);
+      localStorage.setItem(key, trackId);
     } else {
-      localStorage.removeItem('selectedCueTrackId');
+      localStorage.removeItem(key);
     }
   };
   const loadSelectedCueTrackIdFromLocal = (): string | null => {
-    return localStorage.getItem('selectedCueTrackId');
+    return localStorage.getItem(getScopedSelectedCueTrackIdKey(getStorageScope()));
   };
   const saveArmedLoopTrackIdsToLocal = (ids: string[]) => {
+    const key = getScopedArmedLoopTrackIdsKey(getStorageScope());
     if (ids.length > 0) {
-      localStorage.setItem('armedLoopTrackIds', JSON.stringify(ids));
+      localStorage.setItem(key, JSON.stringify(ids));
     } else {
-      localStorage.removeItem('armedLoopTrackIds');
+      localStorage.removeItem(key);
     }
   };
   const loadArmedLoopTrackIdsFromLocal = (): string[] => {
-    const saved = localStorage.getItem('armedLoopTrackIds');
+    const saved = localStorage.getItem(getScopedArmedLoopTrackIdsKey(getStorageScope()));
     return saved ? JSON.parse(saved) : [];
   };
 
   // --- PATCH: Load settings on mount ---
   useEffect(() => {
+    migrateLegacyTrackSelectionKeys();
     // Load selected cue track id and armed loop track ids
     const selected = loadSelectedCueTrackIdFromLocal();
     if (selected) setSelectedCueTrackId(selected);
     const armedIds = loadArmedLoopTrackIdsFromLocal();
     if (armedIds.length > 0) setArmedLoopTrackIds(new Set(armedIds));
-  }, []);
+  }, [migrateLegacyTrackSelectionKeys, user?.id, isGuestMode]);
 
   // --- Studio State Restoration ---
   // Shared restore logic: fetches audio by fileKey, restores tracks + params. Uses defaults for zoomLevel (1) and playbackTime (0) when missing.
   const restoreFromState = useCallback(async (savedState: any): Promise<boolean> => {
     if (!savedState?.tracks?.length) return false;
+    const restoreGenAtStart = signedInLibraryBootstrapGenRef.current;
 
     try {
       isRestoringRef.current = true;
@@ -998,6 +1097,8 @@ const Studio = () => {
           }
 
           let fileKeyToUse: string | undefined;
+          let guidedAssetFilePath: string | undefined;
+          let guidedAssetMimeType: string | undefined;
           if (savedTrack.fileKey) {
             fileKeyToUse = savedTrack.fileKey;
           } else {
@@ -1014,19 +1115,34 @@ const Studio = () => {
                 return fn.includes(an) || an.includes(fn) || a.id.toLowerCase().includes(fn);
               });
             }
-            if (!asset) continue;
-            fileKeyToUse = asset.fileKey;
+            if (asset) {
+              fileKeyToUse = asset.fileKey;
+            } else if (lookupId && GUIDED_ASSET_BY_ID.has(lookupId)) {
+              const guidedAsset = GUIDED_ASSET_BY_ID.get(lookupId);
+              guidedAssetFilePath = guidedAsset?.file;
+              guidedAssetMimeType = guidedAsset ? guidedMimeType(guidedAsset.type) : undefined;
+            }
           }
 
-          if (!fileKeyToUse) continue;
-
-          const blob = await fetchLibraryAudioBlob(fileKeyToUse);
+          if (!fileKeyToUse && !guidedAssetFilePath) continue;
+          const blob = fileKeyToUse
+            ? await fetchLibraryAudioBlob(fileKeyToUse)
+            : await fetch(guidedAssetFilePath as string).then((res) => {
+                if (!res.ok) throw new Error(`Failed to fetch guided asset for restore (${res.status})`);
+                return res.blob();
+              });
+          if (restoreGenAtStart !== signedInLibraryBootstrapGenRef.current) {
+            return false;
+          }
           const safeName =
             typeof savedTrack.fileName === 'string' && savedTrack.fileName.length > 0
               ? savedTrack.fileName
               : `track-${savedTrack.id}`;
           const file = new File([blob], safeName, {
-            type: typeof savedTrack.fileType === 'string' && savedTrack.fileType.length > 0 ? savedTrack.fileType : 'audio/wav',
+            type:
+              typeof savedTrack.fileType === 'string' && savedTrack.fileType.length > 0
+                ? savedTrack.fileType
+                : (guidedAssetMimeType ?? 'audio/wav'),
           });
           const buffer = await decodeAudioFileToBufferWithoutRunningContext(file);
 
@@ -1111,6 +1227,9 @@ const Studio = () => {
         }
       }
 
+      if (restoreGenAtStart !== signedInLibraryBootstrapGenRef.current) {
+        return false;
+      }
       if (restoredTracks.length > 0) {
         setTracks(restoredTracks);
         setCurrentTrackIndex(savedState.currentTrackIndex ?? 0);
@@ -1138,6 +1257,32 @@ const Studio = () => {
   const handleRestoreSession = useCallback(async (session: { events?: Array<{ data?: any }>; full_state?: any }) => {
     await restoreStudioStateFromSession(session);
   }, [restoreStudioStateFromSession]);
+
+  const resolvePreferredRestoreState = useCallback((options?: { preferManualPrior?: boolean }): SessionFullState | null => {
+    if (options?.preferManualPrior) {
+      const manualPrior = loadManualRestorePriorSnapshot();
+      if (manualPrior?.tracks?.length) {
+        return manualPrior;
+      }
+    }
+    const local = loadRestoreSnapshotFromLocal();
+    if (local?.tracks?.length) {
+      return local;
+    }
+    const latestSession = pickLatestSavedSessionForRestore(savedSessions) as
+      | {
+          events?: Array<{ data?: SessionFullState }>;
+          full_state?: SessionFullState;
+          startTime?: number;
+        }
+      | null
+      | undefined;
+    const sessionData = latestSession?.events?.[0]?.data ?? latestSession?.full_state;
+
+    const sessionOk = !!(sessionData?.tracks?.length);
+    if (sessionOk) return sessionData ?? null;
+    return null;
+  }, [savedSessions, loadManualRestorePriorSnapshot]);
 
   // Note: We're not implementing localStorage persistence for studio tracks
   // because:
@@ -1294,7 +1439,7 @@ const Studio = () => {
         setIsTrackLoading(true);
         setError(null);
         
-        if (isGuestMode || onboardingModeRef.current === 'demoFirst') {
+        if (isGuestMode) {
           await loadGuidedDemoSession();
           return;
         }
@@ -1419,12 +1564,33 @@ const Studio = () => {
   /** Clear the deck and load one random track (signed-in: library; guest: demo) — same end state as first visit. */
   const handleNewSession = useCallback(() => {
     if (isTrackLoading || isInitializingAudio) return;
+    // Invalidate any in-flight restore/bootstrap completion that might set stale tracks after reset.
+    signedInLibraryBootstrapGenRef.current += 1;
     if (isRecordingPerformance) {
       stopPerformanceRecording();
     }
     stopAllPlayback();
     trackEvent('studio_new_session', { userTier: (tier?.id ?? 'guest') as 'guest' | 'free' | 'pro' });
     setError(null);
+    if (user && !isGuestMode) {
+      const snapshotBeforeReset = buildStudioSnapshotFromRef();
+      if (snapshotBeforeReset?.tracks?.length) {
+        localStorage.setItem(
+          getStudioManualRestorePriorKeyForUser(user.id),
+          JSON.stringify({
+            ...snapshotBeforeReset,
+            timestamp: Date.now(),
+          })
+        );
+      }
+      // Prevent refresh from replaying stale pre-login snapshot after explicit "New session".
+      localStorage.removeItem(getStudioRestoreSnapshotKeyForUser(user.id));
+    }
+    // Explicit "New session" should not be replaced by pending post-login transition restore state.
+    if (user && !isGuestMode && onboardingModeRef.current === 'demoFirst') {
+      guidedRestoreAttemptedRef.current = true;
+      localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
+    }
     signedInBootstrapOnlyFingerprintRef.current = null;
     signedInRandomLoadStartedRef.current = false;
     randomQueueRef.current = [];
@@ -1464,6 +1630,9 @@ const Studio = () => {
     loadRandomTrack,
     trackEvent,
     tier?.id,
+    user,
+    isGuestMode,
+    buildStudioSnapshotFromRef,
   ]);
 
   // Load bootstrap session once auth/library are ready.
@@ -1471,6 +1640,7 @@ const Studio = () => {
     if (tracks.length > 0 || hadTracksOnce) return;
     if (error) return;
     if (isManuallyAddingTrack || isTrackLoading) return;
+    if (isRestoringRef.current) return;
     if (signedInRandomLoadStartedRef.current) return;
 
     if (isGuestMode) {
@@ -1480,6 +1650,7 @@ const Studio = () => {
     }
 
     if (!user || authLoading || userLoading) return;
+    if (onboardingMode === 'demoFirst' && !guidedRestoreAttemptedRef.current) return;
     if (onboardingMode === 'explorationEligible' && availableAssets.length === 0) return;
 
     signedInRandomLoadStartedRef.current = true;
@@ -1501,19 +1672,25 @@ const Studio = () => {
 
   useEffect(() => {
     if (!user || isGuestMode) return;
-    if (onboardingMode !== 'demoFirst') return;
     if (tracks.length > 0 || hadTracksOnce) return;
     if (authLoading || userLoading || isTrackLoading) return;
     if (guidedRestoreAttemptedRef.current) return;
+    const hasPendingTransitionRestore = hasPendingTransitionRestoreForUser();
+    if (!hasPendingTransitionRestore && onboardingMode !== 'demoFirst') return;
 
-    const local = loadRestoreSnapshotFromLocal();
-    if (!local?.tracks?.length) {
+    const savedState = resolvePreferredRestoreState();
+    if (!savedState?.tracks?.length) {
       guidedRestoreAttemptedRef.current = true;
       return;
     }
 
     guidedRestoreAttemptedRef.current = true;
-    void restoreFromState(local);
+    signedInLibraryBootstrapGenRef.current += 1;
+    void restoreFromState(savedState).then((restored) => {
+      if (restored && consumePreloginRestoreToastFlag()) {
+        setRestoreNoticeVisible(true);
+      }
+    });
   }, [
     user,
     isGuestMode,
@@ -1524,6 +1701,9 @@ const Studio = () => {
     userLoading,
     isTrackLoading,
     restoreFromState,
+    resolvePreferredRestoreState,
+    hasPendingTransitionRestoreForUser,
+    consumePreloginRestoreToastFlag,
   ]);
 
   // Global keyboard shortcuts (Space, help, zoom) — track switching uses Prev/Next or swipe only
@@ -2456,9 +2636,8 @@ const Studio = () => {
     saveArmedLoopTrackIdsToLocal([...armedLoopTrackIds]);
   }, [armedLoopTrackIds]);
 
-  // Save studio state when tracks or settings change (for authorized users)
+  // Save studio state when tracks or settings change.
   useEffect(() => {
-    if (!user || isGuestMode) return;
     if (tracks.length === 0) return;
     
     // Debounce the save operation to avoid excessive localStorage writes
@@ -2499,7 +2678,7 @@ const Studio = () => {
   // Save restore snapshot before tab close / refresh / mobile background (always — bypasses bootstrap-only debounce skip)
   useEffect(() => {
     const persist = () => {
-      if (user && !isGuestMode && tracks.length > 0) {
+      if (tracks.length > 0) {
         saveStudioStateToLocal('beforeunload');
       }
     };
@@ -3170,55 +3349,8 @@ const Studio = () => {
       return;
     }
 
-    const assets = availableAssets || [];
-    const studioState = {
-      tracks: tracks.map(track => {
-        let fileKey = track.fileKey ?? (track.sourceAssetId && assets.find(a => a.id === track.sourceAssetId)?.fileKey);
-        if (!fileKey && (track.sourceAssetId || track.id)) {
-          const lookupId = track.sourceAssetId ?? track.id;
-          const basePrefix = String(lookupId).replace(/-?\d{10,}$/, '');
-          let fallbackAsset = assets.find(a => a.id === basePrefix || a.id.startsWith(basePrefix + '-'));
-          if (!fallbackAsset && track.file?.name) {
-            const fn = (track.file.name as string).toLowerCase().replace(/\s+/g, '-').replace(/\.\w+$/, '');
-            fallbackAsset = assets.find(a =>
-              a.name.toLowerCase().replace(/\s+/g, '-').includes(fn) || a.id.toLowerCase().includes(fn)
-            ) ?? undefined;
-          }
-          fileKey = fallbackAsset?.fileKey;
-        }
-        return {
-          id: track.id,
-          sourceAssetId: track.sourceAssetId ?? track.id,
-          fileKey: fileKey ?? undefined,
-          fileName: track.file.name,
-          fileSize: track.file.size,
-          fileType: track.file.type,
-          mode: track.mode,
-          loopStart: track.loopStart,
-          loopEnd: track.loopEnd,
-          cuePoints: track.cuePoints,
-          tempo: track.tempo,
-          timeSignature: track.timeSignature,
-          firstMeasureTime: track.firstMeasureTime,
-          showMeasures: showMeasures[track.id] || false,
-          showCueThumbs: (showCueThumbs[track.id] ?? true),
-          beats: track.beats,
-          playbackSpeed: playbackSpeeds[track.id] || 1,
-          volume: volume[track.id] || 1,
-          lowpassFreq: lowpassFreqs[track.id] || 20000,
-          highpassFreq: highpassFreqs[track.id] || 20,
-          filterEnabled: filterEnabled[track.id] || false,
-          expandedControls: expandedControls[track.id] || false,
-          chopTriggerStyle: track.chopTriggerStyle ?? 'hold'
-        };
-      }),
-      selectedCueTrackId,
-      armedLoopTrackIds: [...armedLoopTrackIds],
-      currentTrackIndex,
-      lastUsedVolume,
-      timestamp: Date.now(),
-      version: 1
-    };
+    const studioState = buildStudioSnapshotFromRef();
+    if (!studioState) return;
 
     await saveCurrentState(studioState);
     saveStudioStateToLocal('explicit');
@@ -3662,7 +3794,7 @@ const Studio = () => {
       const context = await initializeAudio();
       setIsAudioInitialized(true);
       
-      if (isGuestMode || onboardingModeRef.current === 'demoFirst') {
+      if (isGuestMode) {
         await loadGuidedDemoSession();
         setIsInitializingAudio(false);
         return;
@@ -3758,32 +3890,7 @@ const Studio = () => {
       setIsInitializingAudio(true);
       setError(null);
 
-      const local = loadRestoreSnapshotFromLocal();
-      const latestSession = pickLatestSavedSessionForRestore(savedSessions) as
-        | {
-            events?: Array<{ data?: { timestamp?: number; tracks?: unknown[] } }>;
-            startTime?: number;
-          }
-        | null
-        | undefined;
-      const sessionData = latestSession?.events?.[0]?.data;
-
-      const localOk = !!(local?.tracks?.length);
-      const sessionOk = !!(sessionData?.tracks && (sessionData.tracks as unknown[]).length > 0);
-
-      let savedState: typeof local | typeof sessionData | null = null;
-      if (localOk && sessionOk) {
-        const localTs = typeof local!.timestamp === 'number' ? local!.timestamp : 0;
-        const sessionTs =
-          typeof sessionData!.timestamp === 'number'
-            ? sessionData!.timestamp
-            : (latestSession!.startTime ?? 0);
-        savedState = localTs >= sessionTs ? local : sessionData;
-      } else if (localOk) {
-        savedState = local;
-      } else if (sessionOk) {
-        savedState = sessionData ?? null;
-      }
+      const savedState = resolvePreferredRestoreState({ preferManualPrior: true });
 
       if (!savedState?.tracks?.length) {
         setError(
@@ -3796,6 +3903,9 @@ const Studio = () => {
       if (restored) {
         hasLoadedTrack.current = true;
         signedInBootstrapOnlyFingerprintRef.current = null;
+        if (consumePreloginRestoreToastFlag()) {
+          setRestoreNoticeVisible(true);
+        }
         restoreSucceeded = true;
         return;
       }
@@ -3811,7 +3921,7 @@ const Studio = () => {
         signedInRandomLoadStartedRef.current = false;
       }
     }
-  }, [restoreFromState, savedSessions]);
+  }, [restoreFromState, resolvePreferredRestoreState, consumePreloginRestoreToastFlag]);
 
   const effectiveSuggestionReferenceTrackId =
     tracks.length > 0
@@ -3895,12 +4005,29 @@ const Studio = () => {
   const hasSavedSessionForRestore =
     !!user &&
     !isGuestMode &&
-    (!!(loadRestoreSnapshotFromLocal()?.tracks?.length) ||
+    (!!(loadManualRestorePriorSnapshot()?.tracks?.length) ||
+      !!(loadRestoreSnapshotFromLocal()?.tracks?.length) ||
       pickLatestSavedSessionForRestore(savedSessions) != null);
+
+  const signedInBootstrapPending =
+    !!user &&
+    !isGuestMode &&
+    tracks.length === 0 &&
+    !hadTracksOnce &&
+    !error &&
+    !needsUserInteraction &&
+    !isTrackLoading &&
+    !isManuallyAddingTrack &&
+    (
+      !signedInRandomLoadStartedRef.current ||
+      (onboardingMode === 'demoFirst' && !guidedRestoreAttemptedRef.current) ||
+      hasPendingTransitionRestoreForUser() ||
+      hasSavedSessionForRestore
+    );
 
   const showLoadingState =
     tracks.length === 0 &&
-    (isLoading || isTrackLoading || userLoading);
+    (isLoading || isTrackLoading || userLoading || signedInBootstrapPending);
 
   // Single SidePanel instance - never unmounts when transitioning between states.
   // Preserves panel state (active tab, scroll position) when a track loads.
@@ -4381,13 +4508,17 @@ const Studio = () => {
           </div>
           ) : (
           <div className="max-w-6xl mx-auto p-6 w-full space-y-3">
-            {hasSavedSessionForRestore && (
+            {user && !isGuestMode && (
               <div className="flex justify-end">
-                <Tooltip content="Restore previous session" position="top" delay={150}>
+                <Tooltip
+                  content={hasSavedSessionForRestore ? "Restore previous session" : "No prior session available yet"}
+                  position="top"
+                  delay={150}
+                >
                   <button
                     type="button"
                     onClick={() => void handleRestorePreviousSession()}
-                    disabled={isInitializingAudio}
+                    disabled={isInitializingAudio || !hasSavedSessionForRestore}
                     className="inline-flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px] min-w-[40px] sm:min-w-0"
                     aria-label="Restore previous session"
                   >
@@ -4635,12 +4766,16 @@ const Studio = () => {
                     <span className={isSidePanelOpen ? 'hidden xl:inline' : 'hidden md:inline'}>New session</span>
                   </button>
                 </Tooltip>
-                {user && !isGuestMode && hasSavedSessionForRestore && (
-                  <Tooltip content="Restore previous session" position="top" delay={150}>
+                {user && !isGuestMode && (
+                  <Tooltip
+                    content={hasSavedSessionForRestore ? "Restore previous session" : "No prior session available yet"}
+                    position="top"
+                    delay={150}
+                  >
                     <button
                       type="button"
                       onClick={() => void handleRestorePreviousSession()}
-                      disabled={isInitializingAudio}
+                      disabled={isInitializingAudio || !hasSavedSessionForRestore}
                       className="inline-flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg border border-audafact-divider bg-audafact-surface-2 text-sm font-medium text-audafact-text-primary hover:border-audafact-accent-cyan/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px] min-w-[40px] sm:min-w-0"
                       aria-label="Restore previous session"
                     >
@@ -5821,6 +5956,28 @@ const Studio = () => {
         feedbackOpen={showFeedbackModal}
         onFeedbackOpenChange={setShowFeedbackModal}
       />
+      {restoreNoticeVisible && (
+        <div className="fixed top-4 right-4 z-[70] max-w-sm rounded-lg border border-audafact-accent-cyan/40 bg-audafact-surface-1/95 p-4 shadow-lg backdrop-blur-sm">
+          <p className="text-sm text-audafact-text-primary">Restored your pre-login session.</p>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              className="rounded-md border border-audafact-border px-3 py-1.5 text-xs text-audafact-text-secondary hover:text-audafact-text-primary"
+              onClick={() => setRestoreNoticeVisible(false)}
+            >
+              Dismiss
+            </button>
+            <button
+              className="rounded-md bg-audafact-accent-cyan px-3 py-1.5 text-xs text-black hover:opacity-90"
+              onClick={() => {
+                setRestoreNoticeVisible(false);
+                handleNewSession();
+              }}
+            >
+              Undo/Reset
+            </button>
+          </div>
+        </div>
+      )}
         </>
       )}
     </>

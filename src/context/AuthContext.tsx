@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 import { authService, AuthResponse } from '../auth/authService';
@@ -31,6 +31,7 @@ const AuthContext = createContext<AuthContextType>({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const handledSignedInUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Get initial session
@@ -57,7 +58,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         analytics.setUser(session.user.id, userTier);
         
         // Handle post-signup flow for new signups
-        if (event === 'SIGNED_IN') {
+        if (event === 'SIGNED_IN' && handledSignedInUserRef.current !== session.user.id) {
+          handledSignedInUserRef.current = session.user.id;
           const handler = new PostSignupFlowHandler();
           await handler.handleSignupSuccess(session.user);
         }
@@ -68,6 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           await handler.handleTierUpgrade(session.user, session.user.user_metadata.new_tier);
         }
       } else {
+        handledSignedInUserRef.current = null;
         analytics.setUser('', 'guest');
         
         // Clear intent cache on signout
