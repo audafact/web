@@ -1411,13 +1411,37 @@ const Studio = () => {
       const breakAsset = pair.breakAsset;
       const genAiAsset = pair.genAiAsset;
 
-      const [breakRes, genAiRes] = await Promise.all([
-        fetch(breakAsset.file),
-        fetch(genAiAsset.file),
-      ]);
+      const fetchGuidedAudioBlob = async (assetPath: string, assetLabel: string): Promise<Blob> => {
+        const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+        const candidates = assetPath.startsWith('/')
+          ? [assetPath, `${baseUrl}${assetPath}`]
+          : [assetPath];
+
+        let lastFailureReason = 'Unknown fetch failure';
+        for (const candidate of candidates) {
+          try {
+            const response = await fetch(candidate, { cache: 'no-store' });
+            if (!response.ok) {
+              lastFailureReason = `HTTP ${response.status} for ${candidate}`;
+              continue;
+            }
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (!contentType.includes('audio')) {
+              lastFailureReason = `Non-audio response (${contentType || 'missing content-type'}) for ${candidate}`;
+              continue;
+            }
+            return await response.blob();
+          } catch (error) {
+            lastFailureReason = error instanceof Error ? error.message : String(error);
+          }
+        }
+
+        throw new Error(`Failed to load guided asset "${assetLabel}": ${lastFailureReason}`);
+      };
+
       const [breakBlob, genAiBlob] = await Promise.all([
-        breakRes.blob(),
-        genAiRes.blob(),
+        fetchGuidedAudioBlob(breakAsset.file, breakAsset.name),
+        fetchGuidedAudioBlob(genAiAsset.file, genAiAsset.name),
       ]);
 
       const breakFile = new File([breakBlob], `${breakAsset.name}.${breakAsset.type}`, {
