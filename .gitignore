@@ -6,6 +6,13 @@
 .env.prod
 .env.local
 assets/
+!public/assets/
+!public/assets/gen-ai/
+!public/assets/drumbreaks/
+!public/assets/gen-ai/feel-the-rhythm-now-version-1.mp3
+!public/assets/gen-ai/hearts-are-golden.mp3
+!public/assets/drumbreaks/Fat Snare Natural Tape Compression I.m4a
+!public/assets/drumbreaks/Fat Snare Natural Tape Compression II.m4a
 scripts/archive/
 parts/
 **/parts/

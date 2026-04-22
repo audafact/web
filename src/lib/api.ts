@@ -36,19 +36,9 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
     });
   }
 
-  const requestWithToken = async (accessToken: string) =>
-    fetch(signUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-  let r = await requestWithToken(token);
-  if (r.status === 401) {
-    const refreshed = await supabase.auth.refreshSession();
-    const refreshedToken = refreshed?.data?.session?.access_token;
-    if (refreshedToken) {
-      r = await requestWithToken(refreshedToken);
-    }
-  }
+  const r = await fetch(signUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (r.status === 429 && retryCount < 2) {
     const delay = signFileRetryDelay * Math.pow(2, retryCount);
@@ -128,19 +118,9 @@ export async function fetchLibraryAudioBlob(
     });
   }
 
-  const requestWithToken = async (accessToken: string) =>
-    fetch(streamUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-  let r = await requestWithToken(token);
-  if (r.status === 401) {
-    const refreshed = await supabase.auth.refreshSession();
-    const refreshedToken = refreshed?.data?.session?.access_token;
-    if (refreshedToken) {
-      r = await requestWithToken(refreshedToken);
-    }
-  }
+  const r = await fetch(streamUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (r.status === 429 && retryCount < 2) {
     const delay = streamRetryDelayMs * 2 ** retryCount;
@@ -160,9 +140,6 @@ export async function fetchLibraryAudioBlob(
       throw new Error(
         "Too many requests. Please wait a moment and try again."
       );
-    }
-    if (r.status === 401) {
-      throw new Error("Unauthorized audio stream request. Please sign in again.");
     }
     throw new Error(detail || `Audio stream failed: ${r.status}`);
   }
