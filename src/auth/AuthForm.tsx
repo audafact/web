@@ -24,6 +24,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const turnstileRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | undefined>(undefined);
   const navigate = useNavigate();
 
   const { signIn, signUp } = useAuth();
@@ -59,14 +60,24 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
           setCaptchaToken(null);
         }
       });
+      turnstileWidgetIdRef.current = widgetId;
 
       return () => {
+        turnstileWidgetIdRef.current = undefined;
         if (widgetId && window.turnstile) {
           window.turnstile.remove(widgetId);
         }
       };
     }
   }, [mode, turnstileSiteKey, mfaStep]);
+
+  const resetCaptchaChallenge = () => {
+    setCaptchaToken(null);
+    const widgetId = turnstileWidgetIdRef.current;
+    if (widgetId && window.turnstile) {
+      window.turnstile.reset(widgetId);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,6 +136,7 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
             setMfaFactorId(factorId);
             setMfaStep(true);
             setMfaCode('');
+            resetCaptchaChallenge();
             setLoading(false);
             return;
           }
@@ -141,9 +153,11 @@ export const AuthForm = ({ mode, onSuccess }: AuthFormProps) => {
         }
       } else {
         setError(result.error || 'An error occurred');
+        resetCaptchaChallenge();
       }
     } catch (err) {
       setError('An unexpected error occurred');
+      resetCaptchaChallenge();
     } finally {
       setLoading(false);
     }
