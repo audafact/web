@@ -50,32 +50,37 @@ export interface Upload {
   original_name?: string;
 }
 
-/** Complete session state for full restore (excludes zoom, playback position) */
+export interface SessionTrackState {
+  id: string;
+  sourceAssetId?: string;
+  fileKey?: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  mode: string;
+  loopStart: number;
+  loopEnd: number;
+  cuePoints: number[];
+  tempo: number;
+  timeSignature: TimeSignature;
+  firstMeasureTime: number;
+  showMeasures: boolean;
+  showCueThumbs: boolean;
+  beats?: number[];
+  zoomLevel?: number;
+  playbackSpeed: number;
+  playbackTime?: number;
+  volume: number;
+  lowpassFreq: number;
+  highpassFreq: number;
+  filterEnabled: boolean;
+  expandedControls?: boolean;
+  chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
+}
+
+/** Complete session state for full restore. */
 export interface SessionFullState {
-  tracks: Array<{
-    id: string;
-    sourceAssetId?: string;
-    fileKey?: string;
-    fileName: string;
-    fileSize: number;
-    fileType: string;
-    mode: string;
-    loopStart: number;
-    loopEnd: number;
-    cuePoints: number[];
-    tempo: number;
-    timeSignature: TimeSignature;
-    firstMeasureTime: number;
-    showMeasures: boolean;
-    showCueThumbs: boolean;
-    playbackSpeed: number;
-    volume: number;
-    lowpassFreq: number;
-    highpassFreq: number;
-    filterEnabled: boolean;
-    expandedControls?: boolean;
-    chopTriggerStyle?: 'cue' | 'hold' | 'one-shot';
-  }>;
+  tracks: SessionTrackState[];
   selectedCueTrackId: string | null;
   armedLoopTrackIds: string[];
   currentTrackIndex: number;
