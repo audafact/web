@@ -12,16 +12,34 @@ export function getApiBase(): string {
 const signFileRetryDelay = 2000;
 /** Signed URLs from Worker are valid 90s; cache for 75s to avoid using expired URLs */
 const SIGNED_URL_CACHE_TTL_MS = 75_000;
+const AUTH_RECOVERY_RETRY_DELAY_MS = 250;
 
 // Cache: key -> { url, expiresAt }
 const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
 // Coalesce in-flight requests: key -> Promise<string>
 const signFileInFlight = new Map<string, Promise<string>>();
 
-async function signFileInternal(key: string, retryCount: number): Promise<string> {
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resolveAccessTokenForApi(): Promise<string | null> {
   const sessionResult = await supabase.auth.getSession();
-  const { data: s } = sessionResult || {};
-  const token = s?.session?.access_token;
+  const token = sessionResult?.data?.session?.access_token;
+  if (token) return token;
+
+  // During auth transitions (guest -> signed-in), session hydration may lag briefly.
+  const refreshed = await supabase.auth.refreshSession();
+  const refreshedToken = refreshed?.data?.session?.access_token;
+  if (refreshedToken) return refreshedToken;
+
+  await sleep(AUTH_RECOVERY_RETRY_DELAY_MS);
+  const retryResult = await supabase.auth.getSession();
+  return retryResult?.data?.session?.access_token ?? null;
+}
+
+async function signFileInternal(key: string, retryCount: number): Promise<string> {
+  const token = await resolveAccessTokenForApi();
   if (!token) throw new Error("Not signed in");
 
   const base = getApiBase();
@@ -43,10 +61,9 @@ async function signFileInternal(key: string, retryCount: number): Promise<string
 
   let r = await requestWithToken(token);
   if (r.status === 401) {
-    const refreshed = await supabase.auth.refreshSession();
-    const refreshedToken = refreshed?.data?.session?.access_token;
-    if (refreshedToken) {
-      r = await requestWithToken(refreshedToken);
+    const recoveredToken = await resolveAccessTokenForApi();
+    if (recoveredToken && recoveredToken !== token) {
+      r = await requestWithToken(recoveredToken);
     }
   }
 
@@ -112,8 +129,7 @@ export async function fetchLibraryAudioBlob(
   fileKey: string,
   retryCount = 0
 ): Promise<Blob> {
-  const sessionResult = await supabase.auth.getSession();
-  const token = sessionResult?.data?.session?.access_token;
+  const token = await resolveAccessTokenForApi();
   if (!token) throw new Error("Not signed in");
 
   const base = getApiBase();
@@ -135,10 +151,9 @@ export async function fetchLibraryAudioBlob(
 
   let r = await requestWithToken(token);
   if (r.status === 401) {
-    const refreshed = await supabase.auth.refreshSession();
-    const refreshedToken = refreshed?.data?.session?.access_token;
-    if (refreshedToken) {
-      r = await requestWithToken(refreshedToken);
+    const recoveredToken = await resolveAccessTokenForApi();
+    if (recoveredToken && recoveredToken !== token) {
+      r = await requestWithToken(recoveredToken);
     }
   }
 

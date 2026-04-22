@@ -16,11 +16,6 @@ export class DemoSessionManager {
 
   migrateGuestSnapshotToUser(userId: string): boolean {
     try {
-      const alreadyRestoredForUser = localStorage.getItem(PRELOGIN_TRANSITION_RESTORED_KEY);
-      if (alreadyRestoredForUser === userId) {
-        localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
-        return false;
-      }
       const raw = localStorage.getItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
       if (!raw) return false;
       const parsed = JSON.parse(raw) as { expiresAt?: number };
