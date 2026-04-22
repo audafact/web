@@ -1,4 +1,6 @@
-import { DemoSessionState, DEMO_SESSION_KEY } from '../types/postSignup';
+const PRELOGIN_TRANSITION_SNAPSHOT_KEY = 'preloginTransitionSnapshot:guest';
+const PRELOGIN_TRANSITION_PENDING_KEY = 'preloginTransitionPendingUser';
+const PRELOGIN_TRANSITION_RESTORED_KEY = 'preloginTransitionRestored';
 
 export class DemoSessionManager {
   private static instance: DemoSessionManager;
@@ -12,129 +14,39 @@ export class DemoSessionManager {
     return DemoSessionManager.instance;
   }
 
-  private getScopedKey(scope: string = 'guest'): string {
-    return `${DEMO_SESSION_KEY}:${scope}`;
-  }
-  
-  saveDemoState(state: DemoSessionState, scope: string = 'guest'): void {
+  migrateGuestSnapshotToUser(userId: string): boolean {
     try {
-      const sessionData = {
-        ...state,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(this.getScopedKey(scope), JSON.stringify(sessionData));
-    } catch (error) {
-      console.error('Failed to save demo state:', error);
-    }
-  }
-  
-  getDemoState(scope: string = 'guest'): DemoSessionState | null {
-    try {
-      const stored = localStorage.getItem(this.getScopedKey(scope));
-      if (!stored) return null;
-      
-      const state: DemoSessionState = JSON.parse(stored);
-      
-      // Check if state is still valid (within 1 hour)
-      const now = Date.now();
-      const oneHour = 60 * 60 * 1000;
-      
-      if (now - state.timestamp > oneHour) {
-        this.clearDemoState(scope);
-        return null;
+      const raw = localStorage.getItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as { expiresAt?: number };
+      if (typeof parsed.expiresAt === 'number' && Date.now() > parsed.expiresAt) {
+        localStorage.removeItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
+        localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
+        return false;
       }
-      
-      return state;
-    } catch (error) {
-      console.error('Failed to get demo state:', error);
-      return null;
-    }
-  }
-  
-  clearDemoState(scope: string = 'guest'): void {
-    try {
-      localStorage.removeItem(this.getScopedKey(scope));
-    } catch (error) {
-      console.error('Failed to clear demo state:', error);
-    }
-  }
-  
-  restoreDemoState(scope: string = 'guest'): boolean {
-    const state = this.getDemoState(scope);
-    if (!state) return false;
-    
-    try {
-      // Restore track
-      if (state.currentTrack) {
-        this.loadTrack(state.currentTrack);
-      }
-      
-      // Restore playback position
-      if (state.playbackPosition) {
-        this.setPlaybackPosition(state.playbackPosition);
-      }
-      
-      // Restore mode
-      if (state.mode) {
-        this.setPlaybackMode(state.mode);
-      }
-      
-      // Restore volume and tempo
-      if (state.volume) {
-        this.setVolume(state.volume);
-      }
-      if (state.tempo) {
-        this.setTempo(state.tempo);
-      }
-      
-      // Restore cue points and loops (read-only for guests)
-      if (state.cuePoints) {
-        this.setCuePoints(state.cuePoints);
-      }
-      if (state.loopRegions) {
-        this.setLoopRegions(state.loopRegions);
-      }
-      
+      localStorage.setItem(PRELOGIN_TRANSITION_PENDING_KEY, userId);
       return true;
     } catch (error) {
-      console.error('Failed to restore demo state:', error);
+      console.error('Failed to migrate guest transition snapshot:', error);
       return false;
     }
   }
-  
-  // Placeholder methods - these would be implemented to integrate with the actual audio system
-  private loadTrack(track: any): void {
-    // TODO: Integrate with actual audio system
-    console.log('Loading track:', track);
+
+  markUserRestoreConsumed(userId: string): void {
+    try {
+      localStorage.setItem(PRELOGIN_TRANSITION_RESTORED_KEY, userId);
+      localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
+    } catch (error) {
+      console.error('Failed to mark transition snapshot consumed:', error);
+    }
   }
-  
-  private setPlaybackPosition(position: number): void {
-    // TODO: Integrate with actual audio system
-    console.log('Setting playback position:', position);
+
+  clearTransitionData(): void {
+    try {
+      localStorage.removeItem(PRELOGIN_TRANSITION_PENDING_KEY);
+      localStorage.removeItem(PRELOGIN_TRANSITION_SNAPSHOT_KEY);
+    } catch (error) {
+      console.error('Failed to clear transition snapshot data:', error);
+    }
   }
-  
-  private setPlaybackMode(mode: 'preview' | 'loop' | 'cue'): void {
-    // TODO: Integrate with actual audio system
-    console.log('Setting playback mode:', mode);
-  }
-  
-  private setVolume(volume: number): void {
-    // TODO: Integrate with actual audio system
-    console.log('Setting volume:', volume);
-  }
-  
-  private setTempo(tempo: number): void {
-    // TODO: Integrate with actual audio system
-    console.log('Setting tempo:', tempo);
-  }
-  
-  private setCuePoints(cuePoints: any[]): void {
-    // TODO: Integrate with actual audio system
-    console.log('Setting cue points:', cuePoints);
-  }
-  
-  private setLoopRegions(loopRegions: any[]): void {
-    // TODO: Integrate with actual audio system
-    console.log('Setting loop regions:', loopRegions);
-  }
-} 
+}

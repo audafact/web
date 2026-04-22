@@ -10,6 +10,8 @@ export const getSessionScope = (userId?: string | null): string => userId ? `use
 export const getScopedSavedSessionsKey = (scope: string): string => `${SAVED_SESSIONS_KEY}:${scope}`;
 export const getScopedPerformancesKey = (scope: string): string => `${LEGACY_PERFORMANCES_KEY}:${scope}`;
 export const getScopedAudioRecordingsKey = (scope: string): string => `${LEGACY_AUDIO_RECORDINGS_KEY}:${scope}`;
+export const getScopedSelectedCueTrackIdKey = (scope: string): string => `selectedCueTrackId:${scope}`;
+export const getScopedArmedLoopTrackIdsKey = (scope: string): string => `armedLoopTrackIds:${scope}`;
 
 /**
  * One-time: move unscoped performances / audio blobs into the current scope, then delete globals.

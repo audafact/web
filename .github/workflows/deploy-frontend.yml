@@ -27,6 +27,13 @@ jobs:
       - name: Install Wrangler
         run: npm install -g wrangler
 
+      - name: Verify guided demo assets are present
+        run: |
+          test -f "public/assets/gen-ai/feel-the-rhythm-now-version-1.mp3"
+          test -f "public/assets/gen-ai/hearts-are-golden.mp3"
+          test -f "public/assets/drumbreaks/Fat Snare Natural Tape Compression I.m4a"
+          test -f "public/assets/drumbreaks/Fat Snare Natural Tape Compression II.m4a"
+
       - name: Build for production
         run: npm run build:production
         env:

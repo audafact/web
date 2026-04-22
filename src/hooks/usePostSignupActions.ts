@@ -7,7 +7,6 @@ import {
 import { IntentManagementService } from "../services/intentManagementService";
 import { PostSignupActionService } from "../services/postSignupActionService";
 import { PostSignupFlowHandler } from "../services/postSignupFlowHandler";
-import { DemoSessionManager } from "../services/demoSessionManager";
 import { useAuth } from "../context/AuthContext";
 import { useUser } from "./useUser";
 import { useMessageSystem } from "./useMessageSystem";
@@ -93,18 +92,6 @@ export const usePostSignupActions = () => {
     [user]
   );
 
-  const saveDemoState = useCallback((state: any) => {
-    const demoManager = DemoSessionManager.getInstance();
-    const scope = user?.id ? `user:${user.id}` : 'guest';
-    demoManager.saveDemoState(state, scope);
-  }, [user?.id]);
-
-  const restoreDemoState = useCallback(() => {
-    const demoManager = DemoSessionManager.getInstance();
-    const scope = user?.id ? `user:${user.id}` : 'guest';
-    return demoManager.restoreDemoState(scope);
-  }, [user?.id]);
-
   const clearIntentCache = useCallback(() => {
     const intentService = IntentManagementService.getInstance();
     intentService.clearIntentCache();
@@ -127,8 +114,6 @@ export const usePostSignupActions = () => {
     executePendingActions,
     handleSignupSuccess,
     handleTierUpgrade,
-    saveDemoState,
-    restoreDemoState,
     clearIntentCache,
     getIntentCache,
     isProcessing,
