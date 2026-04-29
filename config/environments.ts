@@ -111,12 +111,12 @@ export const stripeConfig = {
     priceEarlyAdopter: "price_test_early_adopter",
   },
   live: {
-    productMonthly: "prod_live_monthly",
-    productYearly: "prod_live_yearly",
-    productEarlyAdopter: "prod_live_early_adopter",
-    priceMonthly: "price_live_monthly",
-    priceYearly: "price_live_yearly",
-    priceEarlyAdopter: "price_live_early_adopter",
+    productMonthly: "prod_Sn60Kc8AJAZ8bB",
+    productYearly: "prod_Sn619yLYhrvho1",
+    productEarlyAdopter: "prod_Sn615MTOdI4Aid",
+    priceMonthly: "price_1RrVoUFXfkCegelfDVGstIQj",
+    priceYearly: "price_1RrVpRFXfkCegelfhCMU5hpc",
+    priceEarlyAdopter: "price_1RrVpqFXfkCegelfKnAoG0T4",
   },
 };
 

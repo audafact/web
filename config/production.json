@@ -15,13 +15,13 @@
   "r2AccountId": "829b50f2f5c67ed26ec5cc89af772064",
   "r2Bucket": "audafact",
   "stripeProducts": {
-    "monthly": "prod_live_monthly",
-    "yearly": "prod_live_yearly",
-    "earlyAdopter": "prod_live_early_adopter"
+    "monthly": "prod_Sn60Kc8AJAZ8bB",
+    "yearly": "prod_Sn619yLYhrvho1",
+    "earlyAdopter": "prod_Sn615MTOdI4Aid"
   },
   "stripePrices": {
-    "monthly": "price_live_monthly",
-    "yearly": "price_live_yearly",
-    "earlyAdopter": "price_live_early_adopter"
+    "monthly": "price_1RrVoUFXfkCegelfDVGstIQj",
+    "yearly": "price_1RrVpRFXfkCegelfhCMU5hpc",
+    "earlyAdopter": "price_1RrVpqFXfkCegelfKnAoG0T4"
   }
 }
