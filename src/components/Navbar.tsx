@@ -20,6 +20,7 @@ const Navbar = () => {
   const showMainNavLinks = !isStudioPage || !user;
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const showSidePanelToggleNudge = isStudioPage && !isSidePanelOpen;
 
   return (
     <nav className="sticky top-0 bg-audafact-surface-1 border-b border-audafact-divider shadow-card z-50">
@@ -31,9 +32,16 @@ const Navbar = () => {
             {isStudioPage && (
               <button
                 onClick={toggleSidePanel}
-                className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
-                aria-label={isSidePanelOpen ? 'Close sidebar' : 'Open sidebar'}
-                data-testid="side-panel-toggle"
+                className={`p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200 ${
+                  showSidePanelToggleNudge ? 'ring-2 ring-audafact-accent-cyan/70 animate-pulse' : ''
+                }`}
+                aria-label={isSidePanelOpen ? 'Close stash panel' : 'Open stash panel'}
+                title={
+                  isSidePanelOpen
+                    ? 'Close Stash panel'
+                    : 'Open Stash: library, uploads, sessions, recordings'
+                }
+                data-testid="side-panel-open-toggle"
               >
                 {isSidePanelOpen ? (
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
