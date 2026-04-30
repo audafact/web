@@ -196,6 +196,7 @@ const Studio = () => {
   const [getStartedStep, setGetStartedStep] = useState<null | 'mode-choice'>(null);
   const [error, setError] = useState<string | null>(null);
   const [restoreNoticeVisible, setRestoreNoticeVisible] = useState(false);
+  const [isSidePanelCueDismissed, setIsSidePanelCueDismissed] = useState(false);
   const [isAudioInitialized, setIsAudioInitialized] = useState<boolean>(false);
   // Track drag state for real-time timestamp updates
   const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
@@ -204,6 +205,7 @@ const Studio = () => {
   const [sampleEditTrackId, setSampleEditTrackId] = useState<string | null>(null);
   const sampleEditPlaybackSnapshotRef = useRef<Set<string> | null>(null);
   const lastTapForSampleEditRef = useRef<{ t: number; x: number; y: number; trackId: string } | null>(null);
+  const addButtonUploadInputRef = useRef<HTMLInputElement | null>(null);
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
   
@@ -2506,7 +2508,7 @@ const Studio = () => {
   // Add new track function
   const addNewTrack = async () => {
     if (isGuestMode && tracks.length >= 1) {
-      openSignupModal('add_second_source');
+      addButtonUploadInputRef.current?.click();
       return;
     }
     if (!canAddTrack || isAddingTrack) return;
@@ -2640,6 +2642,39 @@ const Studio = () => {
       setAddTrackAnimation(false);
       setLoadingTrackPlaceholder(null);
     }
+  };
+
+  const handleAddButtonUploadSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const validAudioTypes = [
+      'audio/wav',
+      'audio/mp3',
+      'audio/mpeg',
+      'audio/mp4',
+      'audio/x-m4a',
+      'audio/aac',
+      'audio/ogg',
+      'audio/flac',
+    ];
+    const isValidAudioFile =
+      validAudioTypes.includes(file.type) ||
+      file.name.toLowerCase().endsWith('.wav') ||
+      file.name.toLowerCase().endsWith('.mp3') ||
+      file.name.toLowerCase().endsWith('.m4a') ||
+      file.name.toLowerCase().endsWith('.aac') ||
+      file.name.toLowerCase().endsWith('.ogg') ||
+      file.name.toLowerCase().endsWith('.flac');
+
+    if (!isValidAudioFile) {
+      setError('Please select a valid audio file (WAV, MP3, M4A, AAC, OGG, or FLAC)');
+      event.target.value = '';
+      return;
+    }
+
+    await handleUploadTrack(file, 'preview');
+    event.target.value = '';
   };
 
   // Remove track function
@@ -3268,14 +3303,6 @@ const Studio = () => {
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isGuestMode && tracks.length >= 1) {
-      setIsDragOver(false);
-      setDragTarget(null);
-      setDragData(null);
-      openSignupModal('add_second_source');
-      return;
-    }
-
     // Check if the drop occurred within the SidePanel area (only when SidePanel is open)
     const target = e.target as Element;
     const isInSidePanel = isSidePanelOpen && target.closest('[data-sidepanel]') !== null;
@@ -3323,6 +3350,11 @@ const Studio = () => {
         
         // Add the dropped file as a track
         await handleUploadTrack(file, 'preview');
+        return;
+      }
+
+      if (isGuestMode && tracks.length >= 1) {
+        openSignupModal('add_second_source');
         return;
       }
       
@@ -4142,6 +4174,14 @@ const Studio = () => {
   const showLoadingState =
     tracks.length === 0 &&
     (isLoading || isTrackLoading || userLoading || signedInBootstrapPending);
+  const showClosedPanelCue =
+    (user || isGuestMode) &&
+    !isSidePanelOpen &&
+    !isSidePanelCueDismissed &&
+    !showLoadingState &&
+    !error &&
+    !needsUserInteraction &&
+    !restoreNoticeVisible;
 
   // Single SidePanel instance - never unmounts when transitioning between states.
   // Preserves panel state (active tab, scroll position) when a track loads.
@@ -4150,6 +4190,41 @@ const Studio = () => {
   return (
     <>
       {sidePanelEl}
+      <input
+        ref={addButtonUploadInputRef}
+        type="file"
+        accept=".wav,.mp3,.m4a,.aac,.ogg,.flac,audio/*"
+        className="hidden"
+        onChange={handleAddButtonUploadSelect}
+      />
+      {showClosedPanelCue && (
+        <div className="fixed left-3 top-[7.25rem] z-[65] max-w-xs rounded-lg border border-audafact-accent-cyan/40 bg-audafact-surface-1/95 p-3 shadow-lg backdrop-blur-sm">
+          <p className="text-xs text-audafact-text-primary">
+            Stash is closed. Open it for preloaded samples, uploads, saved sessions, and recordings.
+          </p>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-audafact-border px-2 py-1 text-[11px] text-audafact-text-secondary hover:text-audafact-text-primary"
+              onClick={() => {
+                setIsSidePanelCueDismissed(true);
+              }}
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-audafact-accent-cyan px-2 py-1 text-[11px] text-black hover:opacity-90"
+              onClick={() => {
+                toggleSidePanel();
+                setIsSidePanelCueDismissed(true);
+              }}
+            >
+              Open Stash
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Loading state */}
       {showLoadingState && (
@@ -4336,7 +4411,7 @@ const Studio = () => {
               </p>
               {user ? (
                 <p className="audafact-text-secondary mb-6">
-                  You can also select a track from the side panel after audio is initialized.
+                  After audio initializes, open Stash to browse library tracks, upload your own sample, and access saved sessions.
                 </p>
               ) : (
                 <p className="audafact-text-secondary mb-6">
@@ -4521,7 +4596,9 @@ const Studio = () => {
               </div>
               <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
                 <h3 className="font-medium audafact-heading">Drop a track. Find something new. Start creating.</h3>
-                <p className="text-sm text-audafact-text-secondary mt-1">See what Audafact uncovers in every song.</p>
+                <p className="text-sm text-audafact-text-secondary mt-1">
+                  Drag in your own sample, or open Stash to preview preloaded tracks and upload in My Tracks.
+                </p>
               </div>
               <div className="audafact-waveform-bg relative flex flex-col items-center justify-center gap-4 py-6 px-4" style={{ minHeight: '160px' }}>
                 {getStartedStep === null && (
@@ -4656,8 +4733,8 @@ const Studio = () => {
               </h3>
               <p className="text-sm text-audafact-text-secondary">
                 {availableAssets.length === 0 && !userLoading
-                  ? 'Add sounds from the side panel or upload a file to get started.'
-                  : 'Add a track from the library, drop a file, or use Restore previous above.'}
+                  ? 'Open Stash to browse tracks, upload your own in My Tracks, or drag a file into the studio.'
+                  : 'Open Stash to add from library/My Tracks, drag a file in, or use Restore previous above.'}
               </p>
             </div>
           </div>
@@ -4830,10 +4907,10 @@ const Studio = () => {
           <div className="fixed top-20 left-1/2 z-[9999] w-[min(83vw-2rem,80rem)] -translate-x-1/2 pointer-events-none">
             <div className="rounded-lg border border-audafact-accent-cyan/40 bg-audafact-accent-cyan/10 px-3 py-2 text-xs text-audafact-text-primary animate-pulse shadow-2xl backdrop-blur-sm">
               {guestHintStep === 1 && (
-                <>Press <span className="font-semibold">Space</span> to loop.</>
+                <>Start the drums — press <span className="font-semibold">Space</span> or <span className="font-semibold">Play</span>.</>
               )}
               {guestHintStep === 2 && (
-                <>Press and hold any pad beneath track 2 below or any key from <span className="font-semibold">1-0</span> to trigger chops.</>
+                <>Play the sample like an instrument — hold a pad or press <span className="font-semibold">1-0</span>.</>
               )}
               {guestHintStep === 3 && (
                 <>Make it yours, drag cue points to find new chops.</>
@@ -4910,30 +4987,33 @@ const Studio = () => {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="text-audafact-text-secondary text-xs">
               {(() => {
-                if (armedLoopTrackIds.size === 0) return 'Space: Arm loop tracks to enable';
+                if (armedLoopTrackIds.size === 0) return 'Start the drums: Arm a loop track, then press Space';
                 const nums = [...armedLoopTrackIds]
                   .map(id => tracks.findIndex(t => t.id === id) + 1)
                   .filter(n => n > 0)
                   .sort((a, b) => a - b);
-                if (nums.length === 0) return 'Space: Arm loop tracks to enable';
+                if (nums.length === 0) return 'Start the drums: Arm a loop track, then press Space';
                 const label = nums.length === 1
                   ? `Track ${nums[0]}`
                   : nums.length === 2
                     ? `Track ${nums[0]} & ${nums[1]}`
                     : `Track ${nums.slice(0, -1).join(', ')} & ${nums[nums.length - 1]}`;
-                return `Space: Play/Pause ${label} loop${nums.length === 1 ? '' : 's'}`;
+                return `Keep the groove going: Space starts/stops ${label} loop${nums.length === 1 ? '' : 's'}`;
               })()}
             </span>
             <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
               {selectedCueTrackId
                 ? (() => {
                     const idx = tracks.findIndex(t => t.id === selectedCueTrackId);
-                    if (idx < 0) return '1-0: Trigger Chop track cue points';
-                    return `1-0: Trigger Track ${idx + 1} cue points`;
+                    if (idx < 0) return 'Play the sample like an instrument: use keys 1-0 for chops';
+                    return `Play the sample like an instrument: keys 1-0 trigger Track ${idx + 1} chops`;
                   })()
                 : tracks.some(t => t.mode === 'cue')
-                  ? '1-0: Select Chop track to trigger cues'
-                  : '1-0: Switch to Chop mode to trigger cues'}
+                  ? 'Play the sample like an instrument: select a Chop track, then use 1-0'
+                  : 'Play the sample like an instrument: switch to Chop mode, then use 1-0'}
+            </span>
+            <span className="text-audafact-text-secondary text-xs border-l border-audafact-divider pl-4">
+              Drop audio anywhere in Studio to upload
             </span>
           </div>
         </div>
@@ -5121,7 +5201,7 @@ const Studio = () => {
                     content={
                       isGuestMode
                         ? tracks.length >= 1
-                          ? 'Sign up to add more tracks'
+                          ? 'Upload from your device (library adds require sign up)'
                           : 'Add track (demo mode)'
                         : canAddTrack
                           ? 'Add a new track'
@@ -5718,7 +5798,7 @@ const Studio = () => {
 
               {track.mode === 'cue' && track.id === selectedCueTrackId && (
                 <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
-                  Press keyboard keys 1-0 to trigger cue points
+                  Play this sample like an instrument with keys 1-0
                 </div>
               )}
               {track.mode === 'loop' && armedLoopTrackIds.has(track.id) && (
@@ -5989,7 +6069,7 @@ const Studio = () => {
                 />
                 {track.mode === 'cue' && track.id === selectedCueTrackId && (
                   <div className="mt-3 rounded bg-audafact-accent-blue bg-opacity-10 p-2 text-xs text-audafact-accent-blue">
-                    Press 1–0 to trigger cues (Sample Edit — local transport)
+                    Play this sample like an instrument with keys 1-0 (Sample Edit — local transport)
                   </div>
                 )}
                 {track.mode === 'loop' && (

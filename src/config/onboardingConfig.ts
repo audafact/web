@@ -32,7 +32,7 @@ export const createOnboardingSteps = (
   {
     id: 'add-track',
     title: 'Add More Tracks',
-    description: 'Add tracks with the Add button, swipe down on the bar, or drag tracks from the library into the studio.',
+    description: 'Add tracks with the Add button, swipe down on the bar, drag tracks from Stash, or upload from My Tracks.',
     targetSelector: '[data-testid="add-track-button"], [data-testid="track-loader-bar"]',
     position: 'bottom'
   },
@@ -101,8 +101,8 @@ export const createOnboardingSteps = (
   {
     id: 'side-panel',
     title: 'Track Library',
-    description: 'Open the side panel to browse your track library. You can preview tracks and add them to your studio.',
-    targetSelector: '[data-testid="side-panel-toggle"]',
+    description: 'Open Stash to browse the library, upload your own sample in My Tracks, and access saved sessions/recordings.',
+    targetSelector: '[data-testid="side-panel-open-toggle"]',
     position: 'left'
   },
   {
@@ -171,8 +171,8 @@ export const createQuickOnboardingSteps = (
   {
     id: 'library',
     title: 'Track Library',
-    description: 'Browse and preview tracks from your library.',
-    targetSelector: '[data-testid="side-panel-toggle"]',
+    description: 'Open Stash to browse tracks or upload your own sample in My Tracks.',
+    targetSelector: '[data-testid="side-panel-open-toggle"]',
     position: 'left',
     action: handlers.onToggleSidePanel
   },

@@ -40,6 +40,14 @@ jobs:
           VITE_APP_ENV: production
           # Ignore any repo .env / machine VITE_API_BASE_URL; use config/production.json (+ /api) via vite.config.js
           VITE_API_BASE_URL: ""
+          # Explicitly pass Stripe identifiers from GitHub Variables so CI builds
+          # do not fall back to placeholder defaults from vite.config.js.
+          VITE_STRIPE_LIVE_PRODUCT_MONTHLY: ${{ vars.VITE_STRIPE_LIVE_PRODUCT_MONTHLY }}
+          VITE_STRIPE_LIVE_PRODUCT_YEARLY: ${{ vars.VITE_STRIPE_LIVE_PRODUCT_YEARLY }}
+          VITE_STRIPE_LIVE_PRODUCT_EARLY_ADOPTER: ${{ vars.VITE_STRIPE_LIVE_PRODUCT_EARLY_ADOPTER }}
+          VITE_STRIPE_LIVE_PRICE_MONTHLY: ${{ vars.VITE_STRIPE_LIVE_PRICE_MONTHLY }}
+          VITE_STRIPE_LIVE_PRICE_YEARLY: ${{ vars.VITE_STRIPE_LIVE_PRICE_YEARLY }}
+          VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER: ${{ vars.VITE_STRIPE_LIVE_PRICE_EARLY_ADOPTER }}
 
       - name: Deploy to Cloudflare Pages
         run: wrangler pages deploy dist --project-name=audafact-web-prod --branch main
