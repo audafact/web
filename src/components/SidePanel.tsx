@@ -43,11 +43,9 @@ interface AudioAsset {
 
 interface UploadButtonProps {
   user: any;
-  guestUploadUsed: boolean;
   tierId?: 'guest' | 'free' | 'starter' | 'pro';
   canPerformAction: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => Promise<boolean>;
   getUpgradeMessage: (action: "upload" | "save_session" | "record" | "add_library_track" | "download") => string;
-  showSignupModal: (action: string) => void;
   setShowUpgradePrompt: (state: { show: boolean; message: string; feature: string }) => void;
   fileInputRef: React.RefObject<HTMLInputElement>;
 }
@@ -136,11 +134,9 @@ const SidePanelSubMenuItem: React.FC<SidePanelSubMenuItemProps> = ({
 
 const UploadButton: React.FC<UploadButtonProps> = ({
   user,
-  guestUploadUsed,
   tierId,
   canPerformAction,
   getUpgradeMessage,
-  showSignupModal,
   setShowUpgradePrompt,
   fileInputRef
 }) => {
@@ -150,7 +146,7 @@ const UploadButton: React.FC<UploadButtonProps> = ({
   useEffect(() => {
     const checkUploadCapacity = async () => {
       if (!user) {
-        setCanUpload(!guestUploadUsed); // Allow exactly 1 guest upload per session
+        setCanUpload(true);
         return;
       }
       
@@ -163,16 +159,11 @@ const UploadButton: React.FC<UploadButtonProps> = ({
     };
 
     checkUploadCapacity();
-  }, [user, canPerformAction, getUpgradeMessage, guestUploadUsed]);
+  }, [user, canPerformAction, getUpgradeMessage]);
 
   const handleClick = async () => {
     // Check if user is authenticated
     if (!user) {
-      if (guestUploadUsed) {
-        showSignupModal('upload');
-        return;
-      }
-
       fileInputRef.current?.click();
       return;
     }
@@ -194,7 +185,7 @@ const UploadButton: React.FC<UploadButtonProps> = ({
 
   // Keep free/starter "at limit" state clickable so it can open an upgrade CTA.
   const isAtUploadLimit = !!user && canUpload === false;
-  const isDisabled = !user && guestUploadUsed;
+  const isDisabled = false;
   const tooltipText = isDisabled
     ? !user
       ? 'Create a free account to keep and manage your uploaded track'
@@ -410,18 +401,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
   }, [suggestedUploadsMatchesExpanded]);
 
   const [userTracks, setUserTracks] = useState<UserTrack[]>([]);
-  // Guest-only: allow exactly 1 local upload per session (no refresh persistence).
-  const [guestUploadUsed, setGuestUploadUsed] = useState(false);
   const [isAtSessionLimit, setIsAtSessionLimit] = useState(false);
   const [isAtRecordingLimit, setIsAtRecordingLimit] = useState(false);
   const [isAtUploadLimit, setIsAtUploadLimit] = useState(false);
-
-  useEffect(() => {
-    // Reset guest-only state when a user signs in.
-    if (user) {
-      setGuestUploadUsed(false);
-    }
-  }, [user]);
 
   useEffect(() => {
     let mounted = true;
@@ -957,19 +939,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
 
     // Check if user is authenticated
     if (!user) {
-      if (guestUploadUsed) {
-        showSignupModal('upload');
-        // Reset the input
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        return;
-      }
-
       try {
         // Session-only guest upload: Studio replaces the current track and builds cue points.
         await onUploadTrack(file, 'cue');
-        setGuestUploadUsed(true);
       } catch (error) {
         console.error('Guest upload failed:', error);
       } finally {
@@ -1223,7 +1195,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
           <button
             onClick={onToggle}
             className="p-2 text-audafact-text-secondary hover:text-audafact-accent-cyan hover:bg-audafact-surface-2 rounded-lg transition-colors duration-200"
-            data-testid="side-panel-toggle"
+            data-testid="side-panel-close-button"
             title="Close panel"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1265,7 +1237,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     id="audafact-library-tab"
                   />
                   <SidePanelSubMenuItem
-                    label="My Tracks"
+                    label="My Uploads"
                     icon={<IconUser />}
                     isActive={activeAudioTab === 'my-tracks'}
                     onClick={() => handleAudioTabSelect('my-tracks')}
@@ -1544,8 +1516,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           ) : (
                             <p>
                               <strong className="text-audafact-text-primary">Add tracks:</strong> Drag any track into
-                              the studio, or use the + button. Use the Add button in the bar above or swipe down to add
-                              more.
+                              the studio, use the + button, or upload your own sample in <strong>My Tracks</strong>.
                             </p>
                           )}
                         </div>
@@ -1655,7 +1626,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-md font-medium audafact-heading">
-                          {user ? 'My Uploaded Tracks' : 'Upload Tracks'}
+                          {user ? 'My Uploaded Tracks' : 'My Uploads (Guest)'}
                         </h3>
                         {user && isAtUploadLimit && (tier.id === 'free' || tier.id === 'starter') && (
                           <button
@@ -1682,36 +1653,19 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                           </div>
-                          <p className="audafact-text-secondary mb-4">Upload your own track</p>
+                          <p className="audafact-text-secondary mb-4">
+                            Bring your own sample or track from your computer.
+                          </p>
 
-                          {guestUploadUsed ? (
-                            <>
-                              <div className="bg-audafact-surface-2 border border-audafact-divider rounded-lg p-4 mb-4 text-left">
-                                <p className="text-sm audafact-text-secondary">
-                                  This session-only upload will be available while you keep this tab open (refresh will clear it).
-                                  Create a free account to keep and manage your uploaded tracks.
-                                </p>
-                              </div>
-                              <button
-                                onClick={() => showSignupModal('upload')}
-                                className="audafact-button-primary"
-                              >
-                                Create free account to keep it
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <p className="text-sm audafact-text-secondary mb-4">
-                                1 upload per session. Create a free account to keep and manage your upload.
-                              </p>
-                              <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="audafact-button-primary"
-                              >
-                                Upload Track
-                              </button>
-                            </>
-                          )}
+                          <p className="text-sm audafact-text-secondary mb-4">
+                            Guest uploads are available in-session. Refresh clears guest uploads; create a free account to save and manage them.
+                          </p>
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="audafact-button-primary"
+                          >
+                            Upload Track
+                          </button>
                         </div>
                       ) : userTracks.length === 0 ? (
                         // Authenticated user with no tracks
@@ -1721,7 +1675,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                           </div>
-                          <p className="audafact-text-secondary mb-4">No tracks uploaded yet</p>
+                          <p className="audafact-text-secondary mb-4">
+                            No tracks uploaded yet. Bring your own sample from your computer.
+                          </p>
                             <button
                               onClick={() => {
                                 // Check if user is authenticated
@@ -2062,11 +2018,9 @@ const SidePanel: React.FC<SidePanelProps> = ({
                           {/* Upload Button - Less prominent when tracks exist */}
                           <UploadButton
                             user={user}
-                            guestUploadUsed={guestUploadUsed}
                             tierId={tier.id}
                             canPerformAction={canPerformAction}
                             getUpgradeMessage={getUpgradeMessage}
-                            showSignupModal={showSignupModal}
                             setShowUpgradePrompt={setShowUpgradePrompt}
                             fileInputRef={fileInputRef}
                           />
