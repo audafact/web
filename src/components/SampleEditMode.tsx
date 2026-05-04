@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 export interface SampleEditModeProps {
   /** Stable id for transition key when switching session tracks */
@@ -9,16 +9,12 @@ export interface SampleEditModeProps {
   onClose: () => void;
   onPrevLibrary: () => void;
   onNextLibrary: () => void;
-  onPrevSessionTrack: () => void;
-  onNextSessionTrack: () => void;
-  hasPrevSessionTrack: boolean;
-  hasNextSessionTrack: boolean;
   isTrackLoading: boolean;
 }
 
 /**
  * Full-screen sample edit shell: dimmed backdrop (tap to close), header with library L/R and back,
- * optional vertical session track arrows, Escape to close. Body is provided by Studio (waveform + controls).
+ * Escape to close. Session track prev/next lives in the Studio body header when multiple decks exist.
  */
 const SampleEditMode: React.FC<SampleEditModeProps> = ({
   sessionTrackId,
@@ -27,10 +23,6 @@ const SampleEditMode: React.FC<SampleEditModeProps> = ({
   onClose,
   onPrevLibrary,
   onNextLibrary,
-  onPrevSessionTrack,
-  onNextSessionTrack,
-  hasPrevSessionTrack,
-  hasNextSessionTrack,
   isTrackLoading,
 }) => {
   useEffect(() => {
@@ -67,7 +59,7 @@ const SampleEditMode: React.FC<SampleEditModeProps> = ({
         className="relative z-[1] flex max-h-[min(92vh,920px)] w-full max-w-4xl flex-col overflow-hidden rounded-card border border-audafact-divider bg-audafact-surface-1 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex shrink-0 items-center gap-1.5 border-b border-audafact-divider bg-audafact-surface-2 px-2 py-2 sm:gap-2 sm:px-4">
+        <header className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-audafact-divider bg-audafact-surface-2 px-2 py-2 sm:gap-2 sm:px-4">
           <button
             type="button"
             onClick={onClose}
@@ -123,31 +115,6 @@ const SampleEditMode: React.FC<SampleEditModeProps> = ({
             {children}
           </div>
         </div>
-
-        {(hasPrevSessionTrack || hasNextSessionTrack) && (
-          <footer className="flex shrink-0 items-center justify-center gap-6 border-t border-audafact-divider bg-audafact-surface-2 px-3 py-2">
-            <button
-              type="button"
-              onClick={onPrevSessionTrack}
-              disabled={!hasPrevSessionTrack}
-              className="inline-flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs font-medium text-audafact-text-secondary hover:bg-audafact-surface-1 hover:text-audafact-accent-cyan disabled:cursor-not-allowed disabled:opacity-40"
-              title="Previous track in session"
-            >
-              <ChevronUp className="h-5 w-5" aria-hidden />
-              Previous track
-            </button>
-            <button
-              type="button"
-              onClick={onNextSessionTrack}
-              disabled={!hasNextSessionTrack}
-              className="inline-flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 text-xs font-medium text-audafact-text-secondary hover:bg-audafact-surface-1 hover:text-audafact-accent-cyan disabled:cursor-not-allowed disabled:opacity-40"
-              title="Next track in session"
-            >
-              <ChevronDown className="h-5 w-5" aria-hidden />
-              Next track
-            </button>
-          </footer>
-        )}
       </div>
     </div>
   );

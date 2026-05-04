@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAudioContext } from '../context/AudioContext';
 import { useSidePanel } from '../context/SidePanelContext';
@@ -38,6 +38,7 @@ import type { SuggestionReference } from '../services/sampleSuggestionService';
 import { fetchLibraryAudioBlob } from '../lib/api';
 import { getSignedUrl } from '../lib/storage';
 import { useTapTempo } from '../context/TapTempoContext';
+import { useIsMobileStudioLayout } from '../hooks/useMatchMedia';
 import { extractPeaksFromBuffer } from '../utils/audioPeaks';
 import { decodeAudioFileToBufferWithoutRunningContext } from '../utils/decodeAudioFile';
 import { transposeKey, semitonesFromPlaybackSpeed } from '../utils/keyTranspose';
@@ -129,6 +130,48 @@ function fingerprintTracksCueLoopMode(tracks: Array<Pick<Track, 'id' | 'cuePoint
   );
 }
 
+/** Native capture-phase dblclick so Sample Edit opens before WaveSurfer consumes the event. */
+function StudioDeckWaveformShell({
+  disabled,
+  onOpenSampleEdit,
+  children,
+}: {
+  disabled: boolean;
+  onOpenSampleEdit: () => void;
+  children: ReactNode;
+}) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const onOpenRef = useRef(onOpenSampleEdit);
+  onOpenRef.current = onOpenSampleEdit;
+
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el || disabled) return;
+    const onDbl = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (
+        t.closest?.(
+          'button, input, select, a, textarea, [role=button], [role=slider], [role=spinbutton]'
+        )
+      ) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      onOpenRef.current();
+    };
+    el.addEventListener('dblclick', onDbl, { capture: true });
+    return () => el.removeEventListener('dblclick', onDbl, { capture: true });
+  }, [disabled]);
+
+  return (
+    <div ref={shellRef} className="audafact-waveform-bg relative">
+      {children}
+    </div>
+  );
+}
+
 const GUEST_ONBOARDING_MODE_KEY = 'onboardingMode:guest';
 const PRELOGIN_TRANSITION_SNAPSHOT_KEY = 'preloginTransitionSnapshot:guest';
 const PRELOGIN_TRANSITION_PENDING_KEY = 'preloginTransitionPendingUser';
@@ -201,10 +244,14 @@ const Studio = () => {
   // Track drag state for real-time timestamp updates
   const [cueDragStates, setCueDragStates] = useState<{ [trackId: string]: { [index: number]: number } }>({});
   const [loopDragStates, setLoopDragStates] = useState<{ [trackId: string]: { start: number; end: number } }>({});
-  /** When set, Sample Edit overlay is open for this track id (signed-in only; cue/loop). */
+  /** When set, Sample Edit overlay is open for this track id (guest + signed-in). */
   const [sampleEditTrackId, setSampleEditTrackId] = useState<string | null>(null);
   const sampleEditPlaybackSnapshotRef = useRef<Set<string> | null>(null);
   const lastTapForSampleEditRef = useRef<{ t: number; x: number; y: number; trackId: string } | null>(null);
+  const isMobileStudioLayout = useIsMobileStudioLayout();
+  const [mobileStudioSurface, setMobileStudioSurface] = useState<'overview' | 'focus'>('overview');
+  const [expandedDeckTrackId, setExpandedDeckTrackId] = useState<string | null>(null);
+  const prevSessionTrackCountForMobileRef = useRef(0);
   const addButtonUploadInputRef = useRef<HTMLInputElement | null>(null);
   // Unified list of assets available for navigation (Supabase library only)
   const [availableAssets, setAvailableAssets] = useState<AudioAsset[]>([]);
@@ -641,7 +688,6 @@ const Studio = () => {
 
   const openSampleEditMode = useCallback(
     (trackId: string) => {
-      if (isGuestMode) return;
       const t = tracks.find((tr) => tr.id === trackId);
       if (!t) return;
       const playing = new Set<string>();
@@ -653,7 +699,7 @@ const Studio = () => {
       setSelectedCueTrackId(trackId);
       setSampleEditTrackId(trackId);
     },
-    [isGuestMode, tracks, playbackStates, stopAllPlayback]
+    [tracks, playbackStates, stopAllPlayback]
   );
 
   useEffect(() => {
@@ -662,6 +708,26 @@ const Studio = () => {
       setSampleEditTrackId(null);
     }
   }, [tracks, sampleEditTrackId]);
+
+  useEffect(() => {
+    if (tracks.length === 0) {
+      setExpandedDeckTrackId(null);
+      return;
+    }
+    setExpandedDeckTrackId((prev) => {
+      if (prev && tracks.some((t) => t.id === prev)) return prev;
+      return tracks[0].id;
+    });
+  }, [tracks]);
+
+  useEffect(() => {
+    const n = tracks.length;
+    const prevN = prevSessionTrackCountForMobileRef.current;
+    prevSessionTrackCountForMobileRef.current = n;
+    if (isMobileStudioLayout && prevN < 2 && n >= 2) {
+      setMobileStudioSurface('overview');
+    }
+  }, [tracks.length, isMobileStudioLayout]);
 
   useEffect(() => {
     const handleRecordingCompleted = () => stopAllPlayback();
@@ -1880,149 +1946,94 @@ const Studio = () => {
     }
   }, [tracks.length]);
 
-  // Touch/swipe handlers
+  /** Touch/wheel: vertical add gesture only, on `[data-studio-add-track-zone]` (compact +). No Prev/Next swipe. */
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
-    
-    // Prevent multiple touch starts
-    if (touchStartX !== null) return; // Already tracking a touch
-    
-    // Check if the touch target is within a waveform container
+    if (isTrackLoading || isWaveformScrolling) return;
+    if (touchStartX !== null) return;
+
     const target = e.target as Element;
     const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
-    
-    if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
-    
-    // Check if the touch target is within track controls or consolidated header
+    if (isWaveformTouch) return;
+
     const isTrackControlsTouch = target.closest('.audafact-card.p-4.space-y-4') !== null;
     const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
-    
-    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
-    
-    // Only allow swipe gestures in the navigation controls area
-    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider.py-1.px-2') !== null;
-    
-    if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
-    
-    // Prevent browser navigation gestures from the start
+    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return;
+
+    const isAddTrackZoneTouch = target.closest('[data-studio-add-track-zone]') !== null;
+    if (!isAddTrackZoneTouch) return;
+
     e.preventDefault();
-    e.stopPropagation(); // Prevent event bubbling
-    
+    e.stopPropagation();
+
     setTouchStartX(e.targetTouches[0].clientX);
     setTouchStartY(e.targetTouches[0].clientY);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
+    if (isTrackLoading || isWaveformScrolling) return;
     if (touchStartX === null || touchStartY === null) return;
-    
-    // Check if the touch target is within a waveform container
+
     const target = e.target as Element;
     const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
-    
-    if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
-    
-    // Check if the touch target is within track controls or consolidated header
+    if (isWaveformTouch) return;
+
     const isTrackControlsTouch = target.closest('.audafact-card.p-4.space-y-4') !== null;
     const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
-    
-    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
-    
-    // Only allow swipe gestures in the navigation controls area
-    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider.py-1.px-2') !== null;
-    
-    if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
-    
+    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return;
+
+    const isAddTrackZoneTouch = target.closest('[data-studio-add-track-zone]') !== null;
+    if (!isAddTrackZoneTouch) return;
+
     const currentX = e.targetTouches[0].clientX;
     const currentY = e.targetTouches[0].clientY;
     setTouchEndX(currentX);
     setTouchEndY(currentY);
-    
+
     const deltaX = Math.abs(touchStartX - currentX);
     const deltaY = Math.abs(touchStartY - currentY);
-    
-    // Check for vertical swipe down gesture for add track
-    const rawDeltaY = touchStartY - currentY; // Negative means finger moved down
+    const rawDeltaY = touchStartY - currentY;
     const isVerticalSwipeDown = deltaY > 50 && deltaY > deltaX * 2 && rawDeltaY < 0 && deltaX < 50;
-    
-    // Prevent browser navigation gestures early if this looks like horizontal movement
-    const potentialHorizontalMovement = deltaX > 20 && deltaX > deltaY;
-    if (potentialHorizontalMovement) {
-      e.preventDefault();
-    }
-    
-    // Show add track gesture indicator if valid gesture and can add track - disabled in demo mode
+
     if (
       isVerticalSwipeDown &&
       !isAddingTrack &&
       (!isGuestMode ? canAddTrack : tracks.length >= 1)
     ) {
       setShowAddTrackGesture(true);
-      e.preventDefault(); // Prevent browser pulldown gestures
+      e.preventDefault();
     } else {
       setShowAddTrackGesture(false);
-    }
-    
-    // More strict horizontal swipe detection:
-    // 1. Horizontal movement must be at least 100px
-    // 2. Horizontal movement must be at least 3x larger than vertical
-    // 3. Vertical movement must be less than 50px to avoid accidental triggers
-    const isHorizontalSwipe = deltaX > 100 && deltaX > deltaY * 3 && deltaY < 50;
-    
-    if (isHorizontalSwipe) {
-      // Horizontal swipe in progress
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
+    if (isTrackLoading || isWaveformScrolling) return;
     if (touchStartX === null || touchEndX === null || touchStartY === null || touchEndY === null) return;
-    
-    // Prevent multiple touch ends
+
     e.preventDefault();
-    e.stopPropagation(); // Prevent event bubbling
-    
-    // Check if the touch target is within a waveform container
+    e.stopPropagation();
+
     const target = e.target as Element;
     const isWaveformTouch = target.closest('.audafact-waveform-bg') !== null;
-    
-    if (isWaveformTouch) return; // Don't handle swipe gestures on waveform
-    
-    // Check if the touch target is within track controls or consolidated header
+    if (isWaveformTouch) return;
+
     const isTrackControlsTouch = target.closest('.audafact-card.p-4.space-y-4') !== null;
     const isConsolidatedHeaderTouch = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
-    
-    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return; // Don't handle swipe gestures on track controls or header
-    
-    // Only allow swipe gestures in the navigation controls area
-    const isNavigationControlsTouch = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider.py-1.px-2') !== null;
-    
-    if (!isNavigationControlsTouch) return; // Only handle swipe gestures in navigation controls
-    
-    // Prevent any browser navigation
+    if (isTrackControlsTouch || isConsolidatedHeaderTouch) return;
+
+    const isAddTrackZoneTouch = target.closest('[data-studio-add-track-zone]') !== null;
+    if (!isAddTrackZoneTouch) return;
+
     e.preventDefault();
-    
+
     const deltaX = touchStartX - touchEndX;
     const deltaY = touchStartY - touchEndY;
     const absDeltaX = Math.abs(deltaX);
     const absDeltaY = Math.abs(deltaY);
-    
-    // Strict horizontal swipe validation:
-    // 1. Horizontal movement must be at least 120px (increased from 100px)
-    // 2. Horizontal movement must be at least 4x larger than vertical (increased from 3x)
-    // 3. Vertical movement must be less than 40px (decreased from 50px)
-    const isValidHorizontalSwipe = absDeltaX > 120 && absDeltaX > absDeltaY * 4 && absDeltaY < 40;
-    
-    // Strict vertical swipe validation for add track:
-    // 1. Vertical movement must be at least 100px
-    // 2. Vertical movement must be at least 3x larger than horizontal
-    // 3. Horizontal movement must be less than 50px
-    // 4. Must be a downward swipe (negative deltaY means finger moved down)
+
     const isValidVerticalSwipe = absDeltaY > 100 && absDeltaY > absDeltaX * 3 && absDeltaX < 50;
-    
-    // Prevent multiple gesture processing
+
     if (isGestureProcessing) {
-      // Reset touch state and ignore this gesture
       setTouchStartX(null);
       setTouchEndX(null);
       setTouchStartY(null);
@@ -2030,14 +2041,12 @@ const Studio = () => {
       setShowAddTrackGesture(false);
       return;
     }
-    
-    // Debounce gestures to prevent rapid successive triggers
+
     const now = Date.now();
     const timeSinceLastGesture = now - lastGestureTime;
-    const minGestureInterval = 800; // Increased to 800ms between gestures
-    
+    const minGestureInterval = 800;
+
     if (timeSinceLastGesture < minGestureInterval) {
-      // Reset touch state and ignore this gesture
       setTouchStartX(null);
       setTouchEndX(null);
       setTouchStartY(null);
@@ -2045,33 +2054,8 @@ const Studio = () => {
       setShowAddTrackGesture(false);
       return;
     }
-    
-    if (isValidHorizontalSwipe) {
-      const gestureType = deltaX > 0 ? 'swipe-left' : 'swipe-right';
-      const gestureKey = `${gestureType}-${now}`;
-      
-      // Prevent duplicate gestures
-      if (lastProcessedGestureRef.current === gestureKey) {
-        return;
-      }
-      
-      setLastGestureTime(now);
-      setIsGestureProcessing(true);
-      lastProcessedGestureRef.current = gestureKey;
-      
-      if (deltaX > 0) {
-        // Swiped left (finger moved left) - next track
-        handleNextTrack();
-      } else {
-        // Swiped right (finger moved right) - previous track
-        handlePreviousTrack();
-      }
-      // Reset gesture processing flag after a delay
-      setTimeout(() => {
-        setIsGestureProcessing(false);
-        lastProcessedGestureRef.current = '';
-      }, 1000);
-    } else if (isValidVerticalSwipe && deltaY < 0) {
+
+    if (isValidVerticalSwipe && deltaY < 0) {
       if (isGuestMode && tracks.length >= 1) {
         openSignupModal('add_second_source');
         setTouchStartX(null);
@@ -2083,25 +2067,20 @@ const Studio = () => {
       }
       if (canAddTrack && !isAddingTrack && !isGuestMode) {
         const gestureKey = `swipe-down-${now}`;
-        
-        // Prevent duplicate gestures
         if (lastProcessedGestureRef.current === gestureKey) {
           return;
         }
-        
         setLastGestureTime(now);
         setIsGestureProcessing(true);
         lastProcessedGestureRef.current = gestureKey;
         addNewTrack();
-        // Reset gesture processing flag after a delay
         setTimeout(() => {
           setIsGestureProcessing(false);
           lastProcessedGestureRef.current = '';
         }, 1000);
       }
     }
-    
-    // Reset touch state
+
     setTouchStartX(null);
     setTouchEndX(null);
     setTouchStartY(null);
@@ -2109,73 +2088,39 @@ const Studio = () => {
     setShowAddTrackGesture(false);
   };
 
-  // Mouse wheel handler for track navigation and adding tracks
   const handleWheel = (e: React.WheelEvent) => {
-    if (isTrackLoading || isWaveformScrolling) return; // Disable during loading or waveform scrolling
-    
-    // Prevent multiple gesture processing (same protection as touch handlers)
+    if (isTrackLoading || isWaveformScrolling) return;
+
     if (isGestureProcessing) {
       e.preventDefault();
       return;
     }
-    
-    // Debounce wheel gestures to prevent rapid successive triggers
+
     const now = Date.now();
     const timeSinceLastGesture = now - lastGestureTime;
-    const minGestureInterval = 800; // Same as touch handlers
-    
+    const minGestureInterval = 800;
+
     if (timeSinceLastGesture < minGestureInterval) {
       e.preventDefault();
       return;
     }
-    
-    // Check if the wheel event target is within a waveform container
+
     const target = e.target as Element;
     const isWaveformWheel = target.closest('.audafact-waveform-bg') !== null;
-    
-    if (isWaveformWheel) return; // Don't handle wheel gestures on waveform
-    
-    // Check if the wheel event target is within track controls or consolidated header
+    if (isWaveformWheel) return;
+
     const isTrackControlsWheel = target.closest('.p-4.relative.z-10.bg-audafact-surface-1') !== null;
     const isConsolidatedHeaderWheel = target.closest('.p-4.border-b.bg-audafact-surface-2') !== null;
-    
-    if (isTrackControlsWheel || isConsolidatedHeaderWheel) return; // Don't handle wheel gestures on track controls or header
-    
-    // Only allow wheel gestures in the navigation controls area
-    const isNavigationControlsWheel = target.closest('.flex.items-center.justify-between.bg-audafact-surface-2.border-b.border-audafact-divider') !== null;
-    
-    if (!isNavigationControlsWheel) return; // Only handle wheel gestures in navigation controls
-    
+    if (isTrackControlsWheel || isConsolidatedHeaderWheel) return;
+
+    const isAddZone = target.closest('[data-studio-add-track-zone]') !== null;
+    if (!isAddZone) return;
+
     const absDeltaX = Math.abs(e.deltaX);
     const absDeltaY = Math.abs(e.deltaY);
-    
-
-    
-    // Handle horizontal trackpad gestures for track navigation
-    const isHorizontalGesture = absDeltaX > absDeltaY && absDeltaX > 10;
-    
-    // Handle vertical trackpad gestures for adding tracks
-    // Relaxed thresholds: lower minimum movement, allow more horizontal drift
     const isVerticalGesture = absDeltaY > absDeltaX && absDeltaY > 10 && absDeltaX < 25;
-    
-          if (isHorizontalGesture) {
-        // Prevent default only for horizontal gestures
-        e.preventDefault();
-        
-        setLastGestureTime(now);
-        setIsGestureProcessing(true);
-        
-        if (e.deltaX > 0) {
-        // Scrolling right - next track
-        handleNextTrack();
-      } else if (e.deltaX < 0) {
-        // Scrolling left - previous track
-        handlePreviousTrack();
-      }
-      
-      // Reset gesture processing flag after a delay
-      setTimeout(() => setIsGestureProcessing(false), 1000);
-    } else if (isVerticalGesture && e.deltaY < 0) {
+
+    if (isVerticalGesture && e.deltaY < 0) {
       e.preventDefault();
       if (isGuestMode && tracks.length >= 1) {
         openSignupModal('add_second_source');
@@ -2190,7 +2135,6 @@ const Studio = () => {
         setTimeout(() => setIsGestureProcessing(false), 1000);
       }
     }
-    // For other gestures, allow normal scrolling to pass through
   };
 
   // Track navigation functions
@@ -4111,6 +4055,23 @@ const Studio = () => {
     setSuggestionReferenceTrackId(trackId);
   }, []);
 
+  const mobileMultiDeck = isMobileStudioLayout && tracks.length >= 2;
+  const tracksForStudioMap = useMemo(() => {
+    if (!mobileMultiDeck) return tracks;
+    if (mobileStudioSurface === 'overview') return [];
+    const id = expandedDeckTrackId ?? tracks[0]?.id;
+    const row = tracks.find((tr) => tr.id === id);
+    return row ? [row] : tracks;
+  }, [mobileMultiDeck, mobileStudioSurface, tracks, expandedDeckTrackId]);
+
+  const addTrackTooltip = useMemo(() => {
+    if (isGuestMode && tracks.length >= 1) {
+      return 'Swipe down on + or upload to add (library needs an account)';
+    }
+    if (!canAddTrack && !isGuestMode) return 'Change deck mode to allow another track';
+    return 'Add track';
+  }, [canAddTrack, isGuestMode, tracks.length]);
+
   // Memoize the callback functions to prevent SidePanel re-mounting
   const memoizedSidePanelProps = useMemo(
     () => ({
@@ -4984,7 +4945,7 @@ const Studio = () => {
               </div>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="hidden md:flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="text-audafact-text-secondary text-xs">
               {(() => {
                 if (armedLoopTrackIds.size === 0) return 'Start the drums: Arm a loop track, then press Space';
@@ -5017,6 +4978,44 @@ const Studio = () => {
             </span>
           </div>
         </div>
+
+        {!sampleEditTrackId && tracks.length > 0 && (
+          <div
+            className="mb-2 flex justify-end"
+            data-studio-add-track-zone
+            style={{ touchAction: 'pan-y pinch-zoom' }}
+            onWheel={handleWheel}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            <Tooltip content={addTrackTooltip} position="top" delay={150}>
+              <button
+                type="button"
+                onClick={() => void addNewTrack()}
+                disabled={isAddingTrack || isTrackLoading || (!isGuestMode && !canAddTrack)}
+                aria-label="Add track"
+                data-testid="add-track-button"
+                className={`inline-flex h-9 min-h-[36px] w-9 min-w-[36px] shrink-0 items-center justify-center rounded-lg border border-audafact-divider bg-audafact-surface-2 shadow-sm transition-colors ${
+                  isAddingTrack || isTrackLoading || (!isGuestMode && !canAddTrack)
+                    ? 'cursor-not-allowed text-audafact-text-secondary opacity-60'
+                    : `text-audafact-accent-cyan hover:border-audafact-accent-cyan/50 hover:bg-audafact-surface-1 ${addTrackAnimation ? 'animate-pulse' : ''}`
+                }`}
+              >
+                {isAddingTrack ? (
+                  <span
+                    className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+                    aria-hidden
+                  />
+                ) : (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                )}
+              </button>
+            </Tooltip>
+          </div>
+        )}
 
         {/* Track skeleton - shown while waveforms load to prevent flicker */}
         {showTrackSkeletons && tracksToRender.map((track, idx) => (
@@ -5097,17 +5096,152 @@ const Studio = () => {
           className={showTrackSkeletons ? 'fixed -left-[9999px] top-0 w-full opacity-0 pointer-events-none' : undefined}
           aria-hidden={showTrackSkeletons}
         >
-        {tracks.map((track, index) => {
+        {mobileMultiDeck && mobileStudioSurface === 'overview' && (
+          <div className="md:hidden" data-testid="studio-mobile-overview">
+            <div className="space-y-2">
+              {tracks.map((track, i) => {
+                const isOvRef = track.id === effectiveSuggestionReferenceTrackId;
+                const ovH = 52;
+                return (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => {
+                      setExpandedDeckTrackId(track.id);
+                      setMobileStudioSurface('focus');
+                    }}
+                    className={`audafact-card w-full overflow-hidden text-left transition-all duration-300 ${
+                      isOvRef ? 'border-audafact-accent-cyan shadow-card' : 'border-audafact-divider shadow-sm'
+                    }`}
+                    data-testid={`studio-overview-row-${i}`}
+                  >
+                    <div className="flex items-center gap-2 border-b border-audafact-divider bg-audafact-surface-1 px-3 py-2">
+                      <span className="shrink-0 text-[11px] font-medium text-audafact-text-secondary">T{i + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium audafact-heading">{track.file.name}</div>
+                        <div className="text-[10px] text-audafact-text-secondary">
+                          {track.mode === 'preview' ? 'Preview' : track.mode === 'loop' ? 'Loop' : 'Chop'}
+                          {track.key
+                            ? ` · ${transposeKey(track.key, semitonesFromPlaybackSpeed(playbackSpeeds[track.id] || 1))}`
+                            : ''}
+                          {' · '}
+                          {Math.round(track.tempo * (playbackSpeeds[track.id] || 1))} BPM
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[10px] text-audafact-accent-cyan">Open</span>
+                    </div>
+                    <div className="pointer-events-none relative">
+                      {loadingTrackPlaceholder && i === 0 && !waveformReadyTrackIds.has(track.id) && (
+                        <div
+                          className="absolute inset-0 z-10 flex items-center justify-center bg-audafact-waveform-bg"
+                          aria-hidden
+                        >
+                          <div className="flex h-8 items-end gap-1" aria-hidden>
+                            {[...Array(24)].map((_, j) => (
+                              <div
+                                key={j}
+                                className="w-1 rounded-sm bg-audafact-accent-cyan/30 animate-pulse"
+                                style={{
+                                  height: `${20 + Math.sin(j * 0.5) * 30}%`,
+                                  animationDelay: `${j * 50}ms`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <WaveformDisplay
+                        audioFile={track.file}
+                        peaks={track.peaks}
+                        duration={track.peaks ? track.buffer.duration : undefined}
+                        waveHeight={ovH}
+                        mode={track.mode}
+                        loopStart={track.loopStart}
+                        loopEnd={track.loopEnd}
+                        cuePoints={track.cuePoints}
+                        onLoopPointsChange={(start, end) => handleLoopPointsChange(track.id, start, end)}
+                        onLoopDragStateChange={(start, end) => handleLoopDragStateChange(track.id, start, end)}
+                        onCuePointChange={(ci, time) => handleCuePointChange(track.id, ci, time)}
+                        playhead={track.mode === 'loop' ? loopPlayhead : samplePlayhead}
+                        playbackTime={playbackTimes[track.id] || 0}
+                        zoomLevel={zoomLevels[track.id] || 1}
+                        onZoomIn={() => handleZoomIn(track.id)}
+                        onZoomOut={() => handleZoomOut(track.id)}
+                        onResetZoom={() => handleResetZoom(track.id)}
+                        onZoomChange={(level) => handleZoomChange(track.id, level)}
+                        trackId={track.id}
+                        showMeasures={showMeasures[track.id]}
+                        tempo={track.tempo}
+                        timeSignature={track.timeSignature}
+                        firstMeasureTime={track.firstMeasureTime}
+                        onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
+                        showCueThumbs={false}
+                        isPlaying={playbackStates[track.id] || false}
+                        onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
+                        onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
+                        isGuestMode={isGuestMode}
+                        chopTriggerStyle={track.chopTriggerStyle ?? 'hold'}
+                        onCueDragStateChange={(ci, time) => handleCueDragStateChange(track.id, ci, time)}
+                        onReady={() => handleWaveformReady(track.id)}
+                        suppressLoadingOverlay={!!(
+                          loadingTrackPlaceholder && i === 0 && !waveformReadyTrackIds.has(track.id)
+                        )}
+                        beats={track.beats}
+                        cueDragTime={
+                          cueDragStates[track.id] ? (Object.values(cueDragStates[track.id])[0] ?? null) : null
+                        }
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {mobileMultiDeck && mobileStudioSurface === 'focus' && (
+          <div className="px-2 pb-1 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileStudioSurface('overview')}
+              className="text-xs font-medium text-audafact-accent-cyan hover:underline"
+              data-testid="studio-mobile-back-to-overview"
+            >
+              ← All tracks
+            </button>
+          </div>
+        )}
+
+        {tracksForStudioMap.map((track) => {
+          const displayIndex = tracks.findIndex((t) => t.id === track.id);
           const isSuggestionRef = track.id === effectiveSuggestionReferenceTrackId;
+          const isDeckExpanded =
+            !isMobileStudioLayout || tracks.length < 2 || expandedDeckTrackId === track.id;
           return (
           <div
             key={track.id}
-            onClick={tracks.length > 1 ? (e) => {
-              if ((e.target as HTMLElement).closest?.('button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg')) return;
-              setSuggestionReferenceTrackId(track.id);
-            } : undefined}
+            onClick={
+              tracks.length > 1 || isMobileStudioLayout
+                ? (e) => {
+                    if (
+                      (e.target as HTMLElement).closest?.(
+                        'button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg'
+                      )
+                    ) {
+                      return;
+                    }
+                    if (isMobileStudioLayout && expandedDeckTrackId !== track.id) {
+                      setExpandedDeckTrackId(track.id);
+                      setMobileStudioSurface('focus');
+                      return;
+                    }
+                    if (tracks.length > 1) {
+                      setSuggestionReferenceTrackId(track.id);
+                    }
+                  }
+                : undefined
+            }
             onDoubleClick={(e) => {
-              if (isGuestMode) return;
               if (
                 (e.target as HTMLElement).closest?.(
                   'button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg, textarea'
@@ -5119,7 +5253,6 @@ const Studio = () => {
               openSampleEditMode(track.id);
             }}
             onTouchEnd={(e) => {
-              if (isGuestMode) return;
               if (
                 (e.target as HTMLElement).closest?.(
                   'button, input, select, a, [role=button], [role=slider], .audafact-waveform-bg, textarea'
@@ -5156,20 +5289,18 @@ const Studio = () => {
                 : 'border-audafact-divider shadow-sm'
             } ${isDragOver ? 'ring-2 ring-audafact-accent-cyan ring-opacity-50' : ''} ${tracks.length > 1 ? 'cursor-pointer' : ''}`}
             style={{
-              transform: (loadingTrackPlaceholder || (isAddingTrack && index > 0)) ? 'translateY(10px)' : 'translateY(0)'
+              transform:
+                loadingTrackPlaceholder || (isAddingTrack && displayIndex > 0)
+                  ? 'translateY(10px)'
+                  : 'translateY(0)',
             }}
-            data-testid={index === 0 ? 'main-track-card' : `track-card-${index}`}
+            data-testid={displayIndex === 0 ? 'main-track-card' : `track-card-${displayIndex}`}
             title={tracks.length > 1 ? (isSuggestionRef ? 'Suggestions match this track — click another to match to it' : 'Click to match suggestions to this track') : undefined}
           >
-            {/* Add Track and Navigation Controls - Only show on first track */}
-            {index === 0 && (
-              <div 
-                className="relative grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-1 sm:gap-x-2 py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
-                style={{ touchAction: 'pan-y pinch-zoom' }}
-                onWheel={handleWheel}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
+            {/* Prev / Add / Next rail — desktop only; mobile uses compact + above and overview */}
+            {displayIndex === 0 && (
+              <div
+                className="relative hidden md:grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-1 sm:gap-x-2 py-1 px-2 bg-audafact-surface-2 border-b border-audafact-divider min-h-[44px]"
                 data-testid="track-loader-bar"
               >
                 <span className="min-w-0 justify-self-start text-xs font-medium text-audafact-text-secondary">
@@ -5259,31 +5390,22 @@ const Studio = () => {
                   </Tooltip>
                 </div>
                 <div className="min-w-0 justify-self-end text-right">
-                  {!sampleEditTrackId &&
-                    (isGuestMode ? (
+                  {!sampleEditTrackId && (
+                    <Tooltip
+                      content="Double-click the waveform, or double-tap outside the waveform on a deck, to open precision editor."
+                      position="top"
+                      delay={200}
+                      maxWidth={280}
+                    >
                       <span
-                        className="block truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
+                        className="block max-w-full cursor-default truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
                         data-testid="sample-edit-hint"
                       >
-                        <span className="sm:hidden">Sample edit · Sign up</span>
-                        <span className="hidden sm:inline">Sample edit · Create account</span>
+                        <span className="sm:hidden">2× tap deck · Sample edit</span>
+                        <span className="hidden sm:inline">Double-click for precision edit</span>
                       </span>
-                    ) : (
-                      <Tooltip
-                        content="Double-click or double-tap outside the waveform on a deck to open precision editor."
-                        position="top"
-                        delay={200}
-                        maxWidth={280}
-                      >
-                        <span
-                          className="block max-w-full cursor-default truncate text-[10px] sm:text-xs font-medium text-audafact-text-secondary"
-                          data-testid="sample-edit-hint"
-                        >
-                          <span className="sm:hidden">2× tap deck · Sample edit</span>
-                          <span className="hidden sm:inline">Double-click for precision edit</span>
-                        </span>
-                      </Tooltip>
-                    ))}
+                    </Tooltip>
+                  )}
                 </div>
             </div>
             )}
@@ -5305,7 +5427,46 @@ const Studio = () => {
             <>
             {/* Track Header */}
             <div className="p-4 border-b border-audafact-divider bg-audafact-surface-1">
-              {/* Mobile layout */}
+              {/* Mobile layout — multi-deck focus: prev/next deck only */}
+              {mobileMultiDeck && mobileStudioSurface === 'focus' && tracks.length > 1 ? (
+                <div className="md:hidden">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      disabled={displayIndex <= 0}
+                      onClick={() => {
+                        if (displayIndex <= 0) return;
+                        setExpandedDeckTrackId(tracks[displayIndex - 1].id);
+                      }}
+                      className={`shrink-0 rounded-lg border border-audafact-divider px-2 py-1.5 text-xs font-medium ${
+                        displayIndex <= 0
+                          ? 'cursor-not-allowed opacity-40'
+                          : 'text-audafact-text-primary hover:bg-audafact-surface-2'
+                      }`}
+                    >
+                      Prev
+                    </button>
+                    <h3 className="min-w-0 flex-1 truncate text-center text-sm font-medium audafact-heading">
+                      {track.file.name}
+                    </h3>
+                    <button
+                      type="button"
+                      disabled={displayIndex < 0 || displayIndex >= tracks.length - 1}
+                      onClick={() => {
+                        if (displayIndex < 0 || displayIndex >= tracks.length - 1) return;
+                        setExpandedDeckTrackId(tracks[displayIndex + 1].id);
+                      }}
+                      className={`shrink-0 rounded-lg border border-audafact-divider px-2 py-1.5 text-xs font-medium ${
+                        displayIndex >= tracks.length - 1
+                          ? 'cursor-not-allowed opacity-40'
+                          : 'text-audafact-text-primary hover:bg-audafact-surface-2'
+                      }`}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="flex flex-col gap-2 md:hidden">
                 {/* Row 1: Track title + meta (left-aligned; tight line height) */}
                 <div className="w-full min-w-0 space-y-0.5">
@@ -5313,7 +5474,7 @@ const Studio = () => {
                     {track.file.name}
                   </h3>
                   <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0 truncate text-[11px] leading-tight text-audafact-text-secondary sm:text-xs">
-                    {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
+                    {loadingTrackPlaceholder && displayIndex === 0 && !waveformReadyTrackIds.has(track.id) ? (
                       <span className="flex items-center gap-1">
                         <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
                         Loading waveform...
@@ -5437,6 +5598,7 @@ const Studio = () => {
                       <span className={studioChromeSecondaryLabelClass}>Arm</span>
                     </button>
                   )}
+                  {tracks.length === 1 && (
                   <button
                     type="button"
                     onClick={() => handleToggleControls(track.id)}
@@ -5484,9 +5646,11 @@ const Studio = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
+                  )}
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Desktop layout — tools (Measures…Time & Tempo) stay end-aligned vs mode + title */}
               <div className="hidden md:flex min-w-0 items-center justify-between gap-3">
@@ -5532,7 +5696,7 @@ const Studio = () => {
                       {track.file.name}
                     </h3>
                     <p className="text-sm audafact-text-secondary flex flex-wrap items-center gap-2">
-                      {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) ? (
+                      {loadingTrackPlaceholder && displayIndex === 0 && !waveformReadyTrackIds.has(track.id) ? (
                         <span className="flex items-center gap-1">
                           <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-audafact-accent-cyan" />
                           Loading waveform...
@@ -5625,6 +5789,7 @@ const Studio = () => {
                     </button>
                   )}
 
+                  {tracks.length === 1 && (
                   <button
                     type="button"
                     onClick={() => handleToggleControls(track.id)}
@@ -5672,12 +5837,13 @@ const Studio = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Collapsible Controls */}
-            {expandedControls[track.id] && (
+            {tracks.length === 1 && expandedControls[track.id] && (
               <div className="p-4 border-b border-audafact-divider bg-audafact-surface-2 space-y-4">
                 {/* Tempo Controls */}
                 <div className="space-y-2">
@@ -5700,8 +5866,11 @@ const Studio = () => {
             )}
 
             {/* Waveform Display — height comes from WaveformDisplay (shell + optional cue-thumb strip) */}
-            <div className="audafact-waveform-bg relative">
-              {loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id) && (
+            <StudioDeckWaveformShell
+              disabled={false}
+              onOpenSampleEdit={() => openSampleEditMode(track.id)}
+            >
+              {loadingTrackPlaceholder && displayIndex === 0 && !waveformReadyTrackIds.has(track.id) && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-audafact-waveform-bg" aria-hidden>
                   <div className="flex items-end gap-1 h-12" aria-hidden>
                     {[...Array(24)].map((_, i) => (
@@ -5718,6 +5887,7 @@ const Studio = () => {
                 audioFile={track.file}
                 peaks={track.peaks}
                 duration={track.peaks ? track.buffer.duration : undefined}
+                waveHeight={isDeckExpanded ? 120 : 64}
                 mode={track.mode}
                 loopStart={track.loopStart}
                 loopEnd={track.loopEnd}
@@ -5738,22 +5908,22 @@ const Studio = () => {
                 timeSignature={track.timeSignature}
                 firstMeasureTime={track.firstMeasureTime}
                 onFirstMeasureChange={(time) => handleFirstMeasureChange(track.id, time)}
-                showCueThumbs={(showCueThumbs[track.id] ?? true)}
+                showCueThumbs={isDeckExpanded ? (showCueThumbs[track.id] ?? true) : false}
                 isPlaying={playbackStates[track.id] || false}
                 onPlayheadChange={(time) => handlePlayheadChange(track.id, time)}
                 onScrollStateChange={(isScrolling) => handleWaveformScrollStateChange(track.id, isScrolling)}
-                isGuestMode={false}
+                isGuestMode={isGuestMode}
                 chopTriggerStyle={track.chopTriggerStyle ?? 'hold'}
                 onCueDragStateChange={(index, time) => handleCueDragStateChange(track.id, index, time)}
                 onReady={() => handleWaveformReady(track.id)}
-                suppressLoadingOverlay={!!(loadingTrackPlaceholder && index === 0 && !waveformReadyTrackIds.has(track.id))}
+                suppressLoadingOverlay={!!(loadingTrackPlaceholder && displayIndex === 0 && !waveformReadyTrackIds.has(track.id))}
                 beats={track.beats}
                 cueDragTime={cueDragStates[track.id] ? (Object.values(cueDragStates[track.id])[0] ?? null) : null}
               />
-            </div>
+            </StudioDeckWaveformShell>
 
             {/* Track Controls */}
-            <div className="p-4 relative z-10 bg-audafact-surface-1">
+            <div className={`relative z-10 bg-audafact-surface-1 ${isDeckExpanded ? 'p-4' : 'p-2 md:p-4'}`}>
               <TrackControls
                 key={`controls-${track.id}`}
                 mode={track.mode}
@@ -5796,12 +5966,12 @@ const Studio = () => {
                 onCueTriggered={markGuestSecondInteraction}
               />
 
-              {track.mode === 'cue' && track.id === selectedCueTrackId && (
+              {isDeckExpanded && track.mode === 'cue' && track.id === selectedCueTrackId && (
                 <div className="mt-3 bg-audafact-accent-blue bg-opacity-10 p-2 rounded text-audafact-accent-blue text-xs">
                   Play this sample like an instrument with keys 1-0
                 </div>
               )}
-              {track.mode === 'loop' && armedLoopTrackIds.has(track.id) && (
+              {isDeckExpanded && track.mode === 'loop' && armedLoopTrackIds.has(track.id) && (
                 <div className="mt-3 bg-audafact-accent-cyan bg-opacity-10 p-2 rounded text-audafact-accent-cyan text-xs">
                   Armed — Space controls playback
                 </div>
@@ -5827,134 +5997,108 @@ const Studio = () => {
               onClose={closeSampleEditMode}
               onPrevLibrary={() => void handleSampleEditPrevLibrary()}
               onNextLibrary={() => void handleSampleEditNextLibrary()}
-              onPrevSessionTrack={handleSampleEditPrevSessionTrack}
-              onNextSessionTrack={handleSampleEditNextSessionTrack}
-              hasPrevSessionTrack={editIndex > 0}
-              hasNextSessionTrack={editIndex < tracks.length - 1}
               isTrackLoading={isTrackLoading}
             >
               <div className="border-b border-audafact-divider bg-audafact-surface-2 px-3 py-2 sm:px-4">
-                <div className="flex min-w-0 flex-nowrap items-center justify-between gap-2 sm:gap-3">
-                  <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-audafact-text-secondary sm:text-xs sm:normal-case sm:tracking-normal">
-                      Mode
-                    </span>
-                    {/* Match desktop deck track card: compact flex segment, intrinsic width */}
-                    <div className="flex items-center rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5">
-                      <button
-                        type="button"
-                        disabled={editIndex !== 0}
-                        title={
-                          editIndex !== 0
-                            ? 'Only the top deck can use Preview mode'
-                            : 'Preview — full track'
-                        }
-                        onClick={() => editIndex === 0 && handleModeChange(track.id, 'preview')}
-                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                          track.mode === 'preview'
-                            ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
-                            : editIndex !== 0
-                              ? 'cursor-not-allowed text-audafact-text-secondary opacity-50'
-                              : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                        }`}
-                        data-testid="sample-edit-preview-mode-button"
-                      >
-                        Preview
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleModeChange(track.id, 'loop')}
-                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                          track.mode === 'loop'
-                            ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
-                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                        }`}
-                        data-testid="sample-edit-loop-mode-button"
-                      >
-                        Loop
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleModeChange(track.id, 'cue')}
-                        className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                          track.mode === 'cue'
-                            ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
-                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
-                        }`}
-                        data-testid="sample-edit-chop-mode-button"
-                      >
-                        Chop
-                      </button>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleControls(track.id)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-audafact-divider bg-audafact-surface-1 px-2 py-1.5 text-left text-[11px] font-medium text-audafact-text-secondary hover:bg-audafact-surface-2 sm:px-3 sm:text-xs"
-                    aria-expanded={!!expandedControls[track.id]}
-                    aria-label="Time and tempo controls"
-                    title={
-                      expandedControls[track.id]
-                        ? 'Collapse time and tempo controls'
-                        : 'Expand time and tempo controls'
-                    }
-                    data-testid="sample-edit-time-tempo-controls-button"
-                  >
-                    <span className="flex min-w-0 items-center gap-1">
-                      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
-                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 3L6 19h12L12 3z"
-                          />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6" />
-                        </svg>
-                      </span>
-                      <span className={`truncate ${studioTrackMetaLabelClass}`}>
-                        Time & Tempo
-                      </span>
-                    </span>
-                    <svg
-                      className={`h-3 w-3 shrink-0 transition-transform ${expandedControls[track.id] ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden
+                {tracks.length > 1 && (
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      disabled={editIndex <= 0}
+                      onClick={handleSampleEditPrevSessionTrack}
+                      className={`shrink-0 rounded-lg border border-audafact-divider px-2 py-1.5 text-xs font-medium ${
+                        editIndex <= 0
+                          ? 'cursor-not-allowed opacity-40'
+                          : 'text-audafact-text-primary hover:bg-audafact-surface-1'
+                      }`}
+                      data-testid="sample-edit-prev-session-track"
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                </div>
-                {expandedControls[track.id] && (
-                  <div className="mt-3 space-y-4 border-t border-audafact-divider pt-3">
-                    <div className="space-y-2">
-                      <TempoControls
-                        trackId={track.id}
-                        initialTempo={track.tempo}
-                        onTempoChange={handleTempoChange}
-                        playbackSpeed={playbackSpeeds[track.id] || 1}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <TimeSignatureControls
-                        timeSignature={track.timeSignature}
-                        onTimeSignatureChange={(timeSignature) =>
-                          handleTimeSignatureChange(track.id, timeSignature)
-                        }
-                      />
-                    </div>
+                      Previous track
+                    </button>
+                    <button
+                      type="button"
+                      disabled={editIndex >= tracks.length - 1}
+                      onClick={handleSampleEditNextSessionTrack}
+                      className={`shrink-0 rounded-lg border border-audafact-divider px-2 py-1.5 text-xs font-medium ${
+                        editIndex >= tracks.length - 1
+                          ? 'cursor-not-allowed opacity-40'
+                          : 'text-audafact-text-primary hover:bg-audafact-surface-1'
+                      }`}
+                      data-testid="sample-edit-next-session-track"
+                    >
+                      Next track
+                    </button>
                   </div>
                 )}
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2">
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-audafact-text-secondary sm:text-xs sm:normal-case sm:tracking-normal">
+                    Mode
+                  </span>
+                  <div className="flex min-w-0 flex-1 items-center rounded-md border border-audafact-divider bg-audafact-surface-2 p-0.5 sm:min-w-[12rem] sm:flex-initial">
+                    <button
+                      type="button"
+                      disabled={editIndex !== 0}
+                      title={
+                        editIndex !== 0
+                          ? 'Only the top deck can use Preview mode'
+                          : 'Preview — full track'
+                      }
+                      onClick={() => editIndex === 0 && handleModeChange(track.id, 'preview')}
+                      className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                        track.mode === 'preview'
+                          ? 'bg-audafact-accent-blue text-audafact-text-primary shadow-sm'
+                          : editIndex !== 0
+                            ? 'cursor-not-allowed text-audafact-text-secondary opacity-50'
+                            : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="sample-edit-preview-mode-button"
+                    >
+                      Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange(track.id, 'loop')}
+                      className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                        track.mode === 'loop'
+                          ? 'bg-audafact-accent-cyan text-audafact-bg-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="sample-edit-loop-mode-button"
+                    >
+                      Loop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange(track.id, 'cue')}
+                      className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                        track.mode === 'cue'
+                          ? 'bg-audafact-alert-red text-audafact-text-primary shadow-sm'
+                          : 'text-audafact-text-secondary hover:text-audafact-text-primary'
+                      }`}
+                      data-testid="sample-edit-chop-mode-button"
+                    >
+                      Chop
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-4 border-t border-audafact-divider pt-3">
+                  <div className="space-y-2">
+                    <TempoControls
+                      trackId={track.id}
+                      initialTempo={track.tempo}
+                      onTempoChange={handleTempoChange}
+                      playbackSpeed={playbackSpeeds[track.id] || 1}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <TimeSignatureControls
+                      timeSignature={track.timeSignature}
+                      onTimeSignatureChange={(timeSignature) =>
+                        handleTimeSignatureChange(track.id, timeSignature)
+                      }
+                    />
+                  </div>
+                </div>
               </div>
               <div className="audafact-waveform-bg relative">
                 {loadingTrackPlaceholder && editIndex === 0 && !waveformReadyTrackIds.has(track.id) && (
