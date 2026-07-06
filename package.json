@@ -99,7 +99,7 @@
     "pg": "^8.16.0",
     "postcss": "^8.5.12",
     "storybook": "^8.6.17",
-    "supabase": "^2.78.1",
+    "supabase": "^2.109.0",
     "terser": "^5.43.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.0.0",
